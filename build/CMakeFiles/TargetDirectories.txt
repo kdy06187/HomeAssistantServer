@@ -1,0 +1,3 @@
+/home/kdy/home-assistant-core/build/CMakeFiles/HomeAssistantCore.dir
+/home/kdy/home-assistant-core/build/CMakeFiles/edit_cache.dir
+/home/kdy/home-assistant-core/build/CMakeFiles/rebuild_cache.dir

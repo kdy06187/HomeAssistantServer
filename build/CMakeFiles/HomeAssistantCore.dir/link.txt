@@ -1,0 +1,1 @@
+/usr/bin/c++ -Wl,--dependency-file=CMakeFiles/HomeAssistantCore.dir/link.d CMakeFiles/HomeAssistantCore.dir/src/main.cpp.o CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o -o HomeAssistantCore  -lsqlite3
