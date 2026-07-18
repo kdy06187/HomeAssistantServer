@@ -128,6 +128,9 @@ HomeAssistantCore: CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o
 HomeAssistantCore: CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o
 HomeAssistantCore: CMakeFiles/HomeAssistantCore.dir/build.make
 HomeAssistantCore: CMakeFiles/HomeAssistantCore.dir/compiler_depend.ts
+HomeAssistantCore: /usr/lib/x86_64-linux-gnu/libssl.so
+HomeAssistantCore: /usr/lib/x86_64-linux-gnu/libcrypto.so
+HomeAssistantCore: /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libCHIP.a
 HomeAssistantCore: CMakeFiles/HomeAssistantCore.dir/link.txt
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/kdy/home-assistant-core/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Linking CXX executable HomeAssistantCore"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/HomeAssistantCore.dir/link.txt --verbose=$(VERBOSE)

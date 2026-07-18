@@ -245,6 +245,30 @@ HomeAssistantCore_IS_TOP_LEVEL:STATIC=ON
 //Value Computed by CMake
 HomeAssistantCore_SOURCE_DIR:STATIC=/home/kdy/home-assistant-core
 
+//Path to a library.
+OPENSSL_CRYPTO_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libcrypto.so
+
+//Path to a file.
+OPENSSL_INCLUDE_DIR:PATH=/usr/include
+
+//Path to a library.
+OPENSSL_SSL_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libssl.so
+
+//Arguments to supply to pkg-config
+PKG_CONFIG_ARGN:STRING=
+
+//pkg-config executable
+PKG_CONFIG_EXECUTABLE:FILEPATH=/usr/bin/pkg-config
+
+//Path to a library.
+pkgcfg_lib_GLIB_glib-2.0:FILEPATH=/usr/lib/x86_64-linux-gnu/libglib-2.0.so
+
+//Path to a library.
+pkgcfg_lib__OPENSSL_crypto:FILEPATH=/usr/lib/x86_64-linux-gnu/libcrypto.so
+
+//Path to a library.
+pkgcfg_lib__OPENSSL_ssl:FILEPATH=/usr/lib/x86_64-linux-gnu/libssl.so
+
 
 ########################
 # INTERNAL cache entries
@@ -399,6 +423,101 @@ CMAKE_TAPI-ADVANCED:INTERNAL=1
 CMAKE_UNAME:INTERNAL=/usr/bin/uname
 //ADVANCED property for variable: CMAKE_VERBOSE_MAKEFILE
 CMAKE_VERBOSE_MAKEFILE-ADVANCED:INTERNAL=1
+//Details about finding OpenSSL
+FIND_PACKAGE_MESSAGE_DETAILS_OpenSSL:INTERNAL=[/usr/lib/x86_64-linux-gnu/libcrypto.so][/usr/include][ ][v3.5.5()]
+//Details about finding PkgConfig
+FIND_PACKAGE_MESSAGE_DETAILS_PkgConfig:INTERNAL=[/usr/bin/pkg-config][v2.5.1()]
 //Details about finding Threads
 FIND_PACKAGE_MESSAGE_DETAILS_Threads:INTERNAL=[TRUE][v()]
+GLIB_CFLAGS:INTERNAL=-I/usr/include/glib-2.0;-I/usr/lib/x86_64-linux-gnu/glib-2.0/include;-I/usr/include/sysprof-6;-pthread;-I/usr/include
+GLIB_CFLAGS_I:INTERNAL=
+GLIB_CFLAGS_OTHER:INTERNAL=-pthread
+GLIB_FOUND:INTERNAL=1
+GLIB_INCLUDEDIR:INTERNAL=/usr/include
+GLIB_INCLUDE_DIRS:INTERNAL=/usr/include/glib-2.0;/usr/lib/x86_64-linux-gnu/glib-2.0/include;/usr/include/sysprof-6;/usr/include
+GLIB_LDFLAGS:INTERNAL=-L/usr/lib/x86_64-linux-gnu;-lglib-2.0
+GLIB_LDFLAGS_OTHER:INTERNAL=
+GLIB_LIBDIR:INTERNAL=/usr/lib/x86_64-linux-gnu
+GLIB_LIBRARIES:INTERNAL=glib-2.0
+GLIB_LIBRARY_DIRS:INTERNAL=/usr/lib/x86_64-linux-gnu
+GLIB_LIBS:INTERNAL=
+GLIB_LIBS_L:INTERNAL=
+GLIB_LIBS_OTHER:INTERNAL=
+GLIB_LIBS_PATHS:INTERNAL=
+GLIB_MODULE_NAME:INTERNAL=glib-2.0
+GLIB_PREFIX:INTERNAL=/usr
+GLIB_STATIC_CFLAGS:INTERNAL=-I/usr/include/glib-2.0;-I/usr/lib/x86_64-linux-gnu/glib-2.0/include;-I/usr/include/sysprof-6;-pthread;-I/usr/include
+GLIB_STATIC_CFLAGS_I:INTERNAL=
+GLIB_STATIC_CFLAGS_OTHER:INTERNAL=-pthread
+GLIB_STATIC_INCLUDE_DIRS:INTERNAL=/usr/include/glib-2.0;/usr/lib/x86_64-linux-gnu/glib-2.0/include;/usr/include/sysprof-6;/usr/include
+GLIB_STATIC_LDFLAGS:INTERNAL=-L/usr/lib/x86_64-linux-gnu;-lglib-2.0;-latomic;-lm;-lsysprof-capture-4;-Wl,-z,nodelete;-pthread;-lpcre2-8
+GLIB_STATIC_LDFLAGS_OTHER:INTERNAL=-Wl,-z,nodelete;-pthread
+GLIB_STATIC_LIBDIR:INTERNAL=
+GLIB_STATIC_LIBRARIES:INTERNAL=glib-2.0;atomic;m;sysprof-capture-4;pcre2-8
+GLIB_STATIC_LIBRARY_DIRS:INTERNAL=/usr/lib/x86_64-linux-gnu
+GLIB_STATIC_LIBS:INTERNAL=
+GLIB_STATIC_LIBS_L:INTERNAL=
+GLIB_STATIC_LIBS_OTHER:INTERNAL=
+GLIB_STATIC_LIBS_PATHS:INTERNAL=
+GLIB_VERSION:INTERNAL=2.88.0
+GLIB_glib-2.0_INCLUDEDIR:INTERNAL=
+GLIB_glib-2.0_LIBDIR:INTERNAL=
+GLIB_glib-2.0_PREFIX:INTERNAL=
+GLIB_glib-2.0_VERSION:INTERNAL=
+//ADVANCED property for variable: OPENSSL_CRYPTO_LIBRARY
+OPENSSL_CRYPTO_LIBRARY-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: OPENSSL_INCLUDE_DIR
+OPENSSL_INCLUDE_DIR-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: OPENSSL_SSL_LIBRARY
+OPENSSL_SSL_LIBRARY-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: PKG_CONFIG_ARGN
+PKG_CONFIG_ARGN-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: PKG_CONFIG_EXECUTABLE
+PKG_CONFIG_EXECUTABLE-ADVANCED:INTERNAL=1
+_OPENSSL_CFLAGS:INTERNAL=-I/usr/include
+_OPENSSL_CFLAGS_I:INTERNAL=
+_OPENSSL_CFLAGS_OTHER:INTERNAL=
+_OPENSSL_FOUND:INTERNAL=1
+_OPENSSL_INCLUDEDIR:INTERNAL=/usr/include
+_OPENSSL_INCLUDE_DIRS:INTERNAL=/usr/include
+_OPENSSL_LDFLAGS:INTERNAL=-L/usr/lib/x86_64-linux-gnu;-lssl;-lcrypto
+_OPENSSL_LDFLAGS_OTHER:INTERNAL=
+_OPENSSL_LIBDIR:INTERNAL=/usr/lib/x86_64-linux-gnu
+_OPENSSL_LIBRARIES:INTERNAL=ssl;crypto
+_OPENSSL_LIBRARY_DIRS:INTERNAL=/usr/lib/x86_64-linux-gnu
+_OPENSSL_LIBS:INTERNAL=
+_OPENSSL_LIBS_L:INTERNAL=
+_OPENSSL_LIBS_OTHER:INTERNAL=
+_OPENSSL_LIBS_PATHS:INTERNAL=
+_OPENSSL_MODULE_NAME:INTERNAL=openssl
+_OPENSSL_PREFIX:INTERNAL=/usr
+_OPENSSL_STATIC_CFLAGS:INTERNAL=-I/usr/include
+_OPENSSL_STATIC_CFLAGS_I:INTERNAL=
+_OPENSSL_STATIC_CFLAGS_OTHER:INTERNAL=
+_OPENSSL_STATIC_INCLUDE_DIRS:INTERNAL=/usr/include
+_OPENSSL_STATIC_LDFLAGS:INTERNAL=-L/usr/lib/x86_64-linux-gnu;-lssl;-lcrypto;-l:libjitterentropy.a;-lz;-lzstd;-ldl;-pthread
+_OPENSSL_STATIC_LDFLAGS_OTHER:INTERNAL=-pthread
+_OPENSSL_STATIC_LIBDIR:INTERNAL=
+_OPENSSL_STATIC_LIBRARIES:INTERNAL=ssl;crypto;:libjitterentropy.a;z;zstd;dl
+_OPENSSL_STATIC_LIBRARY_DIRS:INTERNAL=/usr/lib/x86_64-linux-gnu
+_OPENSSL_STATIC_LIBS:INTERNAL=
+_OPENSSL_STATIC_LIBS_L:INTERNAL=
+_OPENSSL_STATIC_LIBS_OTHER:INTERNAL=
+_OPENSSL_STATIC_LIBS_PATHS:INTERNAL=
+_OPENSSL_VERSION:INTERNAL=3.5.5
+_OPENSSL_openssl_INCLUDEDIR:INTERNAL=
+_OPENSSL_openssl_LIBDIR:INTERNAL=
+_OPENSSL_openssl_PREFIX:INTERNAL=
+_OPENSSL_openssl_VERSION:INTERNAL=
+__pkg_config_arguments_GLIB:INTERNAL=REQUIRED;glib-2.0
+__pkg_config_arguments__OPENSSL:INTERNAL=QUIET;openssl
+__pkg_config_checked_GLIB:INTERNAL=1
+__pkg_config_checked__OPENSSL:INTERNAL=1
+//ADVANCED property for variable: pkgcfg_lib_GLIB_glib-2.0
+pkgcfg_lib_GLIB_glib-2.0-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: pkgcfg_lib__OPENSSL_crypto
+pkgcfg_lib__OPENSSL_crypto-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: pkgcfg_lib__OPENSSL_ssl
+pkgcfg_lib__OPENSSL_ssl-ADVANCED:INTERNAL=1
+prefix_result:INTERNAL=/usr/lib/x86_64-linux-gnu
 

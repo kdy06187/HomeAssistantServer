@@ -4,7 +4,7 @@
 # compile CXX with /usr/bin/c++
 CXX_DEFINES = 
 
-CXX_INCLUDES = -I/home/kdy/home-assistant-core/include
+CXX_INCLUDES = -I/home/kdy/home-assistant-core/include -I/home/kdy/home-assistant-core/third_party/connectedhomeip/src/include -I/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib -I/home/kdy/home-assistant-core/third_party/connectedhomeip/src/controller -I/home/kdy/home-assistant-core/third_party/connectedhomeip/src
 
 CXX_FLAGS = -std=gnu++17
 
