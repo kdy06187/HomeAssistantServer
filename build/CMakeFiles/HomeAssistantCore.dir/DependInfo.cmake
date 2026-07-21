@@ -9,6 +9,7 @@ set(CMAKE_DEPENDS_LANGUAGES
 # The set of dependency files which are needed:
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
   "/home/kdy/home-assistant-core/src/DeviceManager.cpp" "CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o" "gcc" "CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o.d"
+  "/home/kdy/home-assistant-core/src/MatterController.cpp" "CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o" "gcc" "CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o.d"
   "/home/kdy/home-assistant-core/src/TCPDriver.cpp" "CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o" "gcc" "CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o.d"
   "/home/kdy/home-assistant-core/src/main.cpp" "CMakeFiles/HomeAssistantCore.dir/src/main.cpp.o" "gcc" "CMakeFiles/HomeAssistantCore.dir/src/main.cpp.o.d"
   "" "HomeAssistantCore" "gcc" "CMakeFiles/HomeAssistantCore.dir/link.d"

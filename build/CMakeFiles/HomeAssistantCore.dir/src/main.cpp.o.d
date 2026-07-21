@@ -186,4 +186,5 @@ CMakeFiles/HomeAssistantCore.dir/src/main.cpp.o: \
  /home/kdy/home-assistant-core/include/ProtocolDriver.hpp \
  /home/kdy/home-assistant-core/include/TCPDriver.hpp \
  /usr/include/c++/15/atomic /usr/include/c++/15/bits/atomic_base.h \
- /usr/include/c++/15/bits/atomic_lockfree_defines.h
+ /usr/include/c++/15/bits/atomic_lockfree_defines.h \
+ /home/kdy/home-assistant-core/include/MatterController.hpp

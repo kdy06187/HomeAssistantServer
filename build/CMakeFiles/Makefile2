@@ -85,12 +85,12 @@ clean: CMakeFiles/HomeAssistantCore.dir/clean
 CMakeFiles/HomeAssistantCore.dir/all:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/HomeAssistantCore.dir/build.make CMakeFiles/HomeAssistantCore.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/HomeAssistantCore.dir/build.make CMakeFiles/HomeAssistantCore.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/kdy/home-assistant-core/build/CMakeFiles --progress-num=1,2,3,4 "Built target HomeAssistantCore"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/kdy/home-assistant-core/build/CMakeFiles --progress-num=1,2,3,4,5 "Built target HomeAssistantCore"
 .PHONY : CMakeFiles/HomeAssistantCore.dir/all
 
 # Build rule for subdir invocation for target.
 CMakeFiles/HomeAssistantCore.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/kdy/home-assistant-core/build/CMakeFiles 4
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/kdy/home-assistant-core/build/CMakeFiles 5
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/HomeAssistantCore.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/kdy/home-assistant-core/build/CMakeFiles 0
 .PHONY : CMakeFiles/HomeAssistantCore.dir/rule
@@ -102,7 +102,7 @@ HomeAssistantCore: CMakeFiles/HomeAssistantCore.dir/rule
 # codegen rule for target.
 CMakeFiles/HomeAssistantCore.dir/codegen:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/HomeAssistantCore.dir/build.make CMakeFiles/HomeAssistantCore.dir/codegen
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/kdy/home-assistant-core/build/CMakeFiles --progress-num=1,2,3,4 "Finished codegen for target HomeAssistantCore"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/kdy/home-assistant-core/build/CMakeFiles --progress-num=1,2,3,4,5 "Finished codegen for target HomeAssistantCore"
 .PHONY : CMakeFiles/HomeAssistantCore.dir/codegen
 
 # clean rule for target.

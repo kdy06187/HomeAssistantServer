@@ -153,6 +153,30 @@ src/DeviceManager.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/HomeAssistantCore.dir/build.make CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.s
 .PHONY : src/DeviceManager.cpp.s
 
+src/MatterController.o: src/MatterController.cpp.o
+.PHONY : src/MatterController.o
+
+# target to build an object file
+src/MatterController.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/HomeAssistantCore.dir/build.make CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o
+.PHONY : src/MatterController.cpp.o
+
+src/MatterController.i: src/MatterController.cpp.i
+.PHONY : src/MatterController.i
+
+# target to preprocess a source file
+src/MatterController.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/HomeAssistantCore.dir/build.make CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.i
+.PHONY : src/MatterController.cpp.i
+
+src/MatterController.s: src/MatterController.cpp.s
+.PHONY : src/MatterController.s
+
+# target to generate assembly for a file
+src/MatterController.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/HomeAssistantCore.dir/build.make CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.s
+.PHONY : src/MatterController.cpp.s
+
 src/TCPDriver.o: src/TCPDriver.cpp.o
 .PHONY : src/TCPDriver.o
 
@@ -213,6 +237,9 @@ help:
 	@echo "... src/DeviceManager.o"
 	@echo "... src/DeviceManager.i"
 	@echo "... src/DeviceManager.s"
+	@echo "... src/MatterController.o"
+	@echo "... src/MatterController.i"
+	@echo "... src/MatterController.s"
 	@echo "... src/TCPDriver.o"
 	@echo "... src/TCPDriver.i"
 	@echo "... src/TCPDriver.s"

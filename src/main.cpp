@@ -4,6 +4,7 @@
 #include <sqlite3.h>
 #include "DeviceManager.hpp"
 #include "TCPDriver.hpp"
+#include "MatterController.hpp"
 
 bool initDatabase() {
     sqlite3* db;
@@ -46,15 +47,34 @@ int main() {
     // 3. DeviceManager에 드라이버 등록
     manager.registerDriver(ProtocolType::TCP_DIY, tcpDriver);
 
-    // 4. 관리 대상 기기 임시 등록
-    manager.addDevice("Arduino_1", "거실 전등", ProtocolType::TCP_DIY);
+    
 
-    // 5. 서버 메인 루프 (프로그램이 꺼지지 않게 무한 대기하며 10초마다 명령 테스트)
+    // MatterController 생성 및 초기화
+    MatterController* matterController = new MatterController();
+    if (matterController->Initialize()) {
+        std::cout << "[Main] MatterController 초기화 및 스레드 구동 성공!" << std::endl;
+    } else {
+        std::cerr << "[Main] MatterController 초기화 실패!" << std::endl;
+    }
+    manager.registerDriver(ProtocolType::MATTER, matterController);
+
+    //  관리 대상 기기 임시 등록
+    // manager.addDevice("Arduino_1", "거실 전등", ProtocolType::TCP_DIY);
+    manager.addDevice("1", "스마트 플러그", ProtocolType::MATTER);
+    uint64_t targetNodeId = 1;
+    uint32_t setupPinCode = 34460414140; // ⭐️ 알려주신 실제 기기 핀 코드 적용!
+    uint16_t discriminator = 3840;       // 기기 고유 디스시미네이터
+
+    bool success = matterController->commissionDevice(targetNodeId, setupPinCode, discriminator);
+    //서버 메인 루프 (프로그램이 꺼지지 않게 무한 대기하며 10초마다 명령 테스트)
+    bool isTurnedOn = false;
     while (true) {
         std::this_thread::sleep_for(std::chrono::seconds(10));
-        
-        std::cout << "\n[Main] 시스템 테스트: 'Arduino_1' 기기에 제어 명령 하달!" << std::endl;
-        manager.executeCommand("Arduino_1", "TURN_ON");
+        isTurnedOn = !isTurnedOn;
+        std::string command = isTurnedOn ? "TURN_ON" : "TURN_OFF";
+        std::cout << "\n[Main] 시스템 테스트: 기기에 제어 명령 하달!" << std::endl;
+        // manager.executeCommand("Arduino_1", command);
+        manager.executeCommand("1", command);
     }
 
     return 0;
