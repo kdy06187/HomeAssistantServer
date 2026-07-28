@@ -56,16 +56,30 @@ int main() {
     } else {
         std::cerr << "[Main] MatterController 초기화 실패!" << std::endl;
     }
+
+    std::this_thread::sleep_for(std::chrono::seconds(3));
+    
     manager.registerDriver(ProtocolType::MATTER, matterController);
 
     //  관리 대상 기기 임시 등록
     // manager.addDevice("Arduino_1", "거실 전등", ProtocolType::TCP_DIY);
     manager.addDevice("1", "스마트 플러그", ProtocolType::MATTER);
-    uint64_t targetNodeId = 1;
-    uint32_t setupPinCode = 34460414140; // ⭐️ 알려주신 실제 기기 핀 코드 적용!
-    uint16_t discriminator = 3840;       // 기기 고유 디스시미네이터
 
-    bool success = matterController->commissionDevice(targetNodeId, setupPinCode, discriminator);
+    uint64_t targetNodeId = 1;
+    std::string setupPinCode = "34460414140"; //실제 기기 핀 코드
+
+    std::cout << "\n🔗 [Matter] 상용 기기 커미셔닝(페어링) 프로세스 시작..." << std::endl;
+    bool commissionSuccess = matterController->commissionDevice(targetNodeId, setupPinCode);
+
+    if (commissionSuccess) {
+        std::cout << "🚀 커미셔닝 요청 성공! 로컬 네트워크상에서 기기와 보안 세션(PASE) 협상을 진행합니다." << std::endl;
+    } else {
+        std::cerr << "⚠️ 커미셔닝 요청에 실패했거나 이미 등록된 기기일 수 있습니다." << std::endl;
+    };
+    // 통신 세션 안정화를 위해 잠시 대기 (약 5초)
+    std::cout << "⏳ 기기 네트워크 안정화 대기 중 (5초)..." << std::endl;
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+
     //서버 메인 루프 (프로그램이 꺼지지 않게 무한 대기하며 10초마다 명령 테스트)
     bool isTurnedOn = false;
     while (true) {
@@ -76,6 +90,9 @@ int main() {
         // manager.executeCommand("Arduino_1", command);
         manager.executeCommand("1", command);
     }
-
+    matterController->shutdown();
+    delete matterController;
+    tcpDriver->stopServer();
+    delete tcpDriver;
     return 0;
 }

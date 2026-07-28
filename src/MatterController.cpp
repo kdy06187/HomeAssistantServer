@@ -2,12 +2,17 @@
 
 #include <iostream>
 
-#include <lib/support/CHIPMem.h>
-#include <platform/CHIPDeviceLayer.h>
-#include <controller/CHIPDeviceController.h>
+
+
+using namespace chip;
+using namespace chip::Controller;
+using namespace chip::app::Clusters;
 
 MatterController::MatterController()
-    : mIsInitialized(false),mCommissioner(nullptr){
+    : mIsInitialized(false),
+    mCommissioner(nullptr),
+    mOnDeviceConnectedCallback(OnDeviceConnected, this),
+    mOnDeviceConnectionFailureCallback(OnDeviceConnectionFailure, this){
 }
 
 MatterController::~MatterController() {
@@ -35,6 +40,8 @@ bool MatterController::Initialize(){
         std::cerr << "[MatterController] Chip 스택 초기화 실패" << std::endl;
         return false;
     }
+
+    mCommissioner = new chip::Controller::DeviceCommissioner;
     // 백그라운드 스레드에서 이벤트 루프 실행
     mEventLoopThread = std::thread(&MatterController::RunEventLoop,this);
     
@@ -47,7 +54,7 @@ bool MatterController::Initialize(){
 void MatterController::shutdown(){
     if(!mIsInitialized) return;
     std::cout << "[MatterController] 스택 종료 시작..." << std::endl;
-    chip::DeviceLayer::PlatformMgr().StopEventLoopTask();
+    (void)chip::DeviceLayer::PlatformMgr().StopEventLoopTask();
     if(mEventLoopThread.joinable()){
         mEventLoopThread.join();
     }
@@ -59,90 +66,99 @@ void MatterController::shutdown(){
 }
 
 //기기 등록
-bool MatterController::commissionDevice(uint64_t nodeId, uint32_t setupPinCode, uint16_t discriminator){
-    std::cout << "[MatterController] 기기 등록 시도: NodeId=" << nodeId << ", PinCode=" << setupPinCode << ", Discriminator=" << discriminator << std::endl;
+bool MatterController::commissionDevice(uint64_t nodeId, const std::string& manualPincode){
+    std::cout << "[MatterController] 기기 등록 시도: NodeId=" << nodeId << ", PinCode=" << manualPincode << std::endl;
     if (!mIsInitialized) {
         std::cerr << "[MatterController] ❌ 에러: Matter 스택이 초기화되지 않았습니다!" << std::endl;
         return false;
     }
-    // 2. 내부 Commissioner 객체 존재 여부 확인 및 준비
-    // (Matter SDK의 Commissioner 파이프라인 연동 구간)
-    /*
-    if (mCommissioner == nullptr) {
-        std::cerr << "[MatterController] ❌ Commissioner 객체가 할당되지 않았습니다." << std::endl;
-        return false;
-    }
-    */
-
-    // 3. 페어링 파라미터 구성 및 커미셔닝 명령 하달
-    // 실무에서는 SetupPayload를 파싱하여 포트, 주소, 인증 정보를 세팅합니다.
-    std::cout << "[MatterController] ⏳ 기기 탐색 및 PASE 보안 인증 세션 수립 중..." << std::endl;
-
-    // 예시 시뮬레이션 및 실제 SDK API 호출 연결 부위
-    // chip::Controller::CommissioningParameters params;
-    // params.setupPinCode = setupPinCode;
-    // params.discriminator = discriminator;
-    // params.nodeId = nodeId;
-    // 실제 연동 시 비동기 콜백 혹은 에러 핸들링 코드가 포함됩니다.
-    bool commissioningSuccess = true; // 성공 가정
-
-    if (commissioningSuccess) {
-        std::cout << "✅ [MatterController] 기기 커미셔닝 완료! NodeId [" << nodeId << "] 가 네트워크에 성공적으로 등록되었습니다." << std::endl;
+    std::string chipToolPath = "/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/chip-tool";
+    
+    std::string cmd = chipToolPath + " pairing code " + std::to_string(nodeId) + " " + manualPincode;
+    std::cout << " > Executing: " << cmd << std::endl;
+    int result = std::system(cmd.c_str());
+    if (result == 0) {
+        std::cout << "✅ [MatterController] 보안 패브릭 등록 및 페어링 성공!" << std::endl;
         return true;
     } else {
-        std::cerr << "❌ [MatterController] 기기 커미셔닝 실패" << std::endl;
+        std::cerr << "⚠️ [MatterController] 페어링 명령 실패 (이미 등록되었거나 기기가 오프라인일 수 있음)" << std::endl;
         return false;
     }
-    return true;
+
+    // CHIP_ERROR err = mCommissioner->PairDevice(nodeId, manualPincode.c_str());
+    // if (err == CHIP_NO_ERROR) {
+    //     std::cout << "[MatterController] ✅ 기기 커미셔닝(페어링) 요청 성공! " << std::endl;
+    //     std::cout << " -> 비동기 등록 절차(PASE 보안 세션)가 백그라운드에서 진행됩니다. (Target NodeId: " << nodeId << ")" << std::endl;
+    //     return true;
+    // } else {
+    //     std::cerr << "[MatterController] ❌ 기기 커미셔닝 요청 실패. Error: " << err.Format() << std::endl;
+    //     return false;
+    // }
+
+    // return true;
 }
 // 기기 제어 Turn on
 bool MatterController::turnOn(uint64_t nodeId,uint16_t endpointId){
     std::cout << "[MatterController] 💡 기기 켜기 요청 전송 중..." << std::endl;
     std::cout << " -> Target NodeId: " << nodeId << ", EndpointId: " << endpointId << std::endl;
 
-    if (!mIsInitialized) {
+    if (!mIsInitialized || !mCommissioner) {
         std::cerr << "[MatterController] ❌ 에러: Matter 스택이 초기화되지 않았습니다!" << std::endl;
         return false;
     }
+    // 콜백에서 사용할 수 있도록 현재 명령 상태 저장
+    mCurrentEndpointId = endpointId;
+    mIsTurnOnCommand = true;
 
-    // 실무 Matter SDK 네이티브 제어 영역 (OnOff 클러스터 On 명령 호출)
-    // 예시: 
-    // chip::Controller::MatterCommandSender cmdSender;
-    // CHIP_ERROR err = cmdSender.SendCommand(nodeId, endpointId, ...);
-    
-    CHIP_ERROR err = CHIP_NO_ERROR; // 시뮬레이션을 위한 성공 가정
-
-    if (err == CHIP_NO_ERROR) {
-        std::cout << "✅ [MatterController] 기기 켜기(ON) 명령 전송 성공! (NodeId: " << nodeId << ")" << std::endl;
-        return true;
-    } else {
-        std::cerr << "❌ [MatterController] 기기 켜기 명령 전송 실패. Error Code: " << err.Format() << std::endl;
+    CHIP_ERROR err = mCommissioner->GetConnectedDevice(nodeId, &mOnDeviceConnectedCallback, &mOnDeviceConnectionFailureCallback);
+    if(err != CHIP_NO_ERROR){
+        std::cerr <<"[MatterController] ❌ 기기 켜기 명령 전송 실패. Error Code: " << err.Format() << std::endl;
         return false;
     }
+
+    return true;
 }
 
 // 기기 제어 Turn off
 bool MatterController::turnOff(uint64_t nodeId,uint16_t endpointId){
-    std::cout << "[MatterController] 🔌 기기 끄기 요청 전송 중..." << std::endl;
-    std::cout << " -> Target NodeId: " << nodeId << ", EndpointId: " << endpointId << std::endl;
+    std::cout << "[MatterController] 🔌 기기(" << nodeId << ") 세션 연결 요청 중..." << std::endl;
 
-    if (!mIsInitialized) {
+    if (!mIsInitialized || !mCommissioner) {
         std::cerr << "[MatterController] ❌ 에러: Matter 스택이 초기화되지 않았습니다!" << std::endl;
         return false;
     }
 
-    // 실무 Matter SDK 네이티브 제어 영역 (OnOff 클러스터 Off 명령 호출)
-    CHIP_ERROR err = CHIP_NO_ERROR; // 시뮬레이션을 위한 성공 가정
-
-    if (err == CHIP_NO_ERROR) {
-        std::cout << "✅ [MatterController] 기기 끄기(OFF) 명령 전송 성공! (NodeId: " << nodeId << ")" << std::endl;
-        return true;
-    } else {
-        std::cerr << "❌ [MatterController] 기기 끄기 명령 전송 실패. Error Code: " << err.Format() << std::endl;
-        return false;
-    }
+    mCurrentEndpointId = endpointId;
+    mIsTurnOnCommand = false; // Off 명령임을 명시
+    CHIP_ERROR err = mCommissioner->GetConnectedDevice(nodeId, &mOnDeviceConnectedCallback, &mOnDeviceConnectionFailureCallback);
+    return err == CHIP_NO_ERROR;
 }
 
+void MatterController::OnDeviceConnected(void* context, chip::Messaging::ExchangeManager& exchangeMgr, const chip::SessionHandle& sessionHandle){
+    MatterController* self = static_cast<MatterController*>(context);
+    std::cout << "[MatterController] 암호화 세션 획득. 실제 제어 명령 발송..." << std::endl;
+
+    // SDK에서 명령 성공/실패 시 불려질 인라인 람다(Lambda) 함수
+    auto onSuccess = [](const chip::app::ConcreteCommandPath& path, const chip::app::StatusIB& status, const auto& dataResponse) {
+        std::cout << "[MatterController] 기기 제어 완료 (ACK 수신 성공!)" << std::endl;
+    };
+
+    auto onFailure = [](CHIP_ERROR error) {
+        std::cerr << "[MatterController] 명령 실행 실패 (Timeout 등): " << error.Format() << std::endl;
+    };
+
+    // 저장해둔 플래그에 따라 On 또는 Off 클러스터 명령 생성 및 발송
+    if (self->mIsTurnOnCommand) {
+        OnOff::Commands::On::Type onCommand;
+        (void)chip::Controller::InvokeCommandRequest(&exchangeMgr, sessionHandle, self->mCurrentEndpointId, onCommand, onSuccess, onFailure);
+    } else {
+        OnOff::Commands::Off::Type offCommand;
+        (void)chip::Controller::InvokeCommandRequest(&exchangeMgr, sessionHandle, self->mCurrentEndpointId, offCommand, onSuccess, onFailure);
+    }
+}
+void MatterController::OnDeviceConnectionFailure(void* context, const chip::ScopedNodeId& peerId, CHIP_ERROR error) {
+    std::cerr << "[MatterController] 기기와 통신 불가 (오프라인 상태일 수 있음). Error: " << error.Format() << std::endl;
+}
 // 인터페이스 구현
 void MatterController::sendCommand(std::string deviceId, std::string command){
     uint64_t nodeId = std::stoull(deviceId);

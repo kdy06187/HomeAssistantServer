@@ -150,35 +150,8 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o: \
  /usr/include/c++/15/bits/this_thread_sleep.h \
  /usr/include/c++/15/bits/chrono.h /usr/include/c++/15/ratio \
  /usr/include/c++/15/limits /usr/include/c++/15/ctime \
- /usr/include/c++/15/bits/parse_numbers.h /usr/include/c++/15/iostream \
- /usr/include/c++/15/ostream /usr/include/c++/15/bits/ostream.h \
- /usr/include/c++/15/ios /usr/include/c++/15/exception \
- /usr/include/c++/15/bits/exception_ptr.h \
- /usr/include/c++/15/bits/cxxabi_init_exception.h \
- /usr/include/c++/15/typeinfo /usr/include/c++/15/bits/nested_exception.h \
- /usr/include/c++/15/bits/ios_base.h /usr/include/c++/15/ext/atomicity.h \
- /usr/include/x86_64-linux-gnu/c++/15/bits/atomic_word.h \
- /usr/include/x86_64-linux-gnu/sys/single_threaded.h \
- /usr/include/c++/15/bits/locale_classes.h \
- /usr/include/c++/15/bits/locale_classes.tcc \
- /usr/include/c++/15/system_error \
- /usr/include/x86_64-linux-gnu/c++/15/bits/error_constants.h \
- /usr/include/c++/15/stdexcept /usr/include/c++/15/streambuf \
- /usr/include/c++/15/bits/streambuf.tcc \
- /usr/include/c++/15/bits/basic_ios.h \
- /usr/include/c++/15/bits/locale_facets.h /usr/include/c++/15/cwctype \
- /usr/include/wctype.h /usr/include/x86_64-linux-gnu/bits/wctype-wchar.h \
- /usr/include/x86_64-linux-gnu/c++/15/bits/ctype_base.h \
- /usr/include/c++/15/bits/streambuf_iterator.h \
- /usr/include/x86_64-linux-gnu/c++/15/bits/ctype_inline.h \
- /usr/include/c++/15/bits/locale_facets.tcc \
- /usr/include/c++/15/bits/basic_ios.tcc \
- /usr/include/c++/15/bits/ostream.tcc /usr/include/c++/15/istream \
- /usr/include/c++/15/bits/istream.tcc \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/CHIPMem.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CriticalFailure.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPError.h \
- /usr/include/inttypes.h \
+ /usr/include/c++/15/bits/parse_numbers.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPCore.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPConfig.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/core/CHIPBuildConfig.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleConfig.h \
@@ -194,8 +167,13 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o: \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/inet/InetConfig.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/inet/InetBuildConfig.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/platform/Linux/InetPlatformConfig.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/TypeTraits.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemLayer.h \
  /usr/include/c++/15/utility /usr/include/c++/15/bits/stl_relops.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPCallback.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CriticalFailure.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPError.h \
+ /usr/include/inttypes.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/TypeTraits.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/CodeUtils.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/ErrorStr.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/Assertions.h \
@@ -205,26 +183,27 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o: \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/DLLUtil.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/EnforceFormat.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/logging/Constants.h \
- /usr/include/c++/15/memory /usr/include/c++/15/bits/stl_tempbuf.h \
+ /usr/include/c++/15/typeinfo /usr/include/c++/15/memory \
+ /usr/include/c++/15/bits/stl_tempbuf.h \
  /usr/include/c++/15/bits/stl_uninitialized.h \
  /usr/include/c++/15/bits/stl_raw_storage_iter.h \
  /usr/include/c++/15/bits/align.h /usr/include/c++/15/bits/shared_ptr.h \
  /usr/include/c++/15/bits/shared_ptr_base.h \
  /usr/include/c++/15/bits/allocated_ptr.h \
  /usr/include/c++/15/ext/aligned_buffer.h \
- /usr/include/c++/15/ext/concurrence.h \
+ /usr/include/c++/15/ext/atomicity.h \
+ /usr/include/x86_64-linux-gnu/c++/15/bits/atomic_word.h \
+ /usr/include/x86_64-linux-gnu/sys/single_threaded.h \
+ /usr/include/c++/15/ext/concurrence.h /usr/include/c++/15/exception \
+ /usr/include/c++/15/bits/exception_ptr.h \
+ /usr/include/c++/15/bits/cxxabi_init_exception.h \
+ /usr/include/c++/15/bits/nested_exception.h \
  /usr/include/c++/15/bits/shared_ptr_atomic.h \
  /usr/include/c++/15/bits/atomic_base.h \
  /usr/include/c++/15/bits/atomic_lockfree_defines.h \
  /usr/include/c++/15/backward/auto_ptr.h \
  /usr/include/c++/15/pstl/glue_memory_defs.h \
- /usr/include/c++/15/pstl/execution_defs.h /usr/include/c++/15/stdlib.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/include/platform/CHIPDeviceLayer.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/include/platform/CHIPDeviceConfig.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/platform/Linux/CHIPDevicePlatformConfig.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPCore.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemLayer.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPCallback.h \
+ /usr/include/c++/15/pstl/execution_defs.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/LambdaBridge.h \
  /usr/include/string.h /usr/include/strings.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemClock.h \
@@ -234,6 +213,13 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o: \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemEvent.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/IntrusiveList.h \
  /usr/include/c++/15/iterator /usr/include/c++/15/bits/stream_iterator.h \
+ /usr/include/c++/15/bits/streambuf_iterator.h \
+ /usr/include/c++/15/streambuf /usr/include/c++/15/bits/ios_base.h \
+ /usr/include/c++/15/bits/locale_classes.h \
+ /usr/include/c++/15/bits/locale_classes.tcc \
+ /usr/include/c++/15/system_error \
+ /usr/include/x86_64-linux-gnu/c++/15/bits/error_constants.h \
+ /usr/include/c++/15/stdexcept /usr/include/c++/15/bits/streambuf.tcc \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SocketEvents.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/BitFlags.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/Ble.h \
@@ -283,9 +269,28 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o: \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio-byteorder-big.hpp \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio-byteorder-little.hpp \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio.hpp \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/include/platform/CHIPDeviceError.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/include/platform/ConfigurationManager.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/setup_payload/CHIPAdditionalDataPayloadBuildConfig.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/controller/CHIPDeviceController.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/AppConfig.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/app/AppBuildConfig.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/CASEClientPool.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/CASEClient.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/credentials/GroupDataProvider.h \
+ /usr/include/c++/15/optional \
+ /usr/include/c++/15/bits/enable_special_members.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/util/basic-types.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/DataModelTypes.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPVendorIdentifiers.hpp \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/GroupId.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/NodeId.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/PasscodeId.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/crypto/CHIPCryptoPAL.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/crypto/CryptoBuildConfig.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/Optional.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/InPlace.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/Base64.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/BufferReader.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/SafePointerCast.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/StringBuilder.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/ClusterEnums.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/zzz_generated/app-common/app-common/zap-generated/cluster-enums.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/zzz_generated/app-common/clusters/shared/Enums.h \
@@ -447,33 +452,52 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o: \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/zzz_generated/app-common/clusters/WindowCovering/Enums.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/zzz_generated/app-common/clusters/ZoneManagement/Enums.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/common/CompatEnumNames.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/include/platform/PersistedStorage.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/include/platform/internal/CHIPDeviceLayerInternal.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/platform/Linux/ConfigurationManagerImpl.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/include/platform/internal/DeviceNetworkInfo.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/FixedBuffer.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/include/platform/internal/GenericConfigurationManagerImpl.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/platform/Linux/PosixConfig.h \
- /usr/include/c++/15/functional /usr/include/c++/15/bits/std_function.h \
- /usr/include/c++/15/unordered_map \
- /usr/include/c++/15/bits/unordered_map.h \
- /usr/include/c++/15/bits/hashtable.h \
- /usr/include/c++/15/bits/hashtable_policy.h \
- /usr/include/c++/15/bits/enable_special_members.h \
- /usr/include/c++/15/bits/node_handle.h \
- /usr/include/c++/15/bits/erase_if.h /usr/include/c++/15/vector \
- /usr/include/c++/15/bits/stl_vector.h \
- /usr/include/c++/15/bits/stl_bvector.h \
- /usr/include/c++/15/bits/vector.tcc \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/include/platform/ConnectivityManager.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/icd/server/ICDServerConfig.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/app/icd/server/ICDServerBuildConfig.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/inet/UDPEndPoint.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/inet/EndPointBasis.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/ReferenceCounted.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/CHIPMemString.h \
+ /usr/include/c++/15/stdlib.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/ScopedMemoryBuffer.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/CHIPMem.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/CommonIterator.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/messaging/ExchangeMgr.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/Pool.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/Iterators.h \
  /usr/include/c++/15/atomic \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/ReferenceCountedPtr.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/messaging/ExchangeContext.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/ReferenceCounted.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/ReferenceCountedHandle.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/messaging/ExchangeDelegate.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/messaging/ApplicationExchangeDispatch.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/messaging/ExchangeMessageDispatch.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/messaging/Flags.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/protocols/Protocols.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/SessionManager.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/credentials/FabricTable.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/credentials/CHIPCert.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/asn1/ASN1.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/asn1/ASN1OID.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/asn1/ASN1Error.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/asn1/ASN1Config.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CASEAuthTag.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/PeerId.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/TLV.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/TLVCommon.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/TLVTags.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/TLVTypes.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/BitMask.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/TLVBackingStore.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/TLVReader.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/TLVWriter.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/TLVUpdater.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/credentials/CHIPCertificateSet.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/credentials/CertificateValidityPolicy.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/Variant.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/credentials/LastKnownGoodTime.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPPersistentStorageDelegate.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/credentials/OperationalCertificateStore.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/crypto/OperationalKeystore.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPSafeCasts.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/ScopedNodeId.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/crypto/RandUtils.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/crypto/SessionKeystore.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/inet/IPAddress.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/inet/InetError.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/inet/IANAConstants.h \
@@ -489,27 +513,150 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o: \
  /usr/include/x86_64-linux-gnu/bits/types/struct_osockaddr.h \
  /usr/include/netinet/in.h /usr/include/x86_64-linux-gnu/bits/in.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/inet/InetInterface.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/inet/IPPacketInfo.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/messaging/ReliableMessageProtocolConfig.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/protocols/secure_channel/Constants.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/CryptoContext.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/raw/MessageHeader.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/GroupPeerMessageCounter.h \
+ /usr/include/c++/15/bitset \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/PeerMessageCounter.h \
+ /usr/include/c++/15/variant /usr/include/c++/15/bits/monostate.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/GroupSession.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/Session.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/access/SubjectDescriptor.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/access/AuthMode.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/messaging/SessionParameters.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/include/platform/LockTracker.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/include/platform/CHIPDeviceConfig.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/platform/Linux/CHIPDevicePlatformConfig.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/SessionDelegate.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/raw/TCP.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/inet/TCPEndPoint.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/inet/EndPointBasis.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/ReferenceCountedPtr.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/inet/InetLayer.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/ObjectLifeCycle.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/Pool.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/Iterators.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/include/platform/LockTracker.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemStats.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/PoolWrapper.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/raw/ActiveTCPConnectionState.h \
+ /usr/include/c++/15/functional /usr/include/c++/15/bits/std_function.h \
+ /usr/include/c++/15/unordered_map \
+ /usr/include/c++/15/bits/unordered_map.h \
+ /usr/include/c++/15/bits/hashtable.h \
+ /usr/include/c++/15/bits/hashtable_policy.h \
+ /usr/include/c++/15/bits/node_handle.h \
+ /usr/include/c++/15/bits/erase_if.h /usr/include/c++/15/vector \
+ /usr/include/c++/15/bits/stl_vector.h \
+ /usr/include/c++/15/bits/stl_bvector.h \
+ /usr/include/c++/15/bits/vector.tcc \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/raw/PeerAddress.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/raw/TCPConfig.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/raw/Base.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/inet/UDPEndPoint.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/inet/IPPacketInfo.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/MessageCounterManagerInterface.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/SecureSession.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/SessionMessageCounter.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/MessageCounter.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/MessageStats.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/SecureSessionTable.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/SortUtils.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/TimeSource.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/SessionHolder.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/SessionMessageDelegate.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/TransportMgr.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/logging/CHIPLogging.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/logging/BinaryLogging.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/TransportMgrBase.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/raw/Tuple.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/UnauthenticatedSessionTable.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/SessionConnectionDelegate.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/messaging/ReliableMessageContext.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/messaging/ReliableMessageMgr.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/messaging/ReliableMessageAnalyticsDelegate.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/SessionUpdateDelegate.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/protocols/secure_channel/CASESession.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/protocols/secure_channel/CASEDestinationId.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/protocols/secure_channel/PairingSession.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/protocols/secure_channel/SessionEstablishmentDelegate.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/protocols/secure_channel/StatusReport.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/protocols/secure_channel/SessionEstablishmentExchangeDispatch.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/protocols/secure_channel/SessionResumptionStorage.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/TLVPacketBufferBackingStore.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/CASESessionManager.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/OperationalSessionSetup.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/DeviceProxy.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/CommandSender.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/CommandSenderLegacyCallback.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/ConcreteCommandPath.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/ConcreteClusterPath.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/MessageDef/StatusIB.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/MessageDef/StructBuilder.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/MessageDef/Builder.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/MessageDef/Parser.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/data-model/Nullable.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/attribute-storage-null-handling.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/MessageDef/StructParser.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/protocols/interaction_model/Constants.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/protocols/interaction_model/StatusCode.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/protocols/interaction_model/StatusCodeList.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/CommandPathParams.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/MessageDef/InvokeRequestMessage.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/MessageDef/InvokeRequests.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/MessageDef/ArrayBuilder.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/MessageDef/ArrayParser.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/MessageDef/CommandDataIB.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/MessageDef/CommandPathIB.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/MessageDef/ListBuilder.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/MessageDef/ListParser.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/MessageDef/MessageBuilder.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/SpecificationDefinedRevisions.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/MessageDef/MessageParser.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/MessageDef/InvokeResponseMessage.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/MessageDef/InvokeResponseIBs.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/MessageDef/InvokeResponseIB.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/MessageDef/CommandStatusIB.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/PendingResponseTrackerImpl.h \
+ /usr/include/c++/15/unordered_set \
+ /usr/include/c++/15/bits/unordered_set.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/PendingResponseTracker.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/data-model/EncodableToTLV.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/data-model/Encode.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/data-model/FabricScoped.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/data-model/BasicTypes.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/TLVDebug.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/messaging/ExchangeHolder.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/address_resolve/AddressResolve.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/address_resolve/AddressResolve_DefaultImpl.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/dnssd/IPAddressSorter.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/dnssd/Resolver.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/dnssd/Constants.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/Fold.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/dnssd/Types.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/BytesToHex.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/GroupedCallbackList.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/raw/UDP.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/OperationalSessionSetupPool.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/include/platform/CHIPDeviceLayer.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/include/platform/CHIPDeviceError.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/include/platform/ConfigurationManager.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/setup_payload/CHIPAdditionalDataPayloadBuildConfig.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/include/platform/PersistedStorage.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/include/platform/internal/CHIPDeviceLayerInternal.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/platform/Linux/ConfigurationManagerImpl.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/include/platform/internal/DeviceNetworkInfo.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/FixedBuffer.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/include/platform/internal/GenericConfigurationManagerImpl.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/platform/Linux/PosixConfig.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/include/platform/ConnectivityManager.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/icd/server/ICDServerConfig.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/app/icd/server/ICDServerBuildConfig.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/include/platform/CHIPDeviceEvent.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/DataModelTypes.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPVendorIdentifiers.hpp \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/GroupId.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/NodeId.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/PasscodeId.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/platform/Linux/CHIPDevicePlatformEvent.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/wifipaf/WiFiPAFRole.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/util/basic-types.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/inet/TCPEndPoint.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/wifipaf/WiFiPAFLayer.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/wifipaf/WiFiPAFConfig.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/wifipaf/WiFiPAFEndPoint.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/BufferReader.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/wifipaf/WiFiPAFTP.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/wifipaf/WiFiPAFLayerDelegate.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/platform/Linux/ConnectivityManagerImpl.h \
@@ -818,41 +965,12 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o: \
  /usr/include/c++/15/bits/unique_lock.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemMutex.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/platform/Linux/bluez/BluezObjectList.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/logging/CHIPLogging.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/logging/BinaryLogging.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/platform/Linux/bluez/BluezObjectIterator.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/platform/Linux/bluez/ChipDeviceScanner.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/include/platform/internal/GenericConnectivityManagerImpl_Thread.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/include/platform/ThreadStackManager.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/include/platform/NetworkCommissioning.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/credentials/CHIPCert.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/crypto/CHIPCryptoPAL.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/crypto/CryptoBuildConfig.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/Optional.h \
- /usr/include/c++/15/optional \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/InPlace.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/Base64.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/SafePointerCast.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/StringBuilder.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/asn1/ASN1.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/asn1/ASN1OID.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/asn1/ASN1Error.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/asn1/ASN1Config.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CASEAuthTag.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/PeerId.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/TLV.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/TLVCommon.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/TLVTags.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/TLVTypes.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/BitMask.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/ScopedMemoryBuffer.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/TLVBackingStore.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/TLVReader.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/TLVWriter.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/TLVUpdater.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPSafeCasts.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/ThreadOperationalDataset.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/Variant.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/platform/Linux/ThreadStackManagerImpl.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/platform/Linux/dbus/openthread/DBusOpenthread.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/include/platform/internal/GenericConnectivityManagerImpl_WiFi.h \
@@ -870,9 +988,20 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o: \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/platform/Linux/CHIPLinuxStorage.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/platform/Linux/CHIPLinuxStorageIni.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/inipp/repo/inipp/inipp/inipp.h \
- /usr/include/c++/15/list /usr/include/c++/15/bits/stl_list.h \
- /usr/include/c++/15/bits/list.tcc /usr/include/c++/15/map \
- /usr/include/c++/15/bits/stl_tree.h /usr/include/c++/15/bits/stl_map.h \
+ /usr/include/c++/15/iostream /usr/include/c++/15/ostream \
+ /usr/include/c++/15/bits/ostream.h /usr/include/c++/15/ios \
+ /usr/include/c++/15/bits/basic_ios.h \
+ /usr/include/c++/15/bits/locale_facets.h /usr/include/c++/15/cwctype \
+ /usr/include/wctype.h /usr/include/x86_64-linux-gnu/bits/wctype-wchar.h \
+ /usr/include/x86_64-linux-gnu/c++/15/bits/ctype_base.h \
+ /usr/include/x86_64-linux-gnu/c++/15/bits/ctype_inline.h \
+ /usr/include/c++/15/bits/locale_facets.tcc \
+ /usr/include/c++/15/bits/basic_ios.tcc \
+ /usr/include/c++/15/bits/ostream.tcc /usr/include/c++/15/istream \
+ /usr/include/c++/15/bits/istream.tcc /usr/include/c++/15/list \
+ /usr/include/c++/15/bits/stl_list.h /usr/include/c++/15/bits/list.tcc \
+ /usr/include/c++/15/map /usr/include/c++/15/bits/stl_tree.h \
+ /usr/include/c++/15/bits/stl_map.h \
  /usr/include/c++/15/bits/stl_multimap.h /usr/include/c++/15/sstream \
  /usr/include/c++/15/bits/sstream.tcc \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/include/platform/PlatformManager.h \
@@ -895,133 +1024,6 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o: \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemLayerImplSelect.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemTimer.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/WakeEvent.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/controller/CHIPDeviceController.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/AppConfig.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/app/AppBuildConfig.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/CASEClientPool.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/CASEClient.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/credentials/GroupDataProvider.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/CHIPMemString.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/CommonIterator.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/messaging/ExchangeMgr.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/messaging/ExchangeContext.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/messaging/ExchangeDelegate.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/messaging/ApplicationExchangeDispatch.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/messaging/ExchangeMessageDispatch.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/messaging/Flags.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/protocols/Protocols.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/SessionManager.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/credentials/FabricTable.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/credentials/CHIPCertificateSet.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/credentials/CertificateValidityPolicy.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/credentials/LastKnownGoodTime.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPPersistentStorageDelegate.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/credentials/OperationalCertificateStore.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/crypto/OperationalKeystore.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/ScopedNodeId.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/crypto/RandUtils.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/crypto/SessionKeystore.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/messaging/ReliableMessageProtocolConfig.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/protocols/secure_channel/Constants.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/CryptoContext.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/raw/MessageHeader.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/GroupPeerMessageCounter.h \
- /usr/include/c++/15/bitset \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/PeerMessageCounter.h \
- /usr/include/c++/15/variant /usr/include/c++/15/bits/monostate.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/GroupSession.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/Session.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/access/SubjectDescriptor.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/access/AuthMode.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/messaging/SessionParameters.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/SessionDelegate.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/raw/TCP.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/PoolWrapper.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/raw/ActiveTCPConnectionState.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/raw/PeerAddress.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/raw/TCPConfig.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/raw/Base.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/MessageCounterManagerInterface.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/SecureSession.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/SessionMessageCounter.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/MessageCounter.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/MessageStats.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/SecureSessionTable.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/SortUtils.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/TimeSource.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/SessionHolder.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/SessionMessageDelegate.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/TransportMgr.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/TransportMgrBase.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/raw/Tuple.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/UnauthenticatedSessionTable.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/SessionConnectionDelegate.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/messaging/ReliableMessageContext.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/messaging/ReliableMessageMgr.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/messaging/ReliableMessageAnalyticsDelegate.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/SessionUpdateDelegate.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/protocols/secure_channel/CASESession.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/protocols/secure_channel/CASEDestinationId.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/protocols/secure_channel/PairingSession.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/protocols/secure_channel/SessionEstablishmentDelegate.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/protocols/secure_channel/StatusReport.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/protocols/secure_channel/SessionEstablishmentExchangeDispatch.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/protocols/secure_channel/SessionResumptionStorage.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/TLVPacketBufferBackingStore.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/CASESessionManager.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/OperationalSessionSetup.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/DeviceProxy.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/CommandSender.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/CommandSenderLegacyCallback.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/ConcreteCommandPath.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/ConcreteClusterPath.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/MessageDef/StatusIB.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/MessageDef/StructBuilder.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/MessageDef/Builder.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/MessageDef/Parser.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/data-model/Nullable.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/attribute-storage-null-handling.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/MessageDef/StructParser.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/protocols/interaction_model/Constants.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/protocols/interaction_model/StatusCode.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/protocols/interaction_model/StatusCodeList.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/CommandPathParams.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/MessageDef/InvokeRequestMessage.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/MessageDef/InvokeRequests.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/MessageDef/ArrayBuilder.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/MessageDef/ArrayParser.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/MessageDef/CommandDataIB.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/MessageDef/CommandPathIB.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/MessageDef/ListBuilder.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/MessageDef/ListParser.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/MessageDef/MessageBuilder.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/SpecificationDefinedRevisions.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/MessageDef/MessageParser.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/MessageDef/InvokeResponseMessage.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/MessageDef/InvokeResponseIBs.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/MessageDef/InvokeResponseIB.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/MessageDef/CommandStatusIB.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/PendingResponseTrackerImpl.h \
- /usr/include/c++/15/unordered_set \
- /usr/include/c++/15/bits/unordered_set.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/PendingResponseTracker.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/data-model/EncodableToTLV.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/data-model/Encode.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/data-model/FabricScoped.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/data-model/BasicTypes.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/TLVDebug.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/messaging/ExchangeHolder.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/address_resolve/AddressResolve.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/address_resolve/AddressResolve_DefaultImpl.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/dnssd/IPAddressSorter.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/dnssd/Resolver.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/dnssd/Constants.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/Fold.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/dnssd/Types.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/BytesToHex.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/GroupedCallbackList.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/transport/raw/UDP.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/OperationalSessionSetupPool.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/ClusterStateCache.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/AttributePathParams.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/app/ConcreteAttributePath.h \

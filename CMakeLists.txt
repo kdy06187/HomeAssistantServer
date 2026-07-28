@@ -13,7 +13,12 @@ find_package(OpenSSL REQUIRED)
 
 # Matter SDK 경로 설정 (⚠️ 주의: 실제 학생님의 환경에 맞게 수정해야 합니다)
 set(MATTER_SDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/connectedhomeip") # Matter SDK 최상위 디렉토리
-set(MATTER_OUT_DIR "${MATTER_SDK_DIR}/out/host/lib") # GN/Ninja로 빌드된 결과물(.a 파일들)이 있는 곳
+set(MATTER_OUT_DIR "${MATTER_SDK_DIR}/out/host") # GN/Ninja로 빌드된 결과물(.a 파일들)이 있는 곳
+file(GLOB_RECURSE MATTER_LIBS 
+    "${MATTER_OUT_DIR}/lib/*.a" 
+    "${MATTER_OUT_DIR}/obj/*.a"
+)
+# message(FATAL_ERROR "🔥 찾은 Matter 라이브러리 개수 및 목록: ${MATTER_LIBS}")
 # 헤더 파일들이 있는 include 폴더를 경로에 추가
 include_directories(include)
 
@@ -39,24 +44,33 @@ add_executable(${PROJECT_NAME}
     src/TCPDriver.cpp
     src/MatterController.cpp
 )
-
+target_include_directories(HomeAssistantCore PRIVATE
+    ${GLIB2_INCLUDE_DIRS}
+)
+target_link_libraries(${PROJECT_NAME} PRIVATE
+    -Wl,--start-group
+    ${MATTER_LIBS}
+    ${GLIB2_LIBRARIES}
+    -Wl,--end-group
+)
 # SQLite DB와 스레드 라이브러리 연결
 target_link_libraries(${PROJECT_NAME} PRIVATE 
+    OpenSSL::SSL
+    OpenSSL::Crypto    
+    event
+    event_pthreads
     Threads::Threads 
     sqlite3
-    
-
     # Matter SDK에서 뽑아낸 정적 라이브러리들 (.a)
     # (참고: 빌드 옵션에 따라 라이브러리 이름이 CHIP, CHIPController 등으로 다를 수 있습니다)
-   
-    ${MATTER_OUT_DIR}/libCHIP.a
-    
-    OpenSSL::SSL
-    OpenSSL::Crypto
-    ${GLIB_LIBRARIES}
-    
+    # ${MATTER_OUT_DIR}/libCHIP.a
+
     # 리눅스/BLE 통신에 필요한 시스템 라이브러리들
     resolv # DNS 해석용
+    avahi-client
+    avahi-common
+    dbus-1
+    
 )
 
 # Matter용 리눅스 환경 매크로 스위치 켜기
@@ -85,10 +99,3 @@ target_include_directories(HomeAssistantCore PRIVATE
 )
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(GLIB2 REQUIRED glib-2.0 gio-2.0)# Matter Device Layer에서 종종 사용함
-target_include_directories(HomeAssistantCore PRIVATE
-    ${GLIB2_INCLUDE_DIRS}
-)
-
-target_link_libraries(HomeAssistantCore PRIVATE
-    ${GLIB2_LIBRARIES}
-)

@@ -4,12 +4,18 @@
 #include <cstdint>
 #include <thread>
 
-// Matter SDK의 핵심 헤더
-namespace chip {
-    namespace Controller {
-        class DeviceCommissioner; // Matter SDK의 커미셔너 전방 선언
-    }
-}
+#include <lib/core/CHIPCore.h>
+#include <lib/core/CHIPError.h>
+#include <controller/CHIPDeviceController.h>
+#include <app-common/zap-generated/cluster-objects.h>
+#include <setup_payload/SetupPayload.h>
+#include <setup_payload/ManualSetupPayloadParser.h>
+// // Matter SDK의 핵심 헤더
+// namespace chip {
+//     namespace Controller {
+//         class DeviceCommissioner; // Matter SDK의 커미셔너 전방 선언
+//     }
+// }
 
 class MatterController : public ProtocolDriver {
 public:
@@ -40,7 +46,7 @@ public:
      * @param discriminator 기기의 4자리 식별자
      * @return 커미셔닝 성공 여부
      */
-    bool commissionDevice(uint64_t nodeId, uint32_t setupPinCode, uint16_t discriminator);
+    bool commissionDevice(uint64_t nodeId, const std::string& manualPincode);
 
     // =========================================================
     // 3. 기기 제어 (제어 - Controller 역할)
@@ -62,5 +68,12 @@ private:
     chip::Controller::DeviceCommissioner* mCommissioner;
 
     // 내부적으로 이벤트를 처리하거나 콜백을 받을 프라이빗 메서드들
-    // void onDeviceConnected(...);
+    static void OnDeviceConnected(void* context, chip::Messaging::ExchangeManager& exchangeMgr, const chip::SessionHandle& sessionHandle);
+    static void OnDeviceConnectionFailure(void* context, const chip::ScopedNodeId& nodeId, CHIP_ERROR error);
+    // Matter SDK의 콜백을 래핑하여 C++ 스타일로 처리하기 위한 Callback 객체들
+    chip::Callback::Callback<chip::OnDeviceConnected> mOnDeviceConnectedCallback;
+    chip::Callback::Callback<chip::OnDeviceConnectionFailure> mOnDeviceConnectionFailureCallback;
+    // 현재 제어 중인 기기의 NodeId와 EndpointId를 저장
+    uint16_t mCurrentEndpointId;
+    bool mIsTurnOnCommand;
 };
