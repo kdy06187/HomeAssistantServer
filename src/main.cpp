@@ -69,7 +69,8 @@ int main() {
     std::string setupPinCode = "34460414140"; //실제 기기 핀 코드
 
     std::cout << "\n🔗 [Matter] 상용 기기 커미셔닝(페어링) 프로세스 시작..." << std::endl;
-    bool commissionSuccess = matterController->commissionDevice(targetNodeId, setupPinCode);
+    bool commissionSuccess = matterController->commissionDevice(targetNodeId, setupPinCode,
+                                                        "U+Net8683", "38835318M#");
 
     if (commissionSuccess) {
         std::cout << "🚀 커미셔닝 요청 성공! 로컬 네트워크상에서 기기와 보안 세션(PASE) 협상을 진행합니다." << std::endl;
