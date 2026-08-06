@@ -37,6 +37,39 @@ bool MatterController::executeCommand(const std::string& cmd) {
         return false;
     }
 }
+
+void MatterController::removeDeviceRegistration(uint64_t nodeId) {
+    std::cout << "[MatterController] ⚠️ 기기(" << nodeId << ")의 오프라인 상태가 지속되어 등록을 해제합니다." << std::endl;
+
+    // 1. 텍스트 파일에서 해당 기기 번호만 삭제
+    std::ifstream fileIn(mConfigFilePath);
+    std::vector<std::string> lines;
+    std::string line;
+    
+    if (fileIn.is_open()) {
+        while (std::getline(fileIn, line)) {
+            // 삭제하려는 nodeId가 아닌 줄만 백업해 둠
+            if (line != std::to_string(nodeId)) {
+                lines.push_back(line);
+            }
+        }
+        fileIn.close();
+    }
+
+    // 백업해둔 줄들만 다시 파일에 덮어쓰기 (새로고침)
+    std::ofstream fileOut(mConfigFilePath, std::ios::trunc);
+    for (const auto& l : lines) {
+        fileOut << l << "\n";
+    }
+    fileOut.close();
+    
+    // 2. chip-tool의 내부 KVS 데이터베이스에서도 이별 통보 (unpair)
+    std::string unpairCmd = mChipToolPath + " pairing unpair " + std::to_string(nodeId);
+    std::cout << "[MatterController] 🧹 칩툴(chip-tool) 내부 기억 삭제 중..." << std::endl;
+    std::system(unpairCmd.c_str()); // 굳이 성공 여부를 따지지 않고 던집니다.
+
+    std::cout << "[MatterController] ✅ 기기(" << nodeId << ")가 시스템에서 완전히 삭제되었습니다." << std::endl;
+}
 bool MatterController::checkDeviceRegistered(uint64_t nodeId) {
     std::ifstream file(mConfigFilePath);
     std::string line;
@@ -100,11 +133,12 @@ bool MatterController::turnOff(uint64_t nodeId,uint16_t endpointId){
 }
 
 // 인터페이스 구현
-void MatterController::sendCommand(std::string deviceId, std::string command){
+bool MatterController::sendCommand(std::string deviceId, std::string command){
     uint64_t nodeId = std::stoull(deviceId);
     if(command == "ON"|| command == "TURN_ON"){
-        turnOn(nodeId,1);
+        return turnOn(nodeId,1);
     } else if(command == "OFF"|| command == "TURN_OFF"){
-        turnOff(nodeId,1);
+        return turnOff(nodeId,1);
     }
+    return false;
 }

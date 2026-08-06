@@ -3,51 +3,30 @@
 #include <chrono>
 #include <sqlite3.h>
 #include "DeviceManager.hpp"
+#include "DatabaseManager.hpp"
 #include "TCPDriver.hpp"
 #include "MatterController.hpp"
-
-bool initDatabase() {
-    sqlite3* db;
-    int rc = sqlite3_open("../db/home_assistant.db", &db);
-    if (rc) {
-        std::cerr << "DB 연결 실패: " << sqlite3_errmsg(db) << std::endl;
-        return false;
-    }
-    
-    std::string sql = "CREATE TABLE IF NOT EXISTS devices("
-                      "device_id TEXT PRIMARY KEY, "
-                      "display_name TEXT, "
-                      "protocol_type INTEGER, "
-                      "is_active INTEGER);";
-    char* errMsg = nullptr;
-    rc = sqlite3_exec(db, sql.c_str(), nullptr, nullptr, &errMsg);
-    if (rc != SQLITE_OK) {
-        std::cerr << "테이블 생성 에러: " << errMsg << std::endl;
-        sqlite3_free(errMsg);
-        return false;
-    }
-    sqlite3_close(db);
-    return true;
-}
+#include "HTTPServer.hpp"
 
 int main() {
     std::cout << "=== 🏠 홈 어시스턴트 코어 부팅 ===" << std::endl;
 
     // 0. 데이터베이스 준비
-    if (!initDatabase()) return 1;
+    if (!DatabaseManager::getInstance().init("../db/home_assistant.db")) {
+        std::cerr << "❌ DB 초기화 실패!" << std::endl;
+        return 1;
+    }
     std::cout << "✅ 데이터베이스 로드 완료!" << std::endl;
 
     // 1. 시스템 두뇌(DeviceManager) 가져오기
     DeviceManager& manager = DeviceManager::getInstance();
-
+    manager.initFromDatabase();
     // 2. TCP 드라이버 생성 및 포트 8080으로 서버 시작
     TCPDriver* tcpDriver = new TCPDriver();
     tcpDriver->startServer(8080);
 
     // 3. DeviceManager에 드라이버 등록
     manager.registerDriver(ProtocolType::TCP_DIY, tcpDriver);
-
-    
 
     // MatterController 생성 및 초기화
     MatterController* matterController = new MatterController();
@@ -56,14 +35,14 @@ int main() {
     } else {
         std::cerr << "[Main] MatterController 초기화 실패!" << std::endl;
     }
-
     std::this_thread::sleep_for(std::chrono::seconds(3));
-    
     manager.registerDriver(ProtocolType::MATTER, matterController);
 
+    HTTPServer httpServer(manager, 8000);
+    httpServer.start();
     //  관리 대상 기기 임시 등록
     // manager.addDevice("Arduino_1", "거실 전등", ProtocolType::TCP_DIY);
-    manager.addDevice("1", "스마트 플러그", ProtocolType::MATTER);
+    // manager.addDevice("1", "스마트 플러그", ProtocolType::MATTER);
 
     uint64_t targetNodeId = 1;
     std::string setupPinCode = "34460414140"; //실제 기기 핀 코드
@@ -83,14 +62,39 @@ int main() {
 
     //서버 메인 루프 (프로그램이 꺼지지 않게 무한 대기하며 10초마다 명령 테스트)
     bool isTurnedOn = false;
+    int consecutiveFailures = 0;      // 연속 실패 횟수 추적
+    const int MAX_FAILURES = 3;       // 치명적 장애로 판단할 임계치
     while (true) {
         std::this_thread::sleep_for(std::chrono::seconds(10));
-        isTurnedOn = !isTurnedOn;
-        std::string command = isTurnedOn ? "TURN_ON" : "TURN_OFF";
-        std::cout << "\n[Main] 시스템 테스트: 기기에 제어 명령 하달!" << std::endl;
+        // isTurnedOn = !isTurnedOn;
+        // std::string command = isTurnedOn ? "TURN_ON" : "TURN_OFF";
+        std::cout << "\n[Main] 시스템 테스트: 기기에 제어 명령 대기!" << std::endl;
         // manager.executeCommand("Arduino_1", command);
-        manager.executeCommand("1", command);
+
+        // bool success = manager.executeCommand("1", command);
+        
+        // if (success) {
+        //     consecutiveFailures = 0; // 성공 시 실패 카운터 즉시 리셋
+        //     std::cout << "🟢 [System] 명령 전송 성공! 기기가 정상 응답했습니다." << std::endl;
+        // } else {
+        //     consecutiveFailures++;
+        //     std::cerr << "🔴 [System] 기기 응답 없음! 연속 실패: " << consecutiveFailures << "/" << MAX_FAILURES << std::endl;
+            
+        //     // 임계치(3회) 도달 시 자가 치유(Self-Healing) 발동
+        //     if (consecutiveFailures >= MAX_FAILURES) {
+        //         std::cerr << "🚨 [System] 치명적 장애 감지! 해당 기기를 시스템에서 분리합니다." << std::endl;
+                
+        //         // 파일 및 chip-tool 내부 캐시에서 기기 완전 삭제
+        //         matterController->removeDeviceRegistration(targetNodeId);
+                
+        //         std::cout << "📱 [System] 모바일 앱으로 [연결 끊김 및 재등록 필요] 알림 푸시 전송 (예정)" << std::endl;
+                
+        //         // 루프를 탈출하여 무의미한 명령 중단 (실제 서버에서는 루프 탈출 대신 해당 기기만 건너뜁니다)
+        //         break; 
+        //     }
+        // }
     }
+    httpServer.stop();
     matterController->shutdown();
     delete matterController;
     tcpDriver->stopServer();

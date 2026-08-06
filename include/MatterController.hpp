@@ -49,8 +49,9 @@ public:
     bool turnOff(uint64_t nodeId,uint16_t endpointId);
 
     // 명령어 전송 인터페이스 구현
-    void sendCommand(std::string deviceId, std::string command) override;
-
+    bool sendCommand(std::string deviceId, std::string command) override;
+    
+    void removeDeviceRegistration(uint64_t nodeId);
 
 private:
     std::string mChipToolPath;

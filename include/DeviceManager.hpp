@@ -3,6 +3,7 @@
 #include <iostream>
 #include <unordered_map>
 #include <mutex>
+#include <vector>
 #include "Device.hpp"
 #include "ProtocolDriver.hpp"
 
@@ -19,9 +20,12 @@ public:
     // 시스템 초기화 API - 프로토콜 타입별로 어떤 드라이버를 쓸지 등록
     void registerDriver(ProtocolType type, ProtocolDriver* driver);
 
+    void initFromDatabase();
     // 디바이스 등록 API - 디바이스를 등록하고, 프로토콜 타입에 맞는 드라이버를 통해 초기화
     void addDevice(std::string id, std::string name, ProtocolType protocol_type);
     bool getDevice(std::string id, Device& outDevice);
+    std::vector<Device> getAllDevices();
+    std::string getProtocolString(ProtocolType type);
     bool updateDeviceState(std::string id, std::string newState);
 
     // 디바이스 제어 API - 디바이스 ID와 명령을 받아 해당 디바이스를 제어

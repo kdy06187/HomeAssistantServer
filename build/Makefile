@@ -129,6 +129,30 @@ HomeAssistantCore/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/HomeAssistantCore.dir/build.make CMakeFiles/HomeAssistantCore.dir/build
 .PHONY : HomeAssistantCore/fast
 
+src/DatabaseManager.o: src/DatabaseManager.cpp.o
+.PHONY : src/DatabaseManager.o
+
+# target to build an object file
+src/DatabaseManager.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/HomeAssistantCore.dir/build.make CMakeFiles/HomeAssistantCore.dir/src/DatabaseManager.cpp.o
+.PHONY : src/DatabaseManager.cpp.o
+
+src/DatabaseManager.i: src/DatabaseManager.cpp.i
+.PHONY : src/DatabaseManager.i
+
+# target to preprocess a source file
+src/DatabaseManager.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/HomeAssistantCore.dir/build.make CMakeFiles/HomeAssistantCore.dir/src/DatabaseManager.cpp.i
+.PHONY : src/DatabaseManager.cpp.i
+
+src/DatabaseManager.s: src/DatabaseManager.cpp.s
+.PHONY : src/DatabaseManager.s
+
+# target to generate assembly for a file
+src/DatabaseManager.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/HomeAssistantCore.dir/build.make CMakeFiles/HomeAssistantCore.dir/src/DatabaseManager.cpp.s
+.PHONY : src/DatabaseManager.cpp.s
+
 src/DeviceManager.o: src/DeviceManager.cpp.o
 .PHONY : src/DeviceManager.o
 
@@ -152,6 +176,30 @@ src/DeviceManager.s: src/DeviceManager.cpp.s
 src/DeviceManager.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/HomeAssistantCore.dir/build.make CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.s
 .PHONY : src/DeviceManager.cpp.s
+
+src/HTTPServer.o: src/HTTPServer.cpp.o
+.PHONY : src/HTTPServer.o
+
+# target to build an object file
+src/HTTPServer.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/HomeAssistantCore.dir/build.make CMakeFiles/HomeAssistantCore.dir/src/HTTPServer.cpp.o
+.PHONY : src/HTTPServer.cpp.o
+
+src/HTTPServer.i: src/HTTPServer.cpp.i
+.PHONY : src/HTTPServer.i
+
+# target to preprocess a source file
+src/HTTPServer.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/HomeAssistantCore.dir/build.make CMakeFiles/HomeAssistantCore.dir/src/HTTPServer.cpp.i
+.PHONY : src/HTTPServer.cpp.i
+
+src/HTTPServer.s: src/HTTPServer.cpp.s
+.PHONY : src/HTTPServer.s
+
+# target to generate assembly for a file
+src/HTTPServer.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/HomeAssistantCore.dir/build.make CMakeFiles/HomeAssistantCore.dir/src/HTTPServer.cpp.s
+.PHONY : src/HTTPServer.cpp.s
 
 src/MatterController.o: src/MatterController.cpp.o
 .PHONY : src/MatterController.o
@@ -234,9 +282,15 @@ help:
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
 	@echo "... HomeAssistantCore"
+	@echo "... src/DatabaseManager.o"
+	@echo "... src/DatabaseManager.i"
+	@echo "... src/DatabaseManager.s"
 	@echo "... src/DeviceManager.o"
 	@echo "... src/DeviceManager.i"
 	@echo "... src/DeviceManager.s"
+	@echo "... src/HTTPServer.o"
+	@echo "... src/HTTPServer.i"
+	@echo "... src/HTTPServer.s"
 	@echo "... src/MatterController.o"
 	@echo "... src/MatterController.i"
 	@echo "... src/MatterController.s"

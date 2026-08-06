@@ -6,5 +6,5 @@ public:
     // ProtocolDriver의 가상 소멸자
     virtual ~ProtocolDriver() = default;
 
-    virtual void sendCommand(std::string deviceId, std::string command) = 0;
+    virtual bool sendCommand(std::string deviceId, std::string command) = 0;
 };

@@ -17,7 +17,7 @@ TCPDriver::~TCPDriver(){
     std::cout << "[TCPDriver] 인스턴스 소멸" << std::endl;
 }
 
-void TCPDriver::sendCommand(std::string device_id, std::string command){
+bool TCPDriver::sendCommand(std::string device_id, std::string command){
     std::lock_guard<std::mutex> lock(sockets_mutex_);
     auto it = client_sockets_.find(device_id);
     if(it != client_sockets_.end()){

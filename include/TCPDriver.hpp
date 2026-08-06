@@ -11,7 +11,7 @@ public:
     TCPDriver();
     ~TCPDriver() override;
     // TCPDriver의 sendCommand 메서드 구현
-    void sendCommand(std::string deviceId, std::string command) override;
+    bool sendCommand(std::string deviceId, std::string command) override;
     // TCP 서버 시작 및 종료 메서드
     void startServer(int port);
     void stopServer();

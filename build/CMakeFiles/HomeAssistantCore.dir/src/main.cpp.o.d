@@ -181,9 +181,14 @@ CMakeFiles/HomeAssistantCore.dir/src/main.cpp.o: \
  /usr/include/c++/15/bits/node_handle.h \
  /usr/include/c++/15/bits/erase_if.h /usr/include/c++/15/mutex \
  /usr/include/c++/15/bits/std_mutex.h \
- /usr/include/c++/15/bits/unique_lock.h \
+ /usr/include/c++/15/bits/unique_lock.h /usr/include/c++/15/vector \
+ /usr/include/c++/15/bits/stl_uninitialized.h \
+ /usr/include/c++/15/bits/stl_vector.h \
+ /usr/include/c++/15/bits/stl_bvector.h \
+ /usr/include/c++/15/bits/vector.tcc \
  /home/kdy/home-assistant-core/include/Device.hpp \
  /home/kdy/home-assistant-core/include/ProtocolDriver.hpp \
+ /home/kdy/home-assistant-core/include/DatabaseManager.hpp \
  /home/kdy/home-assistant-core/include/TCPDriver.hpp \
  /usr/include/c++/15/atomic /usr/include/c++/15/bits/atomic_base.h \
  /usr/include/c++/15/bits/atomic_lockfree_defines.h \
@@ -221,7 +226,6 @@ CMakeFiles/HomeAssistantCore.dir/src/main.cpp.o: \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/EnforceFormat.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/logging/Constants.h \
  /usr/include/c++/15/memory /usr/include/c++/15/bits/stl_tempbuf.h \
- /usr/include/c++/15/bits/stl_uninitialized.h \
  /usr/include/c++/15/bits/stl_raw_storage_iter.h \
  /usr/include/c++/15/bits/align.h /usr/include/c++/15/bits/shared_ptr.h \
  /usr/include/c++/15/bits/shared_ptr_base.h \
@@ -292,11 +296,9 @@ CMakeFiles/HomeAssistantCore.dir/src/main.cpp.o: \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/setup_payload/SetupPayload.h \
  /usr/include/c++/15/map /usr/include/c++/15/bits/stl_tree.h \
  /usr/include/c++/15/bits/stl_map.h \
- /usr/include/c++/15/bits/stl_multimap.h /usr/include/c++/15/vector \
- /usr/include/c++/15/bits/stl_vector.h \
- /usr/include/c++/15/bits/stl_bvector.h \
- /usr/include/c++/15/bits/vector.tcc \
+ /usr/include/c++/15/bits/stl_multimap.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/Optional.h \
  /usr/include/c++/15/optional \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/InPlace.h \
- /home/kdy/home-assistant-core/third_party/connectedhomeip/src/setup_payload/ManualSetupPayloadParser.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/setup_payload/ManualSetupPayloadParser.h \
+ /home/kdy/home-assistant-core/include/HTTPServer.hpp

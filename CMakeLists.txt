@@ -33,8 +33,11 @@ include_directories(
 set(SOURCES
     src/main.cpp
     src/MatterController.cpp
-    # src/HTTPServer.cpp (추후 추가)
-    # src/TCPServer.cpp (추후 추가)
+    src/HTTPServer.cpp 
+    src/TCPServer.cpp 
+    src/DeviceManager.cpp
+    src/TCPDriver.cpp
+    src/DatabaseManager.cpp
 )
 
 # 실행 파일 생성
@@ -43,6 +46,8 @@ add_executable(${PROJECT_NAME}
     src/DeviceManager.cpp
     src/TCPDriver.cpp
     src/MatterController.cpp
+    src/HTTPServer.cpp
+    src/DatabaseManager.cpp
 )
 target_include_directories(HomeAssistantCore PRIVATE
     ${GLIB2_INCLUDE_DIRS}

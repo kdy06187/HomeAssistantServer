@@ -6,6 +6,8 @@ HomeAssistantCore: \
   CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o \
   CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o \
   CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o \
+  CMakeFiles/HomeAssistantCore.dir/src/HTTPServer.cpp.o \
+  CMakeFiles/HomeAssistantCore.dir/src/DatabaseManager.cpp.o \
   /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/TestAmbientContextSensingCluster.a \
   /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/TestChimeCluster.a \
   /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/TestChimeClusterBackwardsCompatibility.a \
@@ -262,6 +264,10 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o:
 CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o:
 
 CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o:
+
+CMakeFiles/HomeAssistantCore.dir/src/HTTPServer.cpp.o:
+
+CMakeFiles/HomeAssistantCore.dir/src/DatabaseManager.cpp.o:
 
 /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/TestAmbientContextSensingCluster.a:
 

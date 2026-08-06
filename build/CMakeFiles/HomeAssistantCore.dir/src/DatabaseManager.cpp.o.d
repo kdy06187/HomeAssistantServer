@@ -1,7 +1,7 @@
-CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o: \
- /home/kdy/home-assistant-core/src/DeviceManager.cpp \
+CMakeFiles/HomeAssistantCore.dir/src/DatabaseManager.cpp.o: \
+ /home/kdy/home-assistant-core/src/DatabaseManager.cpp \
  /usr/include/stdc-predef.h \
- /home/kdy/home-assistant-core/include/DeviceManager.hpp \
+ /home/kdy/home-assistant-core/include/DatabaseManager.hpp \
  /usr/include/c++/15/string /usr/include/c++/15/bits/requires_hosted.h \
  /usr/include/x86_64-linux-gnu/c++/15/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/15/bits/os_defines.h \
@@ -118,6 +118,11 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o: \
  /usr/include/c++/15/bits/memory_resource.h /usr/include/c++/15/cstddef \
  /usr/include/c++/15/bits/uses_allocator.h \
  /usr/include/c++/15/bits/uses_allocator_args.h /usr/include/c++/15/tuple \
+ /usr/include/c++/15/vector /usr/include/c++/15/bits/stl_uninitialized.h \
+ /usr/include/c++/15/bits/stl_vector.h \
+ /usr/include/c++/15/bits/stl_bvector.h \
+ /usr/include/c++/15/bits/vector.tcc /usr/include/sqlite3.h \
+ /home/kdy/home-assistant-core/include/Device.hpp \
  /usr/include/c++/15/iostream /usr/include/c++/15/ostream \
  /usr/include/c++/15/bits/ostream.h /usr/include/c++/15/ios \
  /usr/include/c++/15/exception /usr/include/c++/15/bits/exception_ptr.h \
@@ -163,28 +168,4 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o: \
  /usr/include/c++/15/bits/locale_facets.tcc \
  /usr/include/c++/15/bits/basic_ios.tcc \
  /usr/include/c++/15/bits/ostream.tcc /usr/include/c++/15/istream \
- /usr/include/c++/15/bits/istream.tcc /usr/include/c++/15/unordered_map \
- /usr/include/c++/15/bits/unordered_map.h \
- /usr/include/c++/15/bits/hashtable.h \
- /usr/include/c++/15/bits/hashtable_policy.h \
- /usr/include/c++/15/ext/aligned_buffer.h \
- /usr/include/c++/15/bits/enable_special_members.h \
- /usr/include/c++/15/bits/node_handle.h \
- /usr/include/c++/15/bits/erase_if.h /usr/include/c++/15/mutex \
- /usr/include/c++/15/bits/chrono.h /usr/include/c++/15/ratio \
- /usr/include/c++/15/cstdint \
- /usr/lib/gcc/x86_64-linux-gnu/15/include/stdint.h /usr/include/stdint.h \
- /usr/include/x86_64-linux-gnu/bits/stdint-uintn.h \
- /usr/include/x86_64-linux-gnu/bits/stdint-least.h \
- /usr/include/c++/15/limits /usr/include/c++/15/ctime \
- /usr/include/c++/15/bits/parse_numbers.h \
- /usr/include/c++/15/bits/std_mutex.h \
- /usr/include/c++/15/bits/unique_lock.h /usr/include/c++/15/vector \
- /usr/include/c++/15/bits/stl_uninitialized.h \
- /usr/include/c++/15/bits/stl_vector.h \
- /usr/include/c++/15/bits/stl_bvector.h \
- /usr/include/c++/15/bits/vector.tcc \
- /home/kdy/home-assistant-core/include/Device.hpp \
- /home/kdy/home-assistant-core/include/ProtocolDriver.hpp \
- /home/kdy/home-assistant-core/include/DatabaseManager.hpp \
- /usr/include/sqlite3.h
+ /usr/include/c++/15/bits/istream.tcc

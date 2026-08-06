@@ -1,7 +1,11 @@
 file(REMOVE_RECURSE
   "CMakeFiles/HomeAssistantCore.dir/link.d"
+  "CMakeFiles/HomeAssistantCore.dir/src/DatabaseManager.cpp.o"
+  "CMakeFiles/HomeAssistantCore.dir/src/DatabaseManager.cpp.o.d"
   "CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o"
   "CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o.d"
+  "CMakeFiles/HomeAssistantCore.dir/src/HTTPServer.cpp.o"
+  "CMakeFiles/HomeAssistantCore.dir/src/HTTPServer.cpp.o.d"
   "CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o"
   "CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o.d"
   "CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o"

@@ -128,12 +128,42 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.s"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/kdy/home-assistant-core/src/MatterController.cpp -o CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.s
 
+CMakeFiles/HomeAssistantCore.dir/src/HTTPServer.cpp.o: CMakeFiles/HomeAssistantCore.dir/flags.make
+CMakeFiles/HomeAssistantCore.dir/src/HTTPServer.cpp.o: /home/kdy/home-assistant-core/src/HTTPServer.cpp
+CMakeFiles/HomeAssistantCore.dir/src/HTTPServer.cpp.o: CMakeFiles/HomeAssistantCore.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/kdy/home-assistant-core/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Building CXX object CMakeFiles/HomeAssistantCore.dir/src/HTTPServer.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/HomeAssistantCore.dir/src/HTTPServer.cpp.o -MF CMakeFiles/HomeAssistantCore.dir/src/HTTPServer.cpp.o.d -o CMakeFiles/HomeAssistantCore.dir/src/HTTPServer.cpp.o -c /home/kdy/home-assistant-core/src/HTTPServer.cpp
+
+CMakeFiles/HomeAssistantCore.dir/src/HTTPServer.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/HomeAssistantCore.dir/src/HTTPServer.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/kdy/home-assistant-core/src/HTTPServer.cpp > CMakeFiles/HomeAssistantCore.dir/src/HTTPServer.cpp.i
+
+CMakeFiles/HomeAssistantCore.dir/src/HTTPServer.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/HomeAssistantCore.dir/src/HTTPServer.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/kdy/home-assistant-core/src/HTTPServer.cpp -o CMakeFiles/HomeAssistantCore.dir/src/HTTPServer.cpp.s
+
+CMakeFiles/HomeAssistantCore.dir/src/DatabaseManager.cpp.o: CMakeFiles/HomeAssistantCore.dir/flags.make
+CMakeFiles/HomeAssistantCore.dir/src/DatabaseManager.cpp.o: /home/kdy/home-assistant-core/src/DatabaseManager.cpp
+CMakeFiles/HomeAssistantCore.dir/src/DatabaseManager.cpp.o: CMakeFiles/HomeAssistantCore.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/kdy/home-assistant-core/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Building CXX object CMakeFiles/HomeAssistantCore.dir/src/DatabaseManager.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/HomeAssistantCore.dir/src/DatabaseManager.cpp.o -MF CMakeFiles/HomeAssistantCore.dir/src/DatabaseManager.cpp.o.d -o CMakeFiles/HomeAssistantCore.dir/src/DatabaseManager.cpp.o -c /home/kdy/home-assistant-core/src/DatabaseManager.cpp
+
+CMakeFiles/HomeAssistantCore.dir/src/DatabaseManager.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/HomeAssistantCore.dir/src/DatabaseManager.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/kdy/home-assistant-core/src/DatabaseManager.cpp > CMakeFiles/HomeAssistantCore.dir/src/DatabaseManager.cpp.i
+
+CMakeFiles/HomeAssistantCore.dir/src/DatabaseManager.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/HomeAssistantCore.dir/src/DatabaseManager.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/kdy/home-assistant-core/src/DatabaseManager.cpp -o CMakeFiles/HomeAssistantCore.dir/src/DatabaseManager.cpp.s
+
 # Object files for target HomeAssistantCore
 HomeAssistantCore_OBJECTS = \
 "CMakeFiles/HomeAssistantCore.dir/src/main.cpp.o" \
 "CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o" \
 "CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o" \
-"CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o"
+"CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o" \
+"CMakeFiles/HomeAssistantCore.dir/src/HTTPServer.cpp.o" \
+"CMakeFiles/HomeAssistantCore.dir/src/DatabaseManager.cpp.o"
 
 # External object files for target HomeAssistantCore
 HomeAssistantCore_EXTERNAL_OBJECTS =
@@ -142,6 +172,8 @@ HomeAssistantCore: CMakeFiles/HomeAssistantCore.dir/src/main.cpp.o
 HomeAssistantCore: CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o
 HomeAssistantCore: CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o
 HomeAssistantCore: CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o
+HomeAssistantCore: CMakeFiles/HomeAssistantCore.dir/src/HTTPServer.cpp.o
+HomeAssistantCore: CMakeFiles/HomeAssistantCore.dir/src/DatabaseManager.cpp.o
 HomeAssistantCore: CMakeFiles/HomeAssistantCore.dir/build.make
 HomeAssistantCore: CMakeFiles/HomeAssistantCore.dir/compiler_depend.ts
 HomeAssistantCore: /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/TestAmbientContextSensingCluster.a
@@ -350,7 +382,7 @@ HomeAssistantCore: /home/kdy/home-assistant-core/third_party/connectedhomeip/out
 HomeAssistantCore: /usr/lib/x86_64-linux-gnu/libssl.so
 HomeAssistantCore: /usr/lib/x86_64-linux-gnu/libcrypto.so
 HomeAssistantCore: CMakeFiles/HomeAssistantCore.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/kdy/home-assistant-core/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Linking CXX executable HomeAssistantCore"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/kdy/home-assistant-core/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_7) "Linking CXX executable HomeAssistantCore"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/HomeAssistantCore.dir/link.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.
