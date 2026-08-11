@@ -167,6 +167,7 @@ CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o: \
  /usr/include/c++/15/bits/this_thread_sleep.h /usr/include/c++/15/atomic \
  /usr/include/c++/15/bits/atomic_base.h \
  /usr/include/c++/15/bits/atomic_lockfree_defines.h \
+ /home/kdy/home-assistant-core/include/DeviceManager.hpp \
  /usr/include/c++/15/iostream /usr/include/c++/15/ostream \
  /usr/include/c++/15/bits/ostream.h /usr/include/c++/15/ios \
  /usr/include/c++/15/exception /usr/include/c++/15/bits/exception_ptr.h \
@@ -191,6 +192,7 @@ CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o: \
  /usr/include/c++/15/bits/stl_vector.h \
  /usr/include/c++/15/bits/stl_bvector.h \
  /usr/include/c++/15/bits/vector.tcc \
+ /home/kdy/home-assistant-core/include/Device.hpp \
  /usr/include/x86_64-linux-gnu/sys/socket.h \
  /usr/include/x86_64-linux-gnu/bits/types/struct_iovec.h \
  /usr/include/x86_64-linux-gnu/bits/socket.h \

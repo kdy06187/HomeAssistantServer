@@ -1,10 +1,12 @@
 #include "MatterController.hpp"
+#include "DeviceManager.hpp"
 #include <iostream>
 #include <cstdlib>
 #include <fstream>
 
-MatterController::MatterController()
-    : mChipToolPath("../third_party/connectedhomeip/out/host/chip-tool"),
+MatterController::MatterController(DeviceManager& deviceManager)
+    : ProtocolDriver(deviceManager),
+      mChipToolPath("../third_party/connectedhomeip/out/host/chip-tool"),
       mConfigFilePath("../config/registered_devices.txt") {
 }
 
@@ -86,7 +88,7 @@ void MatterController::saveDeviceRegistration(uint64_t nodeId) {
     file << nodeId << "\n";
 }
 //기기 등록
-bool MatterController::commissionDevice(uint64_t nodeId, const std::string& manualPincode,
+bool MatterController::commissionDevice(uint64_t nodeId, std::string name,const std::string& manualPincode,
                                 const std::string& wifiSsid, const std::string& wifiPassword){
     if (checkDeviceRegistered(nodeId)) {
         std::cout << "[MatterController] ✅ 기기(" << nodeId << ")는 이미 등록되어 있습니다. 커미셔닝을 건너뜁니다." << std::endl;
@@ -103,16 +105,14 @@ bool MatterController::commissionDevice(uint64_t nodeId, const std::string& manu
     std::string cmd = mChipToolPath + " pairing ble-wifi " + std::to_string(nodeId) + " " + wifiSsid + " " + wifiPassword + " " 
             + std::to_string(payload.setUpPINCode) + " " + "3830"+ 
             " --paa-trust-store-path ../paa_certs/paa-root-certs";
-    
-    bool success = executeCommand(cmd);
-    
-    
-    if (success) {
-        saveDeviceRegistration(nodeId);
-        std::cout << "[MatterController] 커미셔닝 성공. 기기 정보를 내부 스토리지에 저장" << std::endl;
-    }
-    
-    return success;
+    std::thread([this, cmd, nodeId, name]() {
+        bool success = executeCommand(cmd);
+        if (success) {
+            this->onDevicePairingComplete(nodeId, name);
+            std::cout << "[MatterController] 커미셔닝 성공. 기기 정보를 내부 스토리지에 저장" << std::endl;
+        }
+    }).detach();
+    return true;
 }
 
 // 기기 제어 Turn on
@@ -141,4 +141,14 @@ bool MatterController::sendCommand(std::string deviceId, std::string command){
         return turnOff(nodeId,1);
     }
     return false;
+}
+bool MatterController::commissionDevice(std::string name, std::string payload){
+    uint64_t nodeId = std::stoull(name);
+    return commissionDevice(nodeId,name,payload,"U+Net8683","38835318M#");
+}
+void MatterController::onDevicePairingComplete(uint64_t nodeId, const std::string& deviceName) {
+    std::cout << "[MatterController] 기기 페어링 완료: NodeId=" << nodeId << ", DeviceName=" << deviceName << std::endl;
+    saveDeviceRegistration(nodeId);
+    std::string newId = std::to_string(nodeId);
+    mDeviceManager.addDevice(newId, deviceName, ProtocolType::MATTER);
 }

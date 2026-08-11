@@ -22,14 +22,14 @@ int main() {
     DeviceManager& manager = DeviceManager::getInstance();
     manager.initFromDatabase();
     // 2. TCP 드라이버 생성 및 포트 8080으로 서버 시작
-    TCPDriver* tcpDriver = new TCPDriver();
+    TCPDriver* tcpDriver = new TCPDriver(manager);
     tcpDriver->startServer(8080);
 
     // 3. DeviceManager에 드라이버 등록
     manager.registerDriver(ProtocolType::TCP_DIY, tcpDriver);
 
     // MatterController 생성 및 초기화
-    MatterController* matterController = new MatterController();
+    MatterController* matterController = new MatterController(manager);
     if (matterController->Initialize()) {
         std::cout << "[Main] MatterController 초기화 및 스레드 구동 성공!" << std::endl;
     } else {
@@ -44,18 +44,19 @@ int main() {
     // manager.addDevice("Arduino_1", "거실 전등", ProtocolType::TCP_DIY);
     // manager.addDevice("1", "스마트 플러그", ProtocolType::MATTER);
 
-    uint64_t targetNodeId = 1;
-    std::string setupPinCode = "34460414140"; //실제 기기 핀 코드
+    // uint64_t targetNodeId = 1;
+    // std::string setupPinCode = "34460414140"; //실제 기기 핀 코드
 
-    std::cout << "\n🔗 [Matter] 상용 기기 커미셔닝(페어링) 프로세스 시작..." << std::endl;
-    bool commissionSuccess = matterController->commissionDevice(targetNodeId, setupPinCode,
-                                                        "U+Net8683", "38835318M#");
+    // std::cout << "\n🔗 [Matter] 상용 기기 커미셔닝(페어링) 프로세스 시작..." << std::endl;
+    // bool commissionSuccess = matterController->commissionDevice(targetNodeId, setupPinCode,
+    //                                                     "U+Net8683", "38835318M#");
 
-    if (commissionSuccess) {
-        std::cout << "🚀 커미셔닝 요청 성공! 로컬 네트워크상에서 기기와 보안 세션(PASE) 협상을 진행합니다." << std::endl;
-    } else {
-        std::cerr << "⚠️ 커미셔닝 요청에 실패했거나 이미 등록된 기기일 수 있습니다." << std::endl;
-    };
+    // if (commissionSuccess) {
+    //     std::cout << "🚀 커미셔닝 요청 성공! 로컬 네트워크상에서 기기와 보안 세션(PASE) 협상을 진행합니다." << std::endl;
+    // } else {
+    //     std::cerr << "⚠️ 커미셔닝 요청에 실패했거나 이미 등록된 기기일 수 있습니다." << std::endl;
+    // };
+
     // 통신 세션 안정화를 위해 잠시 대기 (약 5초)
     std::cout << "⏳ 기기 네트워크 안정화 대기 중 (5초)..." << std::endl;
     std::this_thread::sleep_for(std::chrono::seconds(5));

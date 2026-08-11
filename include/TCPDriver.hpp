@@ -8,10 +8,11 @@
 
 class TCPDriver : public ProtocolDriver {
 public:
-    TCPDriver();
+    TCPDriver(DeviceManager& deviceManager);
     ~TCPDriver() override;
     // TCPDriver의 sendCommand 메서드 구현
     bool sendCommand(std::string deviceId, std::string command) override;
+    bool commissionDevice(std::string name, std::string payload) override;
     // TCP 서버 시작 및 종료 메서드
     void startServer(int port);
     void stopServer();

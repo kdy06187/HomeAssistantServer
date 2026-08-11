@@ -1,4 +1,5 @@
 #include "TCPDriver.hpp"
+#include "DeviceManager.hpp"
 #include <iostream>
 #include <vector>
 
@@ -8,7 +9,9 @@
 #include <unistd.h>
 #include <cstring>
 
-TCPDriver::TCPDriver() : running_(false) {
+TCPDriver::TCPDriver(DeviceManager& deviceManager) : 
+    ProtocolDriver(deviceManager), 
+    running_(false) {
     std::cout << "[TCPDriver] 인스턴스 생성" << std::endl;
 }
 
@@ -30,13 +33,36 @@ bool TCPDriver::sendCommand(std::string device_id, std::string command){
 
         if(bytes_sent < 0){
             std::cerr << "[TCPDriver] 에러 : " << device_id << " 기기로 명령 전송 실패" << std::endl;
+            return false;
         } else {
             std::cout << "[TCPDriver] " << device_id << " 기기로 명령 전송 성공 : " << command << std::endl;
-
+            return true;
         }
     } else{
         std::cerr << "[TCPDriver] 에러 : " << device_id << " 기기와 연결되어 있지 않습니다." << std::endl;
+        return false;
     }
+}
+bool TCPDriver::commissionDevice(std::string name, std::string payload){
+    std::string target_id = "ARD_" + payload;
+    
+    std::cout << "[TCPDriver] 커미셔닝 요청 확인 중: " << target_id << std::endl;
+
+    std::lock_guard<std::mutex> lock(sockets_mutex_);
+    
+    // 🌟 핵심: 해당 아두이노가 현재 우리 서버에 TCP 연결을 유지하고 있는지 검증!
+    auto it = client_sockets_.find(target_id);
+    if (it != client_sockets_.end()) {
+        mDeviceManager.addDevice(target_id, name, ProtocolType::TCP_DIY);
+        std::cout << "[TCPDriver] 커미셔닝 완료 : " << name << " (" << target_id << ")" << std::endl;
+        return true;
+        
+    } else {
+        // 아직 아두이노가 서버로 접속하지 않은 경우
+        std::cerr << "❌ [TCPDriver] 커미셔닝 실패: " << payload << " IP를 가진 아두이노가 서버에 연결되어 있지 않습니다." << std::endl;
+        return false;
+    }
+    return false;
 }
 
 void TCPDriver::startServer(int port){
@@ -101,7 +127,7 @@ void TCPDriver::accecptLoop(int port){
         std::cout << "[TCPDriver] 클라이언트 연결 수락 IP : " << client_ip << std::endl;
         
         // Json 형식으로 기기 ID를 받지만 임시로 지정
-        std::string device_id = "Arduino_1"; // 임시로 지정
+        std::string device_id = "ARD_" + client_ip;
         {
             std::lock_guard<std::mutex> lock(sockets_mutex_);
             client_sockets_[device_id] = client_fd; // 기기 ID와 소켓 번호 저장

@@ -46,6 +46,13 @@ void HTTPServer::run(){
         }
         res.set_content(jsonResponse, "application/json");
     });
+    svr.Post("/api/commission",[this](const httplib::Request& req, httplib::Response& res){
+        std::string jsonResponse = this->handleCommissionDevice(req.body);
+        if (jsonResponse.find("\"error\"") != std::string::npos) {
+            res.status = 400; 
+        }
+        res.set_content(jsonResponse, "application/json");
+    });
     std::cout << "[HTTPServer]네트워크 소켓 개방 완료" << std::endl;
     svr.listen("0.0.0.0", mPort);
 }
@@ -94,6 +101,40 @@ std::string HTTPServer::handleControlDevice(const std::string& requestBody){
                 return R"({"result": "error", "message": "명령 실패 또는 기기 오프라인"})";
             }
             
+        } catch (const json::exception& e) {
+            // JSON 형식이 잘못되었을 때 (앱 개발자의 실수 방어)
+            std::cerr << "[HTTPServer] ❌ JSON 파싱 에러: " << e.what() << std::endl;
+            return R"({"result": "error", "message": "잘못된 JSON 형식입니다."})";
+        }
+}
+
+std::string HTTPServer::handleCommissionDevice(const std::string& requestBody){
+    std::cout << "[HTTPServer] 기기 등록(POST) 요청 수신! Body: " << requestBody << std::endl;
+        
+       try {
+            // 들어온 문자열(req.body)을 JSON 객체로 파싱
+            json j = json::parse(requestBody);
+            
+            // JSON에서 값을 추출
+            std::string payload = j["payload"];
+            std::string deviceName = j["deviceName"];
+            std::string protocolTypeStr = j["protocolType"];
+            
+            ProtocolType protocolType;
+            if (protocolTypeStr == "MATTER") {
+                protocolType = ProtocolType::MATTER;
+            } else if (protocolTypeStr == "TCP_DIY") {
+                protocolType = ProtocolType::TCP_DIY;
+            } else {
+                return R"({"result": "error", "message": "알 수 없는 프로토콜 타입입니다."})";
+            }
+
+            bool isSuccess = mDeviceManager.startCommissioning(protocolType, deviceName, payload);
+            if (isSuccess) {
+                return R"({"result": "success", "message": "기기 등록 성공!"})";
+            } else {
+                return R"({"result": "error", "message": "기기 등록 실패!"})";
+            }
         } catch (const json::exception& e) {
             // JSON 형식이 잘못되었을 때 (앱 개발자의 실수 방어)
             std::cerr << "[HTTPServer] ❌ JSON 파싱 에러: " << e.what() << std::endl;

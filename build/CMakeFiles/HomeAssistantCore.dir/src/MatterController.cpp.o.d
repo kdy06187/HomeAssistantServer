@@ -283,6 +283,7 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o: \
  /usr/include/c++/15/bits/enable_special_members.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/InPlace.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/setup_payload/ManualSetupPayloadParser.h \
+ /home/kdy/home-assistant-core/include/DeviceManager.hpp \
  /usr/include/c++/15/iostream /usr/include/c++/15/ostream \
  /usr/include/c++/15/bits/ostream.h /usr/include/c++/15/ios \
  /usr/include/c++/15/bits/basic_ios.h \
@@ -293,8 +294,14 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o: \
  /usr/include/c++/15/bits/locale_facets.tcc \
  /usr/include/c++/15/bits/basic_ios.tcc \
  /usr/include/c++/15/bits/ostream.tcc /usr/include/c++/15/istream \
- /usr/include/c++/15/bits/istream.tcc /usr/include/c++/15/fstream \
- /usr/include/c++/15/bits/codecvt.h \
+ /usr/include/c++/15/bits/istream.tcc /usr/include/c++/15/unordered_map \
+ /usr/include/c++/15/bits/unordered_map.h \
+ /usr/include/c++/15/bits/hashtable.h \
+ /usr/include/c++/15/bits/hashtable_policy.h /usr/include/c++/15/mutex \
+ /usr/include/c++/15/bits/std_mutex.h \
+ /usr/include/c++/15/bits/unique_lock.h \
+ /home/kdy/home-assistant-core/include/Device.hpp \
+ /usr/include/c++/15/fstream /usr/include/c++/15/bits/codecvt.h \
  /usr/include/x86_64-linux-gnu/c++/15/bits/basic_file.h \
  /usr/include/x86_64-linux-gnu/c++/15/bits/c++io.h \
  /usr/include/c++/15/bits/fstream.tcc

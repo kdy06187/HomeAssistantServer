@@ -22,4 +22,5 @@ DeviceManager& mDeviceManager;
 
     std::string handleGetDevices();
     std::string handleControlDevice(const std::string& requestBody);
+    std::string handleCommissionDevice(const std::string& requestBody);
 };

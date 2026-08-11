@@ -918,6 +918,8 @@ CMakeFiles/HomeAssistantCore.dir/src/HTTPServer.cpp.o
 CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o
  /home/kdy/home-assistant-core/src/MatterController.cpp
  /home/kdy/home-assistant-core/include/CHIPProjectConfig.h
+ /home/kdy/home-assistant-core/include/Device.hpp
+ /home/kdy/home-assistant-core/include/DeviceManager.hpp
  /home/kdy/home-assistant-core/include/MatterController.hpp
  /home/kdy/home-assistant-core/include/ProtocolDriver.hpp
  /home/kdy/home-assistant-core/include/SystemProjectConfig.h
@@ -1031,6 +1033,8 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o
  /usr/include/c++/15/bits/functexcept.h
  /usr/include/c++/15/bits/functional_hash.h
  /usr/include/c++/15/bits/hash_bytes.h
+ /usr/include/c++/15/bits/hashtable.h
+ /usr/include/c++/15/bits/hashtable_policy.h
  /usr/include/c++/15/bits/invoke.h
  /usr/include/c++/15/bits/ios_base.h
  /usr/include/c++/15/bits/istream.tcc
@@ -1059,6 +1063,7 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o
  /usr/include/c++/15/bits/shared_ptr_atomic.h
  /usr/include/c++/15/bits/shared_ptr_base.h
  /usr/include/c++/15/bits/std_abs.h
+ /usr/include/c++/15/bits/std_mutex.h
  /usr/include/c++/15/bits/std_thread.h
  /usr/include/c++/15/bits/stl_algo.h
  /usr/include/c++/15/bits/stl_algobase.h
@@ -1085,7 +1090,9 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o
  /usr/include/c++/15/bits/stringfwd.h
  /usr/include/c++/15/bits/this_thread_sleep.h
  /usr/include/c++/15/bits/uniform_int_dist.h
+ /usr/include/c++/15/bits/unique_lock.h
  /usr/include/c++/15/bits/unique_ptr.h
+ /usr/include/c++/15/bits/unordered_map.h
  /usr/include/c++/15/bits/uses_allocator.h
  /usr/include/c++/15/bits/uses_allocator_args.h
  /usr/include/c++/15/bits/utility.h
@@ -1126,6 +1133,7 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o
  /usr/include/c++/15/limits
  /usr/include/c++/15/map
  /usr/include/c++/15/memory
+ /usr/include/c++/15/mutex
  /usr/include/c++/15/new
  /usr/include/c++/15/optional
  /usr/include/c++/15/ostream
@@ -1143,6 +1151,7 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o
  /usr/include/c++/15/tuple
  /usr/include/c++/15/type_traits
  /usr/include/c++/15/typeinfo
+ /usr/include/c++/15/unordered_map
  /usr/include/c++/15/utility
  /usr/include/c++/15/vector
  /usr/include/ctype.h
@@ -1270,6 +1279,8 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o
 
 CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o
  /home/kdy/home-assistant-core/src/TCPDriver.cpp
+ /home/kdy/home-assistant-core/include/Device.hpp
+ /home/kdy/home-assistant-core/include/DeviceManager.hpp
  /home/kdy/home-assistant-core/include/ProtocolDriver.hpp
  /home/kdy/home-assistant-core/include/TCPDriver.hpp
  /usr/include/alloca.h
