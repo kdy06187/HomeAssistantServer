@@ -53,6 +53,14 @@ void HTTPServer::run(){
         }
         res.set_content(jsonResponse, "application/json");
     });
+
+    svr.Post("/api/devices/delete", [this](const httplib::Request& req, httplib::Response& res) {
+        std::string jsonResponse = this->handleDeleteDevice(req.body);
+        if (jsonResponse.find("\"error\"") != std::string::npos) {
+            res.status = 400; 
+        }
+        res.set_content(jsonResponse, "application/json");
+    });
     std::cout << "[HTTPServer]네트워크 소켓 개방 완료" << std::endl;
     svr.listen("0.0.0.0", mPort);
 }
@@ -140,4 +148,24 @@ std::string HTTPServer::handleCommissionDevice(const std::string& requestBody){
             std::cerr << "[HTTPServer] ❌ JSON 파싱 에러: " << e.what() << std::endl;
             return R"({"result": "error", "message": "잘못된 JSON 형식입니다."})";
         }
+}
+
+std::string HTTPServer::handleDeleteDevice(const std::string& requestBody) {
+    std::cout << "[HTTPServer] 기기 삭제(POST) 요청 수신! Body: " << requestBody << std::endl;
+
+    try {
+        json j = json::parse(requestBody);
+        std::string targetDeviceId = j["deviceId"];
+
+        bool success = mDeviceManager.removeDevice(targetDeviceId);
+
+        if (success) {
+            return R"({"result": "success", "message": "기기 삭제 성공!"})";
+        } else {
+            return R"({"result": "error", "message": "기기 삭제 실패 또는 기기 없음"})";
+        }
+    } catch (const json::exception& e) {
+        std::cerr << "[HTTPServer] ❌ JSON 파싱 에러: " << e.what() << std::endl;
+        return R"({"result": "error", "message": "잘못된 JSON 형식입니다."})";
+    }
 }

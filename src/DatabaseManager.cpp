@@ -86,3 +86,15 @@ bool DatabaseManager::updateDeviceState(const std::string& device_id, int is_act
     sqlite3_finalize(stmt);
     return success;
 }
+bool DatabaseManager::removeDevice(const std::string& device_id) {
+    const char* sql = "DELETE FROM devices WHERE device_id = ?;";
+    sqlite3_stmt* stmt;
+
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+
+    sqlite3_bind_text(stmt, 1, device_id.c_str(), -1, SQLITE_STATIC);
+
+    bool success = (sqlite3_step(stmt) == SQLITE_DONE);
+    sqlite3_finalize(stmt);
+    return success;
+}

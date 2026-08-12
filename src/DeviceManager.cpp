@@ -105,4 +105,16 @@ bool DeviceManager::startCommissioning(ProtocolType type, std::string name, std:
         return false;
     }
 }
+bool DeviceManager::removeDevice(std::string id){
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = devices_.find(id);
+    if(it != devices_.end()){
+        devices_.erase(it);
+        DatabaseManager::getInstance().removeDevice(id);
+        std::cout << "[DeviceManager] 기기 삭제 완료 : "<< id << std::endl;
+        return true;
+    }
+    std::cerr << "[DeviceManager] 에러 : 기기를 찾을 수 없습니다 (" << id << ")" << std::endl;
+    return false;
+}
 
