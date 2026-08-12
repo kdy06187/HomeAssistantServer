@@ -31,6 +31,10 @@ public:
     // 디바이스 제어 API - 디바이스 ID와 명령을 받아 해당 디바이스를 제어
     bool executeCommand(std::string id, std::string command);
     bool removeDevice(std::string id);
+    bool hasDevice(std::string id) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return devices_.find(id) != devices_.end();
+    }
 private:
     // 외부 생성 방지
     DeviceManager(){

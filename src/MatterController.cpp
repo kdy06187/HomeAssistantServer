@@ -3,7 +3,7 @@
 #include <iostream>
 #include <cstdlib>
 #include <fstream>
-
+#include <ctime>
 MatterController::MatterController(DeviceManager& deviceManager)
     : ProtocolDriver(deviceManager),
       mChipToolPath("../third_party/connectedhomeip/out/host/chip-tool"),
@@ -40,9 +40,7 @@ bool MatterController::executeCommand(const std::string& cmd) {
     }
 }
 
-void MatterController::removeDeviceRegistration(uint64_t nodeId) {
-    std::cout << "[MatterController] ⚠️ 기기(" << nodeId << ")의 오프라인 상태가 지속되어 등록을 해제합니다." << std::endl;
-
+bool MatterController::removeDeviceRegistration(uint64_t deviceId) {
     // 1. 텍스트 파일에서 해당 기기 번호만 삭제
     std::ifstream fileIn(mConfigFilePath);
     std::vector<std::string> lines;
@@ -51,7 +49,7 @@ void MatterController::removeDeviceRegistration(uint64_t nodeId) {
     if (fileIn.is_open()) {
         while (std::getline(fileIn, line)) {
             // 삭제하려는 nodeId가 아닌 줄만 백업해 둠
-            if (line != std::to_string(nodeId)) {
+            if (line != std::to_string(deviceId)) {
                 lines.push_back(line);
             }
         }
@@ -66,11 +64,18 @@ void MatterController::removeDeviceRegistration(uint64_t nodeId) {
     fileOut.close();
     
     // 2. chip-tool의 내부 KVS 데이터베이스에서도 이별 통보 (unpair)
-    std::string unpairCmd = mChipToolPath + " pairing unpair " + std::to_string(nodeId);
-    std::cout << "[MatterController] 🧹 칩툴(chip-tool) 내부 기억 삭제 중..." << std::endl;
-    std::system(unpairCmd.c_str()); // 굳이 성공 여부를 따지지 않고 던집니다.
+    std::string cmd = mChipToolPath + " pairing unpair " + std::to_string(deviceId);
+    std::cout << "[MatterController] 페어링 해제 중..." << std::endl;
+    std::thread([this,cmd,deviceId](){
+        bool success = this->executeCommand(cmd);
+        if (success) {
+            std::cout << "[MatterController] 기기(" << deviceId << ") 페어링 해제 완료" << std::endl;
+        } else {
+            std::cerr << "[MatterController] 기기(" << deviceId << ") 페어링 해제 실패" << std::endl;
+        }
+    }).detach();
 
-    std::cout << "[MatterController] ✅ 기기(" << nodeId << ")가 시스템에서 완전히 삭제되었습니다." << std::endl;
+    return true;
 }
 bool MatterController::checkDeviceRegistered(uint64_t nodeId) {
     std::ifstream file(mConfigFilePath);
@@ -91,7 +96,16 @@ void MatterController::saveDeviceRegistration(uint64_t nodeId) {
 bool MatterController::commissionDevice(uint64_t nodeId, std::string name,const std::string& manualPincode,
                                 const std::string& wifiSsid, const std::string& wifiPassword){
     if (checkDeviceRegistered(nodeId)) {
-        std::cout << "[MatterController] ✅ 기기(" << nodeId << ")는 이미 등록되어 있습니다. 커미셔닝을 건너뜁니다." << std::endl;
+        std::cout << "[MatterController]" << name <<  "(" << nodeId << ")는 이미 등록되어 있습니다. 커미셔닝을 건너뜁니다." << std::endl;
+        std::string deviceIdStr = std::to_string(nodeId);
+
+        if (!mDeviceManager.hasDevice(deviceIdStr)) {
+            std::cout << "[MatterController] ⚠️ DB에 기기 정보가 누락되어 복구(Sync)를 수행합니다." << std::endl;
+            
+            mDeviceManager.addDevice(deviceIdStr, name, ProtocolType::MATTER);
+        } else {
+            std::cout << "[MatterController] ✅ DB에도 이미 존재합니다. 커미셔닝을 완전히 건너뜁니다." << std::endl;
+        }
         return true; 
     }
     std::cout << "[MatterController] 기기 등록 시도: NodeId=" << nodeId << ", PinCode=" << manualPincode << std::endl;
@@ -143,7 +157,7 @@ bool MatterController::sendCommand(std::string deviceId, std::string command){
     return false;
 }
 bool MatterController::commissionDevice(std::string name, std::string payload){
-    uint64_t nodeId = std::stoull(name);
+    uint64_t nodeId = static_cast<uint64_t>(std::time(nullptr));
     return commissionDevice(nodeId,name,payload,"U+Net8683","38835318M#");
 }
 void MatterController::onDevicePairingComplete(uint64_t nodeId, const std::string& deviceName) {
@@ -151,4 +165,9 @@ void MatterController::onDevicePairingComplete(uint64_t nodeId, const std::strin
     saveDeviceRegistration(nodeId);
     std::string newId = std::to_string(nodeId);
     mDeviceManager.addDevice(newId, deviceName, ProtocolType::MATTER);
+}
+bool MatterController::unpairDevice(std::string deviceId){
+    std::cout << "[MatterController] Matter 기기 페어링 해제 : NodeId = " << deviceId << std::endl;
+    bool success = this->removeDeviceRegistration(std::stoull(deviceId));
+    return success;
 }

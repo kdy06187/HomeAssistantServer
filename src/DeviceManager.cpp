@@ -109,10 +109,16 @@ bool DeviceManager::removeDevice(std::string id){
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = devices_.find(id);
     if(it != devices_.end()){
+        ProtocolType type = it->second.protocol_type;
+        auto driverIt = drivers_.find(type);
+        bool success = false;
+        if (driverIt != drivers_.end()) {
+            success = driverIt->second->unpairDevice(id);
+        }
         devices_.erase(it);
         DatabaseManager::getInstance().removeDevice(id);
         std::cout << "[DeviceManager] 기기 삭제 완료 : "<< id << std::endl;
-        return true;
+        return success;
     }
     std::cerr << "[DeviceManager] 에러 : 기기를 찾을 수 없습니다 (" << id << ")" << std::endl;
     return false;

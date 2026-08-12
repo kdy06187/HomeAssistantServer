@@ -136,3 +136,16 @@ void TCPDriver::accecptLoop(int port){
     }
     close(server_fd);
 }
+
+bool TCPDriver::unpairDevice(std::string deviceId){
+    std::lock_guard<std::mutex> lock(sockets_mutex_);
+    auto it = client_sockets_.find(deviceId);
+    if(it != client_sockets_.end()){
+        int client_socket = it->second;
+        close(client_socket);
+        client_sockets_.erase(it);
+        std::cout << "[TCPDriver] 아두이노 연결 해제 완료: " << deviceId << std::endl;
+        return true;
+    }
+    return false;
+}

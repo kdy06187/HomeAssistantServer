@@ -11,4 +11,5 @@ public:
 
     virtual bool sendCommand(std::string deviceId, std::string command) = 0;
     virtual bool commissionDevice(std::string name, std::string payload) = 0;
+    virtual bool unpairDevice(std::string deviceId) = 0;
 };

@@ -37,8 +37,8 @@ public:
     // 인터페이스 구현
     bool sendCommand(std::string deviceId, std::string command) override;
     bool commissionDevice(std::string name, std::string payload) override;
-    
-    void removeDeviceRegistration(uint64_t nodeId);
+    bool unpairDevice(std::string deviceId) override;
+    bool removeDeviceRegistration(uint64_t nodeId);
 
 private:
     std::string mChipToolPath;
