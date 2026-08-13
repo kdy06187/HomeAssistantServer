@@ -149,3 +149,30 @@ bool TCPDriver::unpairDevice(std::string deviceId){
     }
     return false;
 }
+std::string TCPDriver::readDeviceState(std::string deviceId){
+    // std::lock_guard<std::mutex> lock(sockets_mutex_);
+    // auto it = client_sockets_.find(deviceId);
+    // if(it != client_sockets_.end()){
+    //     int client_socket = it->second;
+    //     // 상태 요청 명령 전송
+    //     std::string command = "READ_STATE\n"; // 상태 읽기 명령
+    //     send(client_socket, command.c_str(), command.length(), 0);
+
+    //     // 클라이언트로부터 상태 응답 수신
+    //     char buffer[1024] = {0};
+    //     ssize_t bytes_received = recv(client_socket, buffer, sizeof(buffer) - 1, 0);
+    //     if(bytes_received > 0){
+    //         buffer[bytes_received] = '\0'; // 문자열 종료
+    //         std::string state(buffer);
+    //         std::cout << "[TCPDriver] " << deviceId << " 기기 상태 수신: " << state << std::endl;
+    //         return state;
+    //     } else {
+    //         std::cerr << "[TCPDriver] 에러 : " << deviceId << " 기기 상태 수신 실패" << std::endl;
+    //         return "";
+    //     }
+    // } else{
+    //     std::cerr << "[TCPDriver] 에러 : " << deviceId << " 기기와 연결되어 있지 않습니다." << std::endl;
+    //     return "";
+    // }
+    return "UNKNOWN"; // 임시로 UNKNOWN 반환, 실제 구현 필요
+}

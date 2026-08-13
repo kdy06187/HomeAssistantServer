@@ -38,14 +38,16 @@ public:
     bool sendCommand(std::string deviceId, std::string command) override;
     bool commissionDevice(std::string name, std::string payload) override;
     bool unpairDevice(std::string deviceId) override;
+    std::string readDeviceState(std::string deviceId) override;
+
     bool removeDeviceRegistration(uint64_t nodeId);
 
 private:
     std::string mChipToolPath;
     bool commissionDevice(uint64_t nodeId, std::string name, const std::string& manualPincode,
                           const std::string& wifiSsid, const std::string& wifiPassword);
-
     bool executeCommand(const std::string& cmd);
+    std::string executeCommandWithOutput(std::string cmd);
     void onDevicePairingComplete(uint64_t nodeId, const std::string& deviceName);
     bool checkDeviceRegistered(uint64_t nodeId);
     void saveDeviceRegistration(uint64_t nodeId);

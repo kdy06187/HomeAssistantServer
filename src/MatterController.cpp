@@ -4,6 +4,8 @@
 #include <cstdlib>
 #include <fstream>
 #include <ctime>
+#include <memory>
+#include <array>
 MatterController::MatterController(DeviceManager& deviceManager)
     : ProtocolDriver(deviceManager),
       mChipToolPath("../third_party/connectedhomeip/out/host/chip-tool"),
@@ -39,7 +41,19 @@ bool MatterController::executeCommand(const std::string& cmd) {
         return false;
     }
 }
-
+std::string MatterController::executeCommandWithOutput(std::string cmd){
+    std::array<char,128> buffer;
+    std::string result;
+    std::unique_ptr<FILE,decltype(&pclose)> pipe(popen(cmd.c_str(),"r"),pclose);
+    if(!pipe){
+        std::cerr << "[MatterController] 명령 실행 실패: " << cmd << std::endl;
+        return "";
+    }
+    while(fgets(buffer.data(),buffer.size(),pipe.get())!=nullptr){
+        result += buffer.data();
+    }
+    return result;
+}
 bool MatterController::removeDeviceRegistration(uint64_t deviceId) {
     // 1. 텍스트 파일에서 해당 기기 번호만 삭제
     std::ifstream fileIn(mConfigFilePath);
@@ -170,4 +184,26 @@ bool MatterController::unpairDevice(std::string deviceId){
     std::cout << "[MatterController] Matter 기기 페어링 해제 : NodeId = " << deviceId << std::endl;
     bool success = this->removeDeviceRegistration(std::stoull(deviceId));
     return success;
+}
+std::string MatterController::readDeviceState(std::string deviceId){
+    deviceId.erase(std::remove(deviceId.begin(), deviceId.end(), '\n'), deviceId.end());
+    deviceId.erase(std::remove(deviceId.begin(), deviceId.end(), '\r'), deviceId.end());
+    deviceId.erase(std::remove(deviceId.begin(), deviceId.end(), '\"'), deviceId.end());
+    deviceId.erase(std::remove(deviceId.begin(), deviceId.end(), ' '), deviceId.end());
+    std::cout << "[MatterController] 기기 상태 읽기 요청 : NodeId = " << deviceId << std::endl;
+    std::string cmd = mChipToolPath + " onoff read on-off " + deviceId + " 1";
+    try{
+        std::string output = executeCommandWithOutput(cmd);
+        if (output.find("Data = true") != std::string::npos || output.find("Data: 1") != std::string::npos) {
+            return "ON";
+        } 
+        // 출력된 로그 중에 Data = false(또는 0)이 있으면 OFF
+        else if (output.find("Data = false") != std::string::npos || output.find("Data: 0") != std::string::npos) {
+            return "OFF";
+        }
+    }catch(const std::exception& e){
+        std::cerr << "[MatterController] 상태 읽기 실패: " << e.what() << std::endl;
+        return "ERROR";
+    }
+    return "UNKNOWN";
 }

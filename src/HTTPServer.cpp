@@ -61,6 +61,18 @@ void HTTPServer::run(){
         }
         res.set_content(jsonResponse, "application/json");
     });
+
+    svr.Get(R"(/api/devices/([^/]+)/state)", [this](const httplib::Request& req, httplib::Response& res) {
+    std::string deviceId = req.matches[1];
+    
+    std::string currentState = mDeviceManager.getDeviceState(deviceId);
+    
+    json response;
+    response["deviceId"] = deviceId;
+    response["state"] = currentState;
+    
+    res.set_content(response.dump(), "application/json");
+});
     std::cout << "[HTTPServer]네트워크 소켓 개방 완료" << std::endl;
     svr.listen("0.0.0.0", mPort);
 }

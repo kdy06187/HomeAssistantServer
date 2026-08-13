@@ -24,6 +24,7 @@ public:
     // 디바이스 등록 API - 디바이스를 등록하고, 프로토콜 타입에 맞는 드라이버를 통해 초기화
     void addDevice(std::string id, std::string name, ProtocolType protocol_type);
     bool getDevice(std::string id, Device& outDevice);
+    std::string getDeviceState(std::string id);
     std::vector<Device> getAllDevices();
     std::string getProtocolString(ProtocolType type);
     bool updateDeviceState(std::string id, std::string newState);

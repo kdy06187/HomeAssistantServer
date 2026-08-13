@@ -14,6 +14,7 @@ public:
     bool sendCommand(std::string deviceId, std::string command) override;
     bool commissionDevice(std::string name, std::string payload) override;
     bool unpairDevice(std::string deviceId) override;
+    std::string readDeviceState(std::string deviceId) override;
     // TCP 서버 시작 및 종료 메서드
     void startServer(int port);
     void stopServer();
