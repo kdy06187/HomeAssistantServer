@@ -192,6 +192,78 @@ CMakeFiles/HomeAssistantCore.dir/src/main.cpp.o: \
  /home/kdy/home-assistant-core/include/TCPDriver.hpp \
  /usr/include/c++/15/atomic /usr/include/c++/15/bits/atomic_base.h \
  /usr/include/c++/15/bits/atomic_lockfree_defines.h \
+ /home/kdy/home-assistant-core/include/../src/json.hpp \
+ /usr/include/c++/15/algorithm /usr/include/c++/15/bits/stl_algo.h \
+ /usr/include/c++/15/bits/algorithmfwd.h \
+ /usr/include/c++/15/bits/stl_heap.h \
+ /usr/include/c++/15/bits/uniform_int_dist.h \
+ /usr/include/c++/15/bits/stl_tempbuf.h \
+ /usr/include/c++/15/pstl/glue_algorithm_defs.h \
+ /usr/include/c++/15/pstl/execution_defs.h /usr/include/c++/15/functional \
+ /usr/include/c++/15/bits/std_function.h /usr/include/c++/15/array \
+ /usr/include/c++/15/compare /usr/include/c++/15/iterator \
+ /usr/include/c++/15/bits/stream_iterator.h /usr/include/c++/15/memory \
+ /usr/include/c++/15/bits/stl_raw_storage_iter.h \
+ /usr/include/c++/15/bits/align.h /usr/include/c++/15/bits/shared_ptr.h \
+ /usr/include/c++/15/bits/shared_ptr_base.h \
+ /usr/include/c++/15/bits/allocated_ptr.h \
+ /usr/include/c++/15/ext/concurrence.h \
+ /usr/include/c++/15/bits/shared_ptr_atomic.h \
+ /usr/include/c++/15/backward/auto_ptr.h \
+ /usr/include/c++/15/pstl/glue_memory_defs.h /usr/include/c++/15/utility \
+ /usr/include/c++/15/bits/stl_relops.h /usr/include/c++/15/forward_list \
+ /usr/include/c++/15/bits/forward_list.h \
+ /usr/include/c++/15/bits/forward_list.tcc /usr/include/c++/15/map \
+ /usr/include/c++/15/bits/stl_tree.h /usr/include/c++/15/bits/stl_map.h \
+ /usr/include/c++/15/bits/stl_multimap.h /usr/include/c++/15/valarray \
+ /usr/include/c++/15/cmath /usr/include/math.h \
+ /usr/include/x86_64-linux-gnu/bits/math-vector.h \
+ /usr/include/x86_64-linux-gnu/bits/libm-simd-decl-stubs.h \
+ /usr/include/x86_64-linux-gnu/bits/flt-eval-method.h \
+ /usr/include/x86_64-linux-gnu/bits/fp-logb.h \
+ /usr/include/x86_64-linux-gnu/bits/fp-fast.h \
+ /usr/include/x86_64-linux-gnu/bits/mathcalls-macros.h \
+ /usr/include/x86_64-linux-gnu/bits/mathcalls-helper-functions.h \
+ /usr/include/x86_64-linux-gnu/bits/mathcalls.h \
+ /usr/include/x86_64-linux-gnu/bits/mathcalls-narrow.h \
+ /usr/include/x86_64-linux-gnu/bits/iscanonical.h \
+ /usr/include/c++/15/bits/specfun.h /usr/include/c++/15/tr1/gamma.tcc \
+ /usr/include/c++/15/tr1/special_function_util.h \
+ /usr/include/c++/15/tr1/bessel_function.tcc \
+ /usr/include/c++/15/tr1/beta_function.tcc \
+ /usr/include/c++/15/tr1/ell_integral.tcc \
+ /usr/include/c++/15/tr1/exp_integral.tcc \
+ /usr/include/c++/15/tr1/hypergeometric.tcc \
+ /usr/include/c++/15/tr1/legendre_function.tcc \
+ /usr/include/c++/15/tr1/modified_bessel_func.tcc \
+ /usr/include/c++/15/tr1/poly_hermite.tcc \
+ /usr/include/c++/15/tr1/poly_laguerre.tcc \
+ /usr/include/c++/15/tr1/riemann_zeta.tcc \
+ /usr/include/c++/15/bits/valarray_array.h \
+ /usr/include/c++/15/bits/valarray_array.tcc \
+ /usr/include/c++/15/bits/valarray_before.h \
+ /usr/include/c++/15/bits/slice_array.h \
+ /usr/include/c++/15/bits/valarray_after.h \
+ /usr/include/c++/15/bits/gslice.h \
+ /usr/include/c++/15/bits/gslice_array.h \
+ /usr/include/c++/15/bits/mask_array.h \
+ /usr/include/c++/15/bits/indirect_array.h /usr/include/c++/15/version \
+ /usr/include/c++/15/cassert /usr/include/assert.h \
+ /usr/include/c++/15/optional /usr/include/c++/15/cstring \
+ /usr/include/string.h /usr/include/strings.h \
+ /usr/include/c++/15/filesystem /usr/include/c++/15/bits/fs_fwd.h \
+ /usr/include/c++/15/bits/fs_path.h /usr/include/c++/15/locale \
+ /usr/include/c++/15/bits/locale_facets_nonio.h \
+ /usr/include/x86_64-linux-gnu/c++/15/bits/time_members.h \
+ /usr/include/x86_64-linux-gnu/c++/15/bits/messages_members.h \
+ /usr/include/libintl.h /usr/include/c++/15/bits/codecvt.h \
+ /usr/include/c++/15/bits/locale_facets_nonio.tcc \
+ /usr/include/c++/15/bits/locale_conv.h /usr/include/c++/15/iomanip \
+ /usr/include/c++/15/bits/quoted_string.h /usr/include/c++/15/sstream \
+ /usr/include/c++/15/bits/sstream.tcc /usr/include/c++/15/codecvt \
+ /usr/include/c++/15/bits/fs_dir.h /usr/include/c++/15/bits/fs_ops.h \
+ /usr/include/c++/15/numeric /usr/include/c++/15/bits/stl_numeric.h \
+ /usr/include/c++/15/pstl/glue_numeric_defs.h /usr/include/c++/15/any \
  /home/kdy/home-assistant-core/include/MatterController.hpp \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPCore.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPConfig.h \
@@ -210,7 +282,6 @@ CMakeFiles/HomeAssistantCore.dir/src/main.cpp.o: \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/inet/InetBuildConfig.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/platform/Linux/InetPlatformConfig.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemLayer.h \
- /usr/include/c++/15/utility /usr/include/c++/15/bits/stl_relops.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPCallback.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CriticalFailure.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPError.h \
@@ -225,25 +296,13 @@ CMakeFiles/HomeAssistantCore.dir/src/main.cpp.o: \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/DLLUtil.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/EnforceFormat.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/logging/Constants.h \
- /usr/include/c++/15/memory /usr/include/c++/15/bits/stl_tempbuf.h \
- /usr/include/c++/15/bits/stl_raw_storage_iter.h \
- /usr/include/c++/15/bits/align.h /usr/include/c++/15/bits/shared_ptr.h \
- /usr/include/c++/15/bits/shared_ptr_base.h \
- /usr/include/c++/15/bits/allocated_ptr.h \
- /usr/include/c++/15/ext/concurrence.h \
- /usr/include/c++/15/bits/shared_ptr_atomic.h \
- /usr/include/c++/15/backward/auto_ptr.h \
- /usr/include/c++/15/pstl/glue_memory_defs.h \
- /usr/include/c++/15/pstl/execution_defs.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/LambdaBridge.h \
- /usr/include/string.h /usr/include/strings.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemClock.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/TimeUtils.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemError.h \
  /usr/include/x86_64-linux-gnu/sys/time.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemEvent.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/IntrusiveList.h \
- /usr/include/c++/15/iterator /usr/include/c++/15/bits/stream_iterator.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SocketEvents.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/BitFlags.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/Ble.h \
@@ -261,8 +320,6 @@ CMakeFiles/HomeAssistantCore.dir/src/main.cpp.o: \
  /usr/include/x86_64-linux-gnu/bits/xopen_lim.h \
  /usr/include/x86_64-linux-gnu/bits/uio_lim.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/Span.h \
- /usr/include/c++/15/array /usr/include/c++/15/compare \
- /usr/include/c++/15/cstring \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/Unchecked.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemAlignSize.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleConnectionDelegate.h \
@@ -273,11 +330,6 @@ CMakeFiles/HomeAssistantCore.dir/src/main.cpp.o: \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BlePlatformDelegate.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleRole.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BtpEngine.h \
- /usr/include/c++/15/algorithm /usr/include/c++/15/bits/stl_algo.h \
- /usr/include/c++/15/bits/algorithmfwd.h \
- /usr/include/c++/15/bits/stl_heap.h \
- /usr/include/c++/15/bits/uniform_int_dist.h \
- /usr/include/c++/15/pstl/glue_algorithm_defs.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleApplicationDelegate.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleLayer.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/CHIPBleServiceData.h \
@@ -294,11 +346,7 @@ CMakeFiles/HomeAssistantCore.dir/src/main.cpp.o: \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio-byteorder-little.hpp \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio.hpp \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/setup_payload/SetupPayload.h \
- /usr/include/c++/15/map /usr/include/c++/15/bits/stl_tree.h \
- /usr/include/c++/15/bits/stl_map.h \
- /usr/include/c++/15/bits/stl_multimap.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/Optional.h \
- /usr/include/c++/15/optional \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/InPlace.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/setup_payload/ManualSetupPayloadParser.h \
  /home/kdy/home-assistant-core/include/HTTPServer.hpp

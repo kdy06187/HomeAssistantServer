@@ -8,7 +8,9 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <cstring>
+#include "json.hpp"
 
+using json = nlohmann::json;
 TCPDriver::TCPDriver(DeviceManager& deviceManager) : 
     ProtocolDriver(deviceManager), 
     running_(false) {
@@ -21,27 +23,19 @@ TCPDriver::~TCPDriver(){
 }
 
 bool TCPDriver::sendCommand(std::string device_id, std::string command){
-    std::lock_guard<std::mutex> lock(sockets_mutex_);
-    auto it = client_sockets_.find(device_id);
-    if(it != client_sockets_.end()){
-        int client_socket = it->second;
-        // Send the command to the client
-
-        std::string payload = command + "\n"; // 명령어 끝에 개행 추가
-        // send 함수를 사용하여 명령어 전송
-        ssize_t bytes_sent = send(client_socket,payload.c_str(), payload.length(),0);
-
-        if(bytes_sent < 0){
-            std::cerr << "[TCPDriver] 에러 : " << device_id << " 기기로 명령 전송 실패" << std::endl;
-            return false;
-        } else {
-            std::cout << "[TCPDriver] " << device_id << " 기기로 명령 전송 성공 : " << command << std::endl;
-            return true;
-        }
-    } else{
-        std::cerr << "[TCPDriver] 에러 : " << device_id << " 기기와 연결되어 있지 않습니다." << std::endl;
+    // JSON 명령 패킷 생성
+    json res;
+    res["action"] = "CONTROL";
+    res["command"] = command; // "ON" 또는 "OFF"
+    
+    res = sendAndReceive(device_id, res);
+    if (res.is_null()) {
+        std::cerr << "[TCPDriver] 명령 전송 실패 (기기 오프라인): " << device_id << std::endl;
         return false;
     }
+    std::cout << "[TCPDriver] 명령 전송 성공: " << device_id << " -> " << command << std::endl;
+
+    return true;
 }
 bool TCPDriver::commissionDevice(std::string name, std::string payload){
     std::string target_id = "ARD_" + payload;
@@ -150,29 +144,69 @@ bool TCPDriver::unpairDevice(std::string deviceId){
     return false;
 }
 std::string TCPDriver::readDeviceState(std::string deviceId){
-    // std::lock_guard<std::mutex> lock(sockets_mutex_);
-    // auto it = client_sockets_.find(deviceId);
-    // if(it != client_sockets_.end()){
-    //     int client_socket = it->second;
-    //     // 상태 요청 명령 전송
-    //     std::string command = "READ_STATE\n"; // 상태 읽기 명령
-    //     send(client_socket, command.c_str(), command.length(), 0);
+    // 상태 요청 패킷 생성
+    json req;
+    req["action"] = "GET_STATE";
 
-    //     // 클라이언트로부터 상태 응답 수신
-    //     char buffer[1024] = {0};
-    //     ssize_t bytes_received = recv(client_socket, buffer, sizeof(buffer) - 1, 0);
-    //     if(bytes_received > 0){
-    //         buffer[bytes_received] = '\0'; // 문자열 종료
-    //         std::string state(buffer);
-    //         std::cout << "[TCPDriver] " << deviceId << " 기기 상태 수신: " << state << std::endl;
-    //         return state;
-    //     } else {
-    //         std::cerr << "[TCPDriver] 에러 : " << deviceId << " 기기 상태 수신 실패" << std::endl;
-    //         return "";
-    //     }
-    // } else{
-    //     std::cerr << "[TCPDriver] 에러 : " << deviceId << " 기기와 연결되어 있지 않습니다." << std::endl;
-    //     return "";
-    // }
-    return "UNKNOWN"; // 임시로 UNKNOWN 반환, 실제 구현 필요
+
+    json res = sendAndReceive(deviceId, req);
+    if (res.is_null() || !res.contains("state")) {
+        std::cerr << "[TCPDriver] 기기 상태 조회 실패 (오프라인 또는 응답 오류): " << deviceId << std::endl;
+        return "UNKNOWN";
+    }
+    std::string currentState = res["state"].get<std::string>();
+    std::cout << "[TCPDriver] 기기 상태 조회 : " << deviceId << " 현재 상태 ➔ [" << currentState << "]" << std::endl;
+
+    return currentState;
+}
+json TCPDriver::sendAndReceive(const std::string& deviceId, const json& requestJson) {
+    int socket_fd = -1;
+    {
+        std::lock_guard<std::mutex> lock(sockets_mutex_);
+        auto it = client_sockets_.find(deviceId);
+        if (it == client_sockets_.end()) {
+            return nullptr;
+        }
+        socket_fd = it->second;
+    }
+
+    auto cleanupSocket = [&]() -> nlohmann::json {
+        std::lock_guard<std::mutex> lock(sockets_mutex_);
+        client_sockets_.erase(deviceId);
+        close(socket_fd);
+        return nullptr;
+    };
+
+    std::string packet = requestJson.dump() + "\n";
+    if (send(socket_fd, packet.c_str(), packet.length(), 0) < 0) {
+        return cleanupSocket();
+    }
+
+    struct timeval tv;
+    tv.tv_sec = 1; // 1초 타임아웃
+    tv.tv_usec = 0;
+    setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv));
+
+    char buffer[512] = {0};
+    ssize_t read_bytes = recv(socket_fd, buffer, sizeof(buffer) - 1, 0);
+    if (read_bytes <= 0) {
+        std::cerr << "[TCPDriver] 응답 없음 : " << deviceId << std::endl;
+        return cleanupSocket();
+    }
+
+
+    json lastValidJson = nullptr;
+    std::string rawData(buffer);
+    std::istringstream stream(rawData);
+    std::string line;
+    while (std::getline(stream, line)) {
+        if (line.empty() || line == "\r") continue;
+        try {
+            lastValidJson = json::parse(line);
+        } catch (...) {
+            std::cerr << "[TCPDriver] JSON 파싱 에러 (응답: " << line << ")" << std::endl;
+        }
+    }
+    return lastValidJson;
+      
 }

@@ -58,6 +58,9 @@ bool DeviceManager::updateDeviceState(std::string id, std::string newState){
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = devices_.find(id);
     if(it != devices_.end()){
+        if (it->second.state == newState) {
+            return true; 
+        }
         it -> second.state = newState;
         int isActive = (newState == "ON" || newState == "TURN_ON") ? 1 : 0;
         DatabaseManager::getInstance().updateDeviceState(id, isActive);

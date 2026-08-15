@@ -5,6 +5,7 @@
 #include <mutex>
 #include <thread>
 #include <atomic>
+#include "../src/json.hpp"
 
 class TCPDriver : public ProtocolDriver {
 public:
@@ -21,7 +22,7 @@ public:
 private:
     // TCP 서버의 클라이언트 연결을 수락하는 루프 메서드
     void accecptLoop(int port);
-
+    nlohmann::json sendAndReceive(const std::string& devcieId, const nlohmann::json& requestJson);
     std::thread server_thread_; // TCP 서버를 실행하는 스레드
     std::atomic<bool> running_; // 서버 구동 상태 플래그
     //연결된 기기들의 소켓 파이프번호를 기억하는 맵
