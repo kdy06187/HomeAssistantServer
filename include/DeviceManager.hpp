@@ -4,6 +4,8 @@
 #include <unordered_map>
 #include <mutex>
 #include <vector>
+#include <thread>
+#include <atomic>
 #include "Device.hpp"
 #include "ProtocolDriver.hpp"
 
@@ -36,12 +38,18 @@ public:
         std::lock_guard<std::mutex> lock(mutex_);
         return devices_.find(id) != devices_.end();
     }
+    void startHealthCheck();
+    void stopHealthCheck();
 private:
     // 외부 생성 방지
     DeviceManager(){
         std::cout << "DeviceManager 인스턴스 생성" << std::endl;
     }
     ~DeviceManager() = default;
+
+    std::thread health_thread_;
+    std::atomic<bool> is_running_{false};
+    void healthCheckRoutine();
 
     std::unordered_map<std::string,Device> devices_;
     std::unordered_map<ProtocolType, ProtocolDriver*> drivers_;

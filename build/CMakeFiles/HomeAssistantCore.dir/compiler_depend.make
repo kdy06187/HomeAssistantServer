@@ -223,10 +223,13 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o: /home/kdy/home-assista
   /usr/include/asm-generic/int-ll64.h \
   /usr/include/asm-generic/posix_types.h \
   /usr/include/asm-generic/types.h \
+  /usr/include/c++/15/atomic \
   /usr/include/c++/15/backward/binders.h \
   /usr/include/c++/15/bit \
   /usr/include/c++/15/bits/alloc_traits.h \
   /usr/include/c++/15/bits/allocator.h \
+  /usr/include/c++/15/bits/atomic_base.h \
+  /usr/include/c++/15/bits/atomic_lockfree_defines.h \
   /usr/include/c++/15/bits/basic_ios.h \
   /usr/include/c++/15/bits/basic_ios.tcc \
   /usr/include/c++/15/bits/basic_string.h \
@@ -274,6 +277,7 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o: /home/kdy/home-assista
   /usr/include/c++/15/bits/requires_hosted.h \
   /usr/include/c++/15/bits/std_abs.h \
   /usr/include/c++/15/bits/std_mutex.h \
+  /usr/include/c++/15/bits/std_thread.h \
   /usr/include/c++/15/bits/stl_algobase.h \
   /usr/include/c++/15/bits/stl_bvector.h \
   /usr/include/c++/15/bits/stl_construct.h \
@@ -288,7 +292,9 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o: /home/kdy/home-assista
   /usr/include/c++/15/bits/streambuf_iterator.h \
   /usr/include/c++/15/bits/string_view.tcc \
   /usr/include/c++/15/bits/stringfwd.h \
+  /usr/include/c++/15/bits/this_thread_sleep.h \
   /usr/include/c++/15/bits/unique_lock.h \
+  /usr/include/c++/15/bits/unique_ptr.h \
   /usr/include/c++/15/bits/unordered_map.h \
   /usr/include/c++/15/bits/uses_allocator.h \
   /usr/include/c++/15/bits/uses_allocator_args.h \
@@ -297,6 +303,7 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o: /home/kdy/home-assista
   /usr/include/c++/15/bits/version.h \
   /usr/include/c++/15/cctype \
   /usr/include/c++/15/cerrno \
+  /usr/include/c++/15/chrono \
   /usr/include/c++/15/clocale \
   /usr/include/c++/15/concepts \
   /usr/include/c++/15/cstddef \
@@ -331,6 +338,7 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o: /home/kdy/home-assista
   /usr/include/c++/15/string \
   /usr/include/c++/15/string_view \
   /usr/include/c++/15/system_error \
+  /usr/include/c++/15/thread \
   /usr/include/c++/15/tuple \
   /usr/include/c++/15/type_traits \
   /usr/include/c++/15/typeinfo \
@@ -998,6 +1006,7 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o: /home/kdy/home-assi
   /usr/include/asm-generic/types.h \
   /usr/include/c++/15/algorithm \
   /usr/include/c++/15/array \
+  /usr/include/c++/15/atomic \
   /usr/include/c++/15/backward/auto_ptr.h \
   /usr/include/c++/15/backward/binders.h \
   /usr/include/c++/15/bit \
@@ -2592,23 +2601,11 @@ CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o:
 
 /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio-byteorder.hpp:
 
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libMessagingLayerTests.a:
-
-/usr/include/c++/15/bits/forward_list.h:
-
-/usr/include/c++/15/bits/deque.tcc:
-
-/usr/include/c++/15/bits/stl_tempbuf.h:
-
 /usr/include/c++/15/backward/auto_ptr.h:
 
 /usr/include/c++/15/bits/exception_defines.h:
 
 /usr/include/c++/15/bits/stl_heap.h:
-
-/usr/include/c++/15/atomic:
-
-/usr/include/c++/15/stdexcept:
 
 /usr/include/assert.h:
 
@@ -2650,11 +2647,25 @@ CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o:
 
 /usr/include/x86_64-linux-gnu/bits/environments.h:
 
+/usr/include/c++/15/bits/this_thread_sleep.h:
+
+/usr/include/x86_64-linux-gnu/bits/cpu-set.h:
+
+/usr/include/x86_64-linux-gnu/asm/posix_types_64.h:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/obj/src/wifipaf/lib/libWiFiPAFLayer.a:
+
+/usr/include/c++/15/bits/std_thread.h:
+
 /usr/include/c++/15/bits/unordered_map.h:
 
 /usr/include/c++/15/bits/parse_numbers.h:
 
 /usr/include/c++/15/bits/node_handle.h:
+
+/usr/include/c++/15/atomic:
+
+/usr/include/c++/15/stdexcept:
 
 /usr/include/x86_64-linux-gnu/bits/stdint-uintn.h:
 
@@ -2689,6 +2700,10 @@ CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o:
 /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/system/SystemBuildConfig.h:
 
 /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPEncoding.h:
+
+/usr/include/x86_64-linux-gnu/asm/bitsperlong.h:
+
+/usr/include/x86_64-linux-gnu/c++/15/bits/c++config.h:
 
 /usr/lib/gcc/x86_64-linux-gnu/15/include/stddef.h:
 
@@ -2745,12 +2760,6 @@ CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o:
 /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libRawTransportTests.a:
 
 /usr/include/x86_64-linux-gnu/bits/types/__fpos_t.h:
-
-/usr/include/c++/15/bits/codecvt.h:
-
-/usr/include/c++/15/bits/std_function.h:
-
-/usr/include/x86_64-linux-gnu/bits/local_lim.h:
 
 /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libTestPressureMeasurementCluster.a:
 
@@ -2828,12 +2837,6 @@ CMakeFiles/HomeAssistantCore.dir/src/main.cpp.o:
 
 /usr/include/x86_64-linux-gnu/gnu/stubs.h:
 
-/usr/include/x86_64-linux-gnu/bits/cpu-set.h:
-
-/usr/include/x86_64-linux-gnu/asm/posix_types_64.h:
-
-/usr/include/c++/15/bits/this_thread_sleep.h:
-
 /usr/include/x86_64-linux-gnu/bits/byteswap.h:
 
 /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/TestElectricalEnergyMeasurementClusterBackwardsCompatibility.a:
@@ -2867,14 +2870,6 @@ CMakeFiles/HomeAssistantCore.dir/src/main.cpp.o:
 /usr/include/x86_64-linux-gnu/bits/types/sigset_t.h:
 
 /usr/include/c++/15/bits/regex.h:
-
-/usr/include/x86_64-linux-gnu/c++/15/bits/c++config.h:
-
-/usr/include/x86_64-linux-gnu/asm/bitsperlong.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/obj/src/wifipaf/lib/libWiFiPAFLayer.a:
-
-/usr/include/c++/15/bits/std_thread.h:
 
 /usr/include/c++/15/typeinfo:
 
@@ -3128,12 +3123,6 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o:
 
 /usr/include/x86_64-linux-gnu/bits/types/__locale_t.h:
 
-/usr/include/linux/posix_types.h:
-
-/usr/include/x86_64-linux-gnu/bits/openat2.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemLayer.h:
-
 /usr/include/x86_64-linux-gnu/bits/types/error_t.h:
 
 /usr/include/poll.h:
@@ -3254,6 +3243,10 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o:
 
 /usr/include/x86_64-linux-gnu/bits/sigevent-consts.h:
 
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/TestEnergyEvseClusterBackwardsCompatibility.a:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPConfig.h:
+
 /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libInteractionModelTests.a:
 
 /usr/include/c++/15/new:
@@ -3314,6 +3307,16 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o:
 
 /usr/include/x86_64-linux-gnu/bits/getopt_core.h:
 
+/usr/include/x86_64-linux-gnu/bits/openat2.h:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemLayer.h:
+
+/usr/include/linux/posix_types.h:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libMessagingLayerTests.a:
+
+/usr/include/c++/15/bits/forward_list.h:
+
 /usr/include/c++/15/bits/uses_allocator_args.h:
 
 /home/kdy/home-assistant-core/include/DatabaseManager.hpp:
@@ -3365,6 +3368,16 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o:
 /usr/include/c++/15/bits/ios_base.h:
 
 /usr/include/c++/15/sstream:
+
+/usr/include/c++/15/bits/codecvt.h:
+
+/usr/include/c++/15/bits/std_function.h:
+
+/usr/include/x86_64-linux-gnu/bits/local_lim.h:
+
+/usr/include/c++/15/bits/deque.tcc:
+
+/usr/include/c++/15/bits/stl_tempbuf.h:
 
 /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libControllerTests.a:
 
@@ -3535,10 +3548,6 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o:
 /usr/include/c++/15/pstl/execution_defs.h:
 
 /usr/include/x86_64-linux-gnu/bits/netdb.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/TestEnergyEvseClusterBackwardsCompatibility.a:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPConfig.h:
 
 /usr/include/c++/15/tr1/bessel_function.tcc:
 

@@ -1,6 +1,7 @@
 #include "DeviceManager.hpp"
 #include "DatabaseManager.hpp"
 #include <iostream>
+#include <chrono>
 // ProtocolDriver 등록
 void DeviceManager::registerDriver(ProtocolType type, ProtocolDriver* driver){
     std::lock_guard<std::mutex> lock(mutex_);
@@ -148,4 +149,55 @@ std::string DeviceManager::getDeviceState(std::string id){
     }
     
     return "UNKNOWN";
+}
+void DeviceManager::startHealthCheck() {
+    if (!is_running_) {
+        is_running_ = true;
+        // healthCheckRoutine 함수를 백그라운드 스레드로 분리해서 실행!
+        health_thread_ = std::thread(&DeviceManager::healthCheckRoutine, this);
+        std::cout << "[DeviceManager] 🛡️ 백그라운드 헬스 체크 데몬 가동 (주기: 60초)" << std::endl;
+    }
+}
+
+void DeviceManager::stopHealthCheck() {
+    if (is_running_) {
+        is_running_ = false;
+        if (health_thread_.joinable()) {
+            health_thread_.join(); // 스레드가 안전하게 끝날 때까지 기다림
+        }
+        std::cout << "[DeviceManager] 🛡️ 헬스 체크 데몬 종료" << std::endl;
+    }
+}
+
+void DeviceManager::healthCheckRoutine() {
+    while (is_running_) {
+        // 🌟 60초 대기 (단, 서버 종료 명령이 오면 1초 단위로 빨리 빠져나올 수 있도록 분할 대기)
+        for (int i = 0; i < 60 && is_running_; ++i) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+
+        if (!is_running_) break;
+
+        std::cout << "\n[DeviceManager] 모든 기기의 상태 점검 시작..." << std::endl;
+
+        std::vector<std::string> deviceIds;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            for (const auto& pair : devices_) {
+                deviceIds.push_back(pair.first);
+            }
+        } 
+
+        for (const auto& id : deviceIds) {
+            // 우리가 예전에 최적화해 둔 그 함수! (알아서 통신하고, 알아서 DB 업데이트까지 다 함)
+            std::string state = this->getDeviceState(id);
+            std::cout << "[DeviceManager] 기기 상태 점검 : " << id << " 현재 상태 ➔ [" << state << "]" << std::endl;
+            if (state == "UNKNOWN") {
+                std::cerr << "[DeviceManager] 기기 오프라인 : " << id << std::endl;
+                // 필요하다면 여기서 DB를 오프라인 상태로 바꾸는 코드를 추가해도 좋습니다.
+                DatabaseManager::getInstance().updateDeviceState(id, 0); // 오프라인 상태로 DB 업데이트
+            }
+        }
+        std::cout << "[DeviceManager] 점검 완료.\n" << std::endl;
+    }
 }

@@ -21,6 +21,7 @@ int main() {
     // 1. 시스템 두뇌(DeviceManager) 가져오기
     DeviceManager& manager = DeviceManager::getInstance();
     manager.initFromDatabase();
+    manager.startHealthCheck();
     // 2. TCP 드라이버 생성 및 포트 8080으로 서버 시작
     TCPDriver* tcpDriver = new TCPDriver(manager);
     tcpDriver->startServer(8080);
@@ -100,5 +101,6 @@ int main() {
     delete matterController;
     tcpDriver->stopServer();
     delete tcpDriver;
+    manager.stopHealthCheck();
     return 0;
 }

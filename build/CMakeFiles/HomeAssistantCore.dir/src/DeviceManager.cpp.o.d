@@ -183,8 +183,13 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o: \
  /usr/include/c++/15/bits/stl_uninitialized.h \
  /usr/include/c++/15/bits/stl_vector.h \
  /usr/include/c++/15/bits/stl_bvector.h \
- /usr/include/c++/15/bits/vector.tcc \
+ /usr/include/c++/15/bits/vector.tcc /usr/include/c++/15/thread \
+ /usr/include/c++/15/bits/std_thread.h \
+ /usr/include/c++/15/bits/unique_ptr.h \
+ /usr/include/c++/15/bits/this_thread_sleep.h /usr/include/c++/15/atomic \
+ /usr/include/c++/15/bits/atomic_base.h \
+ /usr/include/c++/15/bits/atomic_lockfree_defines.h \
  /home/kdy/home-assistant-core/include/Device.hpp \
  /home/kdy/home-assistant-core/include/ProtocolDriver.hpp \
  /home/kdy/home-assistant-core/include/DatabaseManager.hpp \
- /usr/include/sqlite3.h
+ /usr/include/sqlite3.h /usr/include/c++/15/chrono
