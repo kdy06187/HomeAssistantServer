@@ -1,5 +1,6 @@
 #include "DeviceManager.hpp"
 #include "DatabaseManager.hpp"
+#include "MatterController.hpp"
 #include <iostream>
 #include <chrono>
 // ProtocolDriver 등록
@@ -200,4 +201,41 @@ void DeviceManager::healthCheckRoutine() {
         }
         std::cout << "[DeviceManager] 점검 완료.\n" << std::endl;
     }
+}
+std::string DeviceManager::getDeviceActivePower(std::string deviceId) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (devices_.find(deviceId) == devices_.end()) {
+        std::cerr << "[DeviceManager] 전력 조회 실패: 등록되지 않은 기기 (" << deviceId << ")" << std::endl;
+        return "UNKNOWN";
+    }
+    auto it = drivers_.find(ProtocolType::MATTER);
+    if (it != drivers_.end()) {
+        // 부모 포인터를 자식(MatterController) 포인터로 안전하게 형변환(Downcast)
+        MatterController* matterCtrl = dynamic_cast<MatterController*>(it->second);
+        
+        //  전력량 조회 함수 호출
+        if (matterCtrl != nullptr) {
+            return matterCtrl->getPowerUsage(deviceId);
+        }
+    }
+    return "UNKNOWN";
+}
+
+std::string DeviceManager::getDeviceTotalEnergy(std::string deviceId) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (devices_.find(deviceId) == devices_.end()) {
+        std::cerr << "[DeviceManager] 누적 전력 조회 실패: 등록되지 않은 기기 (" << deviceId << ")" << std::endl;
+        return "UNKNOWN";
+    }
+    auto it = drivers_.find(ProtocolType::MATTER);
+    if (it != drivers_.end()) {
+        // 부모 포인터를 자식(MatterController) 포인터로 안전하게 형변환(Downcast)
+        MatterController* matterCtrl = dynamic_cast<MatterController*>(it->second);
+        
+        //  전력량 조회 함수 호출
+        if (matterCtrl != nullptr) {
+            return matterCtrl->getCumulativeEnergy(deviceId);
+        }
+    }
+    return "UNKNOWN";
 }

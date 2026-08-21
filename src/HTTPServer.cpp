@@ -63,16 +63,24 @@ void HTTPServer::run(){
     });
 
     svr.Get(R"(/api/devices/([^/]+)/state)", [this](const httplib::Request& req, httplib::Response& res) {
-    std::string deviceId = req.matches[1];
-    
-    std::string currentState = mDeviceManager.getDeviceState(deviceId);
-    
-    json response;
-    response["deviceId"] = deviceId;
-    response["state"] = currentState;
-    
-    res.set_content(response.dump(), "application/json");
-});
+        std::string deviceId = req.matches[1];
+        
+        std::string currentState = mDeviceManager.getDeviceState(deviceId);
+        
+        json response;
+        response["deviceId"] = deviceId;
+        response["state"] = currentState;
+        
+        res.set_content(response.dump(), "application/json");
+    });
+    svr.Get(R"(/api/devices/([^/]+)/energy)", [this](const httplib::Request& req, httplib::Response& res) {
+        std::string deviceId = req.matches[1];;
+        std::string jsonResponse = this->handleGetDeviceEnergy(deviceId);
+        if (jsonResponse.find("\"error\"") != std::string::npos) {
+            res.status = 400;
+        }
+        res.set_content(jsonResponse, "application/json");
+    });
     std::cout << "[HTTPServer]네트워크 소켓 개방 완료" << std::endl;
     svr.listen("0.0.0.0", mPort);
 }
@@ -179,5 +187,33 @@ std::string HTTPServer::handleDeleteDevice(const std::string& requestBody) {
     } catch (const json::exception& e) {
         std::cerr << "[HTTPServer] ❌ JSON 파싱 에러: " << e.what() << std::endl;
         return R"({"result": "error", "message": "잘못된 JSON 형식입니다."})";
+    }
+}
+
+std::string HTTPServer::handleGetDeviceEnergy(const std::string& deviceId) {
+    std::cout << "[HTTPServer] 기기 전력량(실시간/누적) GET 요청 수신 Device ID: " << deviceId << std::endl;
+
+    try{
+        std::string activePower = mDeviceManager.getDeviceActivePower(deviceId);
+        std::string totalEnergy = mDeviceManager.getDeviceTotalEnergy(deviceId);
+
+        json response;
+        response["deviceId"] = deviceId;
+        if (activePower != "UNKNOWN" && !activePower.empty()) {
+            response["activePower_mW"] = std::stoi(activePower); 
+        } else {
+            response["activePower_mW"] = 0; // 에러 시 0 처리
+        }
+
+        if (totalEnergy != "UNKNOWN" && !totalEnergy.empty()) {
+            response["totalEnergy_mWh"] = std::stoll(totalEnergy); // 값이 크므로 stoll 사용
+        } else {
+            response["totalEnergy_mWh"] = 0;
+        }
+
+        return response.dump();
+    } catch (const json::exception& e) {
+        std::cerr << "[HTTPServer] ❌ 데이터 처리 에러: " << e.what() << std::endl;
+        return R"({"error": "서버 내부 데이터 처리 오류입니다."})";
     }
 }

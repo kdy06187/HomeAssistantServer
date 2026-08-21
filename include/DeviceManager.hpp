@@ -40,6 +40,9 @@ public:
     }
     void startHealthCheck();
     void stopHealthCheck();
+
+    std::string getDeviceActivePower(std::string deviceId);
+    std::string getDeviceTotalEnergy(std::string deviceId);
 private:
     // 외부 생성 방지
     DeviceManager(){

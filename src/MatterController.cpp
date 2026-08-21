@@ -2,6 +2,7 @@
 #include "DeviceManager.hpp"
 #include <iostream>
 #include <cstdlib>
+#include <sstream>
 #include <fstream>
 #include <ctime>
 #include <memory>
@@ -44,7 +45,7 @@ bool MatterController::executeCommand(const std::string& cmd) {
 std::string MatterController::executeCommandWithOutput(std::string cmd){
     std::array<char,128> buffer;
     std::string result;
-    std::unique_ptr<FILE,decltype(&pclose)> pipe(popen(cmd.c_str(),"r"),pclose);
+    std::unique_ptr<FILE,int(*)(FILE*)> pipe(popen(cmd.c_str(),"r"),pclose);
     if(!pipe){
         std::cerr << "[MatterController] 명령 실행 실패: " << cmd << std::endl;
         return "";
@@ -206,4 +207,59 @@ std::string MatterController::readDeviceState(std::string deviceId){
         return "ERROR";
     }
     return "UNKNOWN";
+}
+std::string MatterController::getPowerUsage(std::string deviceId){
+    std::cout << "[MatterController] 기기 전력량(실시간) 조회 요청 : NodeId = " << deviceId << std::endl;
+    std::string cmd = mChipToolPath + " electricalpowermeasurement read active-power " + deviceId + " 1";
+    std::string output = this->executeCommandWithOutput(cmd);
+
+    if (output.empty()) return "UNKNOWN";
+
+    std::string result = "UNKNOWN";
+    std::istringstream iss(output);
+    std::string line;
+
+    while (std::getline(iss, line)) {
+        size_t pos = line.find("ActivePower:");
+        if (pos != std::string::npos) {
+            std::string valStr = line.substr(pos + 12);
+            // 앞뒤 공백 청소
+            valStr.erase(0, valStr.find_first_not_of(" \t"));
+            valStr.erase(valStr.find_last_not_of(" \n\r\t") + 1);
+            result = valStr;
+            break;
+        }
+    }
+
+    if (result != "UNKNOWN") {
+        std::cout << "[MatterController] 실시간 전력 : " << result << " mW" << std::endl;
+    }
+    return result;
+}
+std::string MatterController::getCumulativeEnergy(std::string deviceId){
+    std::cout << "[MatterController] 기기 전력량(누적) 조회 요청 : NodeId = " << deviceId << std::endl;
+    std::string cmd = mChipToolPath + " electricalenergymeasurement read cumulative-energy-imported " + deviceId + " 1";
+    std::string output = this->executeCommandWithOutput(cmd);
+
+    if (output.empty()) return "UNKNOWN";
+
+    std::string result = "UNKNOWN";
+    std::istringstream iss(output);
+    std::string line;
+    
+    while (std::getline(iss, line)) {
+        size_t pos = line.find("Energy:");
+        if (pos != std::string::npos) {
+            std::string valStr = line.substr(pos + 7);
+            // 앞뒤 공백 청소
+            valStr.erase(0, valStr.find_first_not_of(" \t"));
+            valStr.erase(valStr.find_last_not_of(" \n\r\t") + 1);
+            result = valStr;
+            break;
+        }
+    }
+    if (result != "UNKNOWN") {
+        std::cout << "[MatterController] 누적 전력 : " << result << " mWh" << std::endl;
+    }
+    return result;
 }

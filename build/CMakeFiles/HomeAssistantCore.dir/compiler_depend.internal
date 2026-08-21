@@ -214,10 +214,83 @@ CMakeFiles/HomeAssistantCore.dir/src/DatabaseManager.cpp.o
 
 CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o
  /home/kdy/home-assistant-core/src/DeviceManager.cpp
+ /home/kdy/home-assistant-core/include/CHIPProjectConfig.h
  /home/kdy/home-assistant-core/include/DatabaseManager.hpp
  /home/kdy/home-assistant-core/include/Device.hpp
  /home/kdy/home-assistant-core/include/DeviceManager.hpp
+ /home/kdy/home-assistant-core/include/MatterController.hpp
  /home/kdy/home-assistant-core/include/ProtocolDriver.hpp
+ /home/kdy/home-assistant-core/include/SystemProjectConfig.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/ble/BleBuildConfig.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/core/CHIPBuildConfig.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/inet/InetBuildConfig.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/platform/CHIPDeviceBuildConfig.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/system/SystemBuildConfig.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BLEEndPoint.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/Ble.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleApplicationDelegate.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleConfig.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleConnectionDelegate.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleError.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleLayer.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleLayerDelegate.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BlePlatformDelegate.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleRole.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleUUID.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BtpEngine.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/CHIPBleServiceData.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/inet/InetConfig.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPCallback.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPConfig.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPCore.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPEncoding.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPError.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CriticalFailure.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/ErrorStr.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/InPlace.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/Optional.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/Unchecked.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/Assertions.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/BitFlags.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/BufferWriter.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/CodeUtils.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/Compiler.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/DLLUtil.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/EnforceFormat.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/IntrusiveList.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/LambdaBridge.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/ObjectDump.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/SetupDiscriminator.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/Span.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/TimeUtils.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/TypeTraits.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/logging/Constants.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/logging/TextOnlyLogging.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/platform/Linux/BlePlatformConfig.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/platform/Linux/CHIPPlatformConfig.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/platform/Linux/InetPlatformConfig.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/platform/Linux/SystemPlatformConfig.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/setup_payload/ManualSetupPayloadParser.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/setup_payload/SetupPayload.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SocketEvents.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemAlignSize.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemClock.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemConfig.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemError.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemEvent.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemLayer.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemPacketBuffer.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemPacketBufferInternal.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlbyteorder-little.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlbyteorder.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlbyteorder.hpp
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio-base.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio-base.hpp
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio-byteorder-big.hpp
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio-byteorder-little.hpp
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio-byteorder.hpp
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio-private.h
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio.hpp
  /usr/include/alloca.h
  /usr/include/asm-generic/bitsperlong.h
  /usr/include/asm-generic/errno-base.h
@@ -225,10 +298,16 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o
  /usr/include/asm-generic/int-ll64.h
  /usr/include/asm-generic/posix_types.h
  /usr/include/asm-generic/types.h
+ /usr/include/c++/15/algorithm
+ /usr/include/c++/15/array
  /usr/include/c++/15/atomic
+ /usr/include/c++/15/backward/auto_ptr.h
  /usr/include/c++/15/backward/binders.h
  /usr/include/c++/15/bit
+ /usr/include/c++/15/bits/algorithmfwd.h
+ /usr/include/c++/15/bits/align.h
  /usr/include/c++/15/bits/alloc_traits.h
+ /usr/include/c++/15/bits/allocated_ptr.h
  /usr/include/c++/15/bits/allocator.h
  /usr/include/c++/15/bits/atomic_base.h
  /usr/include/c++/15/bits/atomic_lockfree_defines.h
@@ -277,24 +356,37 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o
  /usr/include/c++/15/bits/range_access.h
  /usr/include/c++/15/bits/refwrap.h
  /usr/include/c++/15/bits/requires_hosted.h
+ /usr/include/c++/15/bits/shared_ptr.h
+ /usr/include/c++/15/bits/shared_ptr_atomic.h
+ /usr/include/c++/15/bits/shared_ptr_base.h
  /usr/include/c++/15/bits/std_abs.h
  /usr/include/c++/15/bits/std_mutex.h
  /usr/include/c++/15/bits/std_thread.h
+ /usr/include/c++/15/bits/stl_algo.h
  /usr/include/c++/15/bits/stl_algobase.h
  /usr/include/c++/15/bits/stl_bvector.h
  /usr/include/c++/15/bits/stl_construct.h
  /usr/include/c++/15/bits/stl_function.h
+ /usr/include/c++/15/bits/stl_heap.h
  /usr/include/c++/15/bits/stl_iterator.h
  /usr/include/c++/15/bits/stl_iterator_base_funcs.h
  /usr/include/c++/15/bits/stl_iterator_base_types.h
+ /usr/include/c++/15/bits/stl_map.h
+ /usr/include/c++/15/bits/stl_multimap.h
  /usr/include/c++/15/bits/stl_pair.h
+ /usr/include/c++/15/bits/stl_raw_storage_iter.h
+ /usr/include/c++/15/bits/stl_relops.h
+ /usr/include/c++/15/bits/stl_tempbuf.h
+ /usr/include/c++/15/bits/stl_tree.h
  /usr/include/c++/15/bits/stl_uninitialized.h
  /usr/include/c++/15/bits/stl_vector.h
+ /usr/include/c++/15/bits/stream_iterator.h
  /usr/include/c++/15/bits/streambuf.tcc
  /usr/include/c++/15/bits/streambuf_iterator.h
  /usr/include/c++/15/bits/string_view.tcc
  /usr/include/c++/15/bits/stringfwd.h
  /usr/include/c++/15/bits/this_thread_sleep.h
+ /usr/include/c++/15/bits/uniform_int_dist.h
  /usr/include/c++/15/bits/unique_lock.h
  /usr/include/c++/15/bits/unique_ptr.h
  /usr/include/c++/15/bits/unordered_map.h
@@ -306,12 +398,15 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o
  /usr/include/c++/15/cctype
  /usr/include/c++/15/cerrno
  /usr/include/c++/15/chrono
+ /usr/include/c++/15/climits
  /usr/include/c++/15/clocale
+ /usr/include/c++/15/compare
  /usr/include/c++/15/concepts
  /usr/include/c++/15/cstddef
  /usr/include/c++/15/cstdint
  /usr/include/c++/15/cstdio
  /usr/include/c++/15/cstdlib
+ /usr/include/c++/15/cstring
  /usr/include/c++/15/ctime
  /usr/include/c++/15/cwchar
  /usr/include/c++/15/cwctype
@@ -321,6 +416,7 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o
  /usr/include/c++/15/ext/aligned_buffer.h
  /usr/include/c++/15/ext/alloc_traits.h
  /usr/include/c++/15/ext/atomicity.h
+ /usr/include/c++/15/ext/concurrence.h
  /usr/include/c++/15/ext/numeric_traits.h
  /usr/include/c++/15/ext/string_conversions.h
  /usr/include/c++/15/ext/type_traits.h
@@ -329,10 +425,17 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o
  /usr/include/c++/15/iosfwd
  /usr/include/c++/15/iostream
  /usr/include/c++/15/istream
+ /usr/include/c++/15/iterator
  /usr/include/c++/15/limits
+ /usr/include/c++/15/map
+ /usr/include/c++/15/memory
  /usr/include/c++/15/mutex
  /usr/include/c++/15/new
+ /usr/include/c++/15/optional
  /usr/include/c++/15/ostream
+ /usr/include/c++/15/pstl/execution_defs.h
+ /usr/include/c++/15/pstl/glue_algorithm_defs.h
+ /usr/include/c++/15/pstl/glue_memory_defs.h
  /usr/include/c++/15/pstl/pstl_config.h
  /usr/include/c++/15/ratio
  /usr/include/c++/15/stdexcept
@@ -345,13 +448,17 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o
  /usr/include/c++/15/type_traits
  /usr/include/c++/15/typeinfo
  /usr/include/c++/15/unordered_map
+ /usr/include/c++/15/utility
  /usr/include/c++/15/vector
  /usr/include/ctype.h
  /usr/include/endian.h
  /usr/include/errno.h
  /usr/include/features-time64.h
  /usr/include/features.h
+ /usr/include/inttypes.h
+ /usr/include/limits.h
  /usr/include/linux/errno.h
+ /usr/include/linux/limits.h
  /usr/include/linux/posix_types.h
  /usr/include/linux/sched/types.h
  /usr/include/linux/stddef.h
@@ -364,6 +471,8 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o
  /usr/include/stdint.h
  /usr/include/stdio.h
  /usr/include/stdlib.h
+ /usr/include/string.h
+ /usr/include/strings.h
  /usr/include/time.h
  /usr/include/wchar.h
  /usr/include/wctype.h
@@ -381,8 +490,11 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o
  /usr/include/x86_64-linux-gnu/bits/floatn-common.h
  /usr/include/x86_64-linux-gnu/bits/floatn.h
  /usr/include/x86_64-linux-gnu/bits/libc-header-start.h
+ /usr/include/x86_64-linux-gnu/bits/local_lim.h
  /usr/include/x86_64-linux-gnu/bits/locale.h
  /usr/include/x86_64-linux-gnu/bits/long-double.h
+ /usr/include/x86_64-linux-gnu/bits/posix1_lim.h
+ /usr/include/x86_64-linux-gnu/bits/posix2_lim.h
  /usr/include/x86_64-linux-gnu/bits/pthread_stack_min-dynamic.h
  /usr/include/x86_64-linux-gnu/bits/pthreadtypes-arch.h
  /usr/include/x86_64-linux-gnu/bits/pthreadtypes.h
@@ -428,11 +540,13 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o
  /usr/include/x86_64-linux-gnu/bits/types/wint_t.h
  /usr/include/x86_64-linux-gnu/bits/typesizes.h
  /usr/include/x86_64-linux-gnu/bits/uintn-identity.h
+ /usr/include/x86_64-linux-gnu/bits/uio_lim.h
  /usr/include/x86_64-linux-gnu/bits/waitflags.h
  /usr/include/x86_64-linux-gnu/bits/waitstatus.h
  /usr/include/x86_64-linux-gnu/bits/wchar.h
  /usr/include/x86_64-linux-gnu/bits/wctype-wchar.h
  /usr/include/x86_64-linux-gnu/bits/wordsize.h
+ /usr/include/x86_64-linux-gnu/bits/xopen_lim.h
  /usr/include/x86_64-linux-gnu/c++/15/bits/atomic_word.h
  /usr/include/x86_64-linux-gnu/c++/15/bits/c++allocator.h
  /usr/include/x86_64-linux-gnu/c++/15/bits/c++config.h
@@ -449,10 +563,14 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o
  /usr/include/x86_64-linux-gnu/sys/cdefs.h
  /usr/include/x86_64-linux-gnu/sys/select.h
  /usr/include/x86_64-linux-gnu/sys/single_threaded.h
+ /usr/include/x86_64-linux-gnu/sys/time.h
  /usr/include/x86_64-linux-gnu/sys/types.h
+ /usr/lib/gcc/x86_64-linux-gnu/15/include/limits.h
  /usr/lib/gcc/x86_64-linux-gnu/15/include/stdarg.h
+ /usr/lib/gcc/x86_64-linux-gnu/15/include/stdbool.h
  /usr/lib/gcc/x86_64-linux-gnu/15/include/stddef.h
  /usr/lib/gcc/x86_64-linux-gnu/15/include/stdint.h
+ /usr/lib/gcc/x86_64-linux-gnu/15/include/syslimits.h
 
 CMakeFiles/HomeAssistantCore.dir/src/HTTPServer.cpp.o
  /home/kdy/home-assistant-core/src/HTTPServer.cpp
@@ -1071,6 +1189,7 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o
  /usr/include/c++/15/bits/shared_ptr.h
  /usr/include/c++/15/bits/shared_ptr_atomic.h
  /usr/include/c++/15/bits/shared_ptr_base.h
+ /usr/include/c++/15/bits/sstream.tcc
  /usr/include/c++/15/bits/std_abs.h
  /usr/include/c++/15/bits/std_mutex.h
  /usr/include/c++/15/bits/std_thread.h
@@ -1151,6 +1270,7 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o
  /usr/include/c++/15/pstl/glue_memory_defs.h
  /usr/include/c++/15/pstl/pstl_config.h
  /usr/include/c++/15/ratio
+ /usr/include/c++/15/sstream
  /usr/include/c++/15/stdexcept
  /usr/include/c++/15/streambuf
  /usr/include/c++/15/string

@@ -212,10 +212,83 @@ CMakeFiles/HomeAssistantCore.dir/src/DatabaseManager.cpp.o: /home/kdy/home-assis
   /usr/lib/gcc/x86_64-linux-gnu/15/include/stddef.h
 
 CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o: /home/kdy/home-assistant-core/src/DeviceManager.cpp \
+  /home/kdy/home-assistant-core/include/CHIPProjectConfig.h \
   /home/kdy/home-assistant-core/include/DatabaseManager.hpp \
   /home/kdy/home-assistant-core/include/Device.hpp \
   /home/kdy/home-assistant-core/include/DeviceManager.hpp \
+  /home/kdy/home-assistant-core/include/MatterController.hpp \
   /home/kdy/home-assistant-core/include/ProtocolDriver.hpp \
+  /home/kdy/home-assistant-core/include/SystemProjectConfig.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/ble/BleBuildConfig.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/core/CHIPBuildConfig.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/inet/InetBuildConfig.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/platform/CHIPDeviceBuildConfig.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/system/SystemBuildConfig.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BLEEndPoint.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/Ble.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleApplicationDelegate.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleConfig.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleConnectionDelegate.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleError.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleLayer.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleLayerDelegate.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BlePlatformDelegate.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleRole.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleUUID.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BtpEngine.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/CHIPBleServiceData.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/inet/InetConfig.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPCallback.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPConfig.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPCore.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPEncoding.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPError.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CriticalFailure.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/ErrorStr.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/InPlace.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/Optional.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/Unchecked.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/Assertions.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/BitFlags.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/BufferWriter.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/CodeUtils.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/Compiler.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/DLLUtil.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/EnforceFormat.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/IntrusiveList.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/LambdaBridge.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/ObjectDump.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/SetupDiscriminator.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/Span.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/TimeUtils.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/TypeTraits.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/logging/Constants.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/logging/TextOnlyLogging.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/platform/Linux/BlePlatformConfig.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/platform/Linux/CHIPPlatformConfig.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/platform/Linux/InetPlatformConfig.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/platform/Linux/SystemPlatformConfig.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/setup_payload/ManualSetupPayloadParser.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/setup_payload/SetupPayload.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SocketEvents.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemAlignSize.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemClock.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemConfig.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemError.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemEvent.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemLayer.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemPacketBuffer.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemPacketBufferInternal.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlbyteorder-little.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlbyteorder.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlbyteorder.hpp \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio-base.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio-base.hpp \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio-byteorder-big.hpp \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio-byteorder-little.hpp \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio-byteorder.hpp \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio-private.h \
+  /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio.hpp \
   /usr/include/alloca.h \
   /usr/include/asm-generic/bitsperlong.h \
   /usr/include/asm-generic/errno-base.h \
@@ -223,10 +296,16 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o: /home/kdy/home-assista
   /usr/include/asm-generic/int-ll64.h \
   /usr/include/asm-generic/posix_types.h \
   /usr/include/asm-generic/types.h \
+  /usr/include/c++/15/algorithm \
+  /usr/include/c++/15/array \
   /usr/include/c++/15/atomic \
+  /usr/include/c++/15/backward/auto_ptr.h \
   /usr/include/c++/15/backward/binders.h \
   /usr/include/c++/15/bit \
+  /usr/include/c++/15/bits/algorithmfwd.h \
+  /usr/include/c++/15/bits/align.h \
   /usr/include/c++/15/bits/alloc_traits.h \
+  /usr/include/c++/15/bits/allocated_ptr.h \
   /usr/include/c++/15/bits/allocator.h \
   /usr/include/c++/15/bits/atomic_base.h \
   /usr/include/c++/15/bits/atomic_lockfree_defines.h \
@@ -275,24 +354,37 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o: /home/kdy/home-assista
   /usr/include/c++/15/bits/range_access.h \
   /usr/include/c++/15/bits/refwrap.h \
   /usr/include/c++/15/bits/requires_hosted.h \
+  /usr/include/c++/15/bits/shared_ptr.h \
+  /usr/include/c++/15/bits/shared_ptr_atomic.h \
+  /usr/include/c++/15/bits/shared_ptr_base.h \
   /usr/include/c++/15/bits/std_abs.h \
   /usr/include/c++/15/bits/std_mutex.h \
   /usr/include/c++/15/bits/std_thread.h \
+  /usr/include/c++/15/bits/stl_algo.h \
   /usr/include/c++/15/bits/stl_algobase.h \
   /usr/include/c++/15/bits/stl_bvector.h \
   /usr/include/c++/15/bits/stl_construct.h \
   /usr/include/c++/15/bits/stl_function.h \
+  /usr/include/c++/15/bits/stl_heap.h \
   /usr/include/c++/15/bits/stl_iterator.h \
   /usr/include/c++/15/bits/stl_iterator_base_funcs.h \
   /usr/include/c++/15/bits/stl_iterator_base_types.h \
+  /usr/include/c++/15/bits/stl_map.h \
+  /usr/include/c++/15/bits/stl_multimap.h \
   /usr/include/c++/15/bits/stl_pair.h \
+  /usr/include/c++/15/bits/stl_raw_storage_iter.h \
+  /usr/include/c++/15/bits/stl_relops.h \
+  /usr/include/c++/15/bits/stl_tempbuf.h \
+  /usr/include/c++/15/bits/stl_tree.h \
   /usr/include/c++/15/bits/stl_uninitialized.h \
   /usr/include/c++/15/bits/stl_vector.h \
+  /usr/include/c++/15/bits/stream_iterator.h \
   /usr/include/c++/15/bits/streambuf.tcc \
   /usr/include/c++/15/bits/streambuf_iterator.h \
   /usr/include/c++/15/bits/string_view.tcc \
   /usr/include/c++/15/bits/stringfwd.h \
   /usr/include/c++/15/bits/this_thread_sleep.h \
+  /usr/include/c++/15/bits/uniform_int_dist.h \
   /usr/include/c++/15/bits/unique_lock.h \
   /usr/include/c++/15/bits/unique_ptr.h \
   /usr/include/c++/15/bits/unordered_map.h \
@@ -304,12 +396,15 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o: /home/kdy/home-assista
   /usr/include/c++/15/cctype \
   /usr/include/c++/15/cerrno \
   /usr/include/c++/15/chrono \
+  /usr/include/c++/15/climits \
   /usr/include/c++/15/clocale \
+  /usr/include/c++/15/compare \
   /usr/include/c++/15/concepts \
   /usr/include/c++/15/cstddef \
   /usr/include/c++/15/cstdint \
   /usr/include/c++/15/cstdio \
   /usr/include/c++/15/cstdlib \
+  /usr/include/c++/15/cstring \
   /usr/include/c++/15/ctime \
   /usr/include/c++/15/cwchar \
   /usr/include/c++/15/cwctype \
@@ -319,6 +414,7 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o: /home/kdy/home-assista
   /usr/include/c++/15/ext/aligned_buffer.h \
   /usr/include/c++/15/ext/alloc_traits.h \
   /usr/include/c++/15/ext/atomicity.h \
+  /usr/include/c++/15/ext/concurrence.h \
   /usr/include/c++/15/ext/numeric_traits.h \
   /usr/include/c++/15/ext/string_conversions.h \
   /usr/include/c++/15/ext/type_traits.h \
@@ -327,10 +423,17 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o: /home/kdy/home-assista
   /usr/include/c++/15/iosfwd \
   /usr/include/c++/15/iostream \
   /usr/include/c++/15/istream \
+  /usr/include/c++/15/iterator \
   /usr/include/c++/15/limits \
+  /usr/include/c++/15/map \
+  /usr/include/c++/15/memory \
   /usr/include/c++/15/mutex \
   /usr/include/c++/15/new \
+  /usr/include/c++/15/optional \
   /usr/include/c++/15/ostream \
+  /usr/include/c++/15/pstl/execution_defs.h \
+  /usr/include/c++/15/pstl/glue_algorithm_defs.h \
+  /usr/include/c++/15/pstl/glue_memory_defs.h \
   /usr/include/c++/15/pstl/pstl_config.h \
   /usr/include/c++/15/ratio \
   /usr/include/c++/15/stdexcept \
@@ -343,13 +446,17 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o: /home/kdy/home-assista
   /usr/include/c++/15/type_traits \
   /usr/include/c++/15/typeinfo \
   /usr/include/c++/15/unordered_map \
+  /usr/include/c++/15/utility \
   /usr/include/c++/15/vector \
   /usr/include/ctype.h \
   /usr/include/endian.h \
   /usr/include/errno.h \
   /usr/include/features-time64.h \
   /usr/include/features.h \
+  /usr/include/inttypes.h \
+  /usr/include/limits.h \
   /usr/include/linux/errno.h \
+  /usr/include/linux/limits.h \
   /usr/include/linux/posix_types.h \
   /usr/include/linux/sched/types.h \
   /usr/include/linux/stddef.h \
@@ -362,6 +469,8 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o: /home/kdy/home-assista
   /usr/include/stdint.h \
   /usr/include/stdio.h \
   /usr/include/stdlib.h \
+  /usr/include/string.h \
+  /usr/include/strings.h \
   /usr/include/time.h \
   /usr/include/wchar.h \
   /usr/include/wctype.h \
@@ -379,8 +488,11 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o: /home/kdy/home-assista
   /usr/include/x86_64-linux-gnu/bits/floatn-common.h \
   /usr/include/x86_64-linux-gnu/bits/floatn.h \
   /usr/include/x86_64-linux-gnu/bits/libc-header-start.h \
+  /usr/include/x86_64-linux-gnu/bits/local_lim.h \
   /usr/include/x86_64-linux-gnu/bits/locale.h \
   /usr/include/x86_64-linux-gnu/bits/long-double.h \
+  /usr/include/x86_64-linux-gnu/bits/posix1_lim.h \
+  /usr/include/x86_64-linux-gnu/bits/posix2_lim.h \
   /usr/include/x86_64-linux-gnu/bits/pthread_stack_min-dynamic.h \
   /usr/include/x86_64-linux-gnu/bits/pthreadtypes-arch.h \
   /usr/include/x86_64-linux-gnu/bits/pthreadtypes.h \
@@ -426,11 +538,13 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o: /home/kdy/home-assista
   /usr/include/x86_64-linux-gnu/bits/types/wint_t.h \
   /usr/include/x86_64-linux-gnu/bits/typesizes.h \
   /usr/include/x86_64-linux-gnu/bits/uintn-identity.h \
+  /usr/include/x86_64-linux-gnu/bits/uio_lim.h \
   /usr/include/x86_64-linux-gnu/bits/waitflags.h \
   /usr/include/x86_64-linux-gnu/bits/waitstatus.h \
   /usr/include/x86_64-linux-gnu/bits/wchar.h \
   /usr/include/x86_64-linux-gnu/bits/wctype-wchar.h \
   /usr/include/x86_64-linux-gnu/bits/wordsize.h \
+  /usr/include/x86_64-linux-gnu/bits/xopen_lim.h \
   /usr/include/x86_64-linux-gnu/c++/15/bits/atomic_word.h \
   /usr/include/x86_64-linux-gnu/c++/15/bits/c++allocator.h \
   /usr/include/x86_64-linux-gnu/c++/15/bits/c++config.h \
@@ -447,10 +561,14 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o: /home/kdy/home-assista
   /usr/include/x86_64-linux-gnu/sys/cdefs.h \
   /usr/include/x86_64-linux-gnu/sys/select.h \
   /usr/include/x86_64-linux-gnu/sys/single_threaded.h \
+  /usr/include/x86_64-linux-gnu/sys/time.h \
   /usr/include/x86_64-linux-gnu/sys/types.h \
+  /usr/lib/gcc/x86_64-linux-gnu/15/include/limits.h \
   /usr/lib/gcc/x86_64-linux-gnu/15/include/stdarg.h \
+  /usr/lib/gcc/x86_64-linux-gnu/15/include/stdbool.h \
   /usr/lib/gcc/x86_64-linux-gnu/15/include/stddef.h \
-  /usr/lib/gcc/x86_64-linux-gnu/15/include/stdint.h
+  /usr/lib/gcc/x86_64-linux-gnu/15/include/stdint.h \
+  /usr/lib/gcc/x86_64-linux-gnu/15/include/syslimits.h
 
 CMakeFiles/HomeAssistantCore.dir/src/HTTPServer.cpp.o: /home/kdy/home-assistant-core/src/HTTPServer.cpp \
   /home/kdy/home-assistant-core/include/Device.hpp \
@@ -1067,6 +1185,7 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o: /home/kdy/home-assi
   /usr/include/c++/15/bits/shared_ptr.h \
   /usr/include/c++/15/bits/shared_ptr_atomic.h \
   /usr/include/c++/15/bits/shared_ptr_base.h \
+  /usr/include/c++/15/bits/sstream.tcc \
   /usr/include/c++/15/bits/std_abs.h \
   /usr/include/c++/15/bits/std_mutex.h \
   /usr/include/c++/15/bits/std_thread.h \
@@ -1147,6 +1266,7 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o: /home/kdy/home-assi
   /usr/include/c++/15/pstl/glue_memory_defs.h \
   /usr/include/c++/15/pstl/pstl_config.h \
   /usr/include/c++/15/ratio \
+  /usr/include/c++/15/sstream \
   /usr/include/c++/15/stdexcept \
   /usr/include/c++/15/streambuf \
   /usr/include/c++/15/string \
@@ -2585,91 +2705,49 @@ CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o:
 
 /home/kdy/home-assistant-core/src/TCPDriver.cpp:
 
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/TestEndpointIdAllocator.a:
+/home/kdy/home-assistant-core/src/MatterController.cpp:
 
-/usr/lib/gcc/x86_64-linux-gnu/15/include/stdbool.h:
+/usr/include/x86_64-linux-gnu/sys/socket.h:
 
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/TestOTARequestorCluster.a:
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libTestTLSClientManagementCluster.a:
 
-/usr/include/inttypes.h:
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/Span.h:
 
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libnlfaultinjection.a:
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/LambdaBridge.h:
 
-/home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio.hpp:
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libTestTimeSynchronizationCluster.a:
 
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/TestGroupsCluster.a:
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/BufferWriter.h:
 
-/home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio-byteorder.hpp:
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPError.h:
 
-/usr/include/c++/15/backward/auto_ptr.h:
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/inet/InetConfig.h:
 
-/usr/include/c++/15/bits/exception_defines.h:
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleUUID.h:
 
-/usr/include/c++/15/bits/stl_heap.h:
+/usr/include/linux/stat.h:
 
-/usr/include/assert.h:
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleRole.h:
 
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libCodegenDataModelProviderTests.a:
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleError.h:
 
-/usr/include/c++/15/fstream:
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libTestCameraAvSettingsUserLevelManagementCluster.a:
 
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/TestOOBDataSerializer.a:
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/TestPowerTopologyClusterBackwardsCompatibility.a:
 
-/usr/include/asm-generic/sockios.h:
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleConfig.h:
 
-/usr/include/asm-generic/param.h:
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/IntrusiveList.h:
 
-/usr/lib/gcc/x86_64-linux-gnu/15/include/stdint.h:
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/inet/InetBuildConfig.h:
 
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/obj/third_party/ot-commissioner/lib/ot-commissioner.a:
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/core/CHIPBuildConfig.h:
 
-/usr/include/x86_64-linux-gnu/bits/xopen_lim.h:
+/usr/include/x86_64-linux-gnu/bits/uio_lim.h:
 
-/usr/include/c++/15/unordered_map:
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/ble/BleBuildConfig.h:
 
-/usr/include/c++/15/chrono:
-
-/usr/include/c++/15/mutex:
-
-/usr/include/x86_64-linux-gnu/bits/in.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/InPlace.h:
-
-/usr/include/c++/15/any:
-
-/home/kdy/home-assistant-core/src/HTTPServer.cpp:
-
-/usr/include/c++/15/bits/unique_lock.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libTestBridgedDeviceBasicInformationCluster.a:
-
-/usr/include/c++/15/bits/stl_list.h:
-
-/usr/include/x86_64-linux-gnu/bits/environments.h:
-
-/usr/include/c++/15/bits/this_thread_sleep.h:
-
-/usr/include/x86_64-linux-gnu/bits/cpu-set.h:
-
-/usr/include/x86_64-linux-gnu/asm/posix_types_64.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/obj/src/wifipaf/lib/libWiFiPAFLayer.a:
-
-/usr/include/c++/15/bits/std_thread.h:
-
-/usr/include/c++/15/bits/unordered_map.h:
-
-/usr/include/c++/15/bits/parse_numbers.h:
-
-/usr/include/c++/15/bits/node_handle.h:
-
-/usr/include/c++/15/atomic:
-
-/usr/include/c++/15/stdexcept:
-
-/usr/include/x86_64-linux-gnu/bits/stdint-uintn.h:
-
-/usr/include/x86_64-linux-gnu/bits/types/struct_timespec.h:
+/home/kdy/home-assistant-core/include/CHIPProjectConfig.h:
 
 /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libTestTemperatureMeasurementCluster.a:
 
@@ -2687,27 +2765,15 @@ CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o:
 
 /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/Compiler.h:
 
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/Ble.h:
+
+/usr/include/x86_64-linux-gnu/c++/15/bits/c++locale.h:
+
 /usr/include/c++/15/pstl/glue_memory_defs.h:
 
-/usr/include/c++/15/bits/hashtable.h:
-
-/usr/lib/x86_64-linux-gnu/crtn.o:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/obj/src/access/lib/libaccess.a:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libTestCommissionerControlCluster.a:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/system/SystemBuildConfig.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPEncoding.h:
-
-/usr/include/x86_64-linux-gnu/asm/bitsperlong.h:
-
-/usr/include/x86_64-linux-gnu/c++/15/bits/c++config.h:
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/InPlace.h:
 
 /usr/lib/gcc/x86_64-linux-gnu/15/include/stddef.h:
-
-/home/kdy/home-assistant-core/src/httplib.h:
 
 /usr/include/x86_64-linux-gnu/c++/15/bits/atomic_word.h:
 
@@ -2731,31 +2797,17 @@ CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o:
 
 /usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h:
 
-/usr/include/x86_64-linux-gnu/bits/stdint-least.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/ble/BleBuildConfig.h:
-
 /usr/include/x86_64-linux-gnu/bits/wctype-wchar.h:
 
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libnlfaultinjection.a:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio.hpp:
+
 /usr/include/c++/15/bits/functexcept.h:
-
-/usr/lib/x86_64-linux-gnu/libglib-2.0.so:
-
-/usr/include/linux/openat2.h:
-
-/usr/include/c++/15/bits/stl_vector.h:
-
-/usr/include/c++/15/bits/atomic_base.h:
 
 /usr/include/x86_64-linux-gnu/asm/socket.h:
 
 /usr/include/x86_64-linux-gnu/bits/wchar.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/TestElectricalEnergyMeasurementCluster.a:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio-byteorder-little.hpp:
-
-/usr/include/x86_64-linux-gnu/bits/types/cookie_io_functions_t.h:
 
 /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libRawTransportTests.a:
 
@@ -2767,13 +2819,11 @@ CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o:
 
 /usr/include/c++/15/tr1/special_function_util.h:
 
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libInetTestHelpers.a:
-
-/usr/include/c++/15/bits/algorithmfwd.h:
-
-/usr/include/x86_64-linux-gnu/bits/struct_rwlock.h:
-
 /usr/include/c++/15/bits/stl_iterator_base_funcs.h:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/TestEndpointIdAllocator.a:
+
+/usr/lib/gcc/x86_64-linux-gnu/15/include/stdbool.h:
 
 /usr/include/c++/15/tr1/poly_hermite.tcc:
 
@@ -2799,8 +2849,6 @@ CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o:
 
 /usr/include/x86_64-linux-gnu/bits/timex.h:
 
-/usr/include/c++/15/bits/quoted_string.h:
-
 /usr/include/x86_64-linux-gnu/bits/types/__fpos64_t.h:
 
 /usr/include/x86_64-linux-gnu/bits/getopt_posix.h:
@@ -2813,17 +2861,31 @@ CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o:
 
 /usr/include/x86_64-linux-gnu/c++/15/bits/ctype_base.h:
 
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleConnectionDelegate.h:
+
+/usr/include/x86_64-linux-gnu/bits/sched.h:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libTestNetworkCommissioningCluster.a:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleLayer.h:
+
 /usr/include/c++/15/cstring:
 
 /usr/include/x86_64-linux-gnu/c++/15/bits/ctype_inline.h:
 
-/usr/include/c++/15/bits/unique_ptr.h:
-
-/usr/include/c++/15/bits/move.h:
-
 /usr/include/c++/15/bits/basic_ios.h:
 
 /usr/include/x86_64-linux-gnu/bits/libc-header-start.h:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/TestElectricalEnergyMeasurementCluster.a:
+
+/usr/include/x86_64-linux-gnu/bits/types/cookie_io_functions_t.h:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio-byteorder-little.hpp:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CriticalFailure.h:
+
+/usr/include/alloca.h:
 
 /usr/include/x86_64-linux-gnu/bits/types/struct_itimerspec.h:
 
@@ -2837,13 +2899,15 @@ CMakeFiles/HomeAssistantCore.dir/src/main.cpp.o:
 
 /usr/include/x86_64-linux-gnu/gnu/stubs.h:
 
+/usr/include/c++/15/bits/unordered_map.h:
+
+/usr/include/x86_64-linux-gnu/bits/cpu-set.h:
+
+/usr/include/x86_64-linux-gnu/asm/posix_types_64.h:
+
+/usr/include/c++/15/bits/this_thread_sleep.h:
+
 /usr/include/x86_64-linux-gnu/bits/byteswap.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/TestElectricalEnergyMeasurementClusterBackwardsCompatibility.a:
-
-/usr/include/x86_64-linux-gnu/bits/time64.h:
-
-/usr/include/c++/15/ext/aligned_buffer.h:
 
 /usr/include/x86_64-linux-gnu/asm/types.h:
 
@@ -2851,13 +2915,9 @@ CMakeFiles/HomeAssistantCore.dir/src/main.cpp.o:
 
 /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemAlignSize.h:
 
-/usr/include/alloca.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CriticalFailure.h:
-
 /usr/include/features.h:
 
-/usr/include/arpa/nameser_compat.h:
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/EnforceFormat.h:
 
 /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemEvent.h:
 
@@ -2871,13 +2931,27 @@ CMakeFiles/HomeAssistantCore.dir/src/main.cpp.o:
 
 /usr/include/c++/15/bits/regex.h:
 
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libTestBooleanStateCluster.a:
+
+/usr/include/x86_64-linux-gnu/sys/stat.h:
+
+/usr/include/c++/15/debug/assertions.h:
+
+/usr/include/x86_64-linux-gnu/c++/15/bits/c++config.h:
+
+/usr/include/x86_64-linux-gnu/asm/bitsperlong.h:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/obj/src/wifipaf/lib/libWiFiPAFLayer.a:
+
+/usr/include/c++/15/bits/std_thread.h:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/ObjectDump.h:
+
 /usr/include/c++/15/typeinfo:
 
-/usr/lib/gcc/x86_64-linux-gnu/15/libgcc_s.so:
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/ErrorStr.h:
 
-/usr/include/x86_64-linux-gnu/bits/socket.h:
-
-/usr/include/x86_64-linux-gnu/bits/long-double.h:
+/usr/include/c++/15/bits/ostream.tcc:
 
 /usr/include/x86_64-linux-gnu/bits/pthreadtypes.h:
 
@@ -2897,10 +2971,6 @@ CMakeFiles/HomeAssistantCore.dir/src/main.cpp.o:
 
 /usr/include/c++/15/bits/stringfwd.h:
 
-/usr/include/c++/15/bits/std_mutex.h:
-
-/usr/include/c++/15/bits/erase_if.h:
-
 /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libAppDataModelTests.a:
 
 /usr/include/c++/15/bits/localefwd.h:
@@ -2909,9 +2979,19 @@ CMakeFiles/HomeAssistantCore.dir/src/main.cpp.o:
 
 /usr/include/x86_64-linux-gnu/asm/posix_types.h:
 
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/DLLUtil.h:
+
+/usr/include/c++/15/bits/postypes.h:
+
 /usr/include/x86_64-linux-gnu/c++/15/bits/c++allocator.h:
 
 /usr/include/c++/15/bits/alloc_traits.h:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/BitFlags.h:
+
+/usr/lib/x86_64-linux-gnu/libc.so.6:
+
+/usr/include/linux/types.h:
 
 /usr/include/c++/15/bits/locale_classes.tcc:
 
@@ -2933,13 +3013,17 @@ CMakeFiles/HomeAssistantCore.dir/src/main.cpp.o:
 
 /usr/include/c++/15/bits/cxxabi_forced.h:
 
-/usr/include/c++/15/bits/valarray_before.h:
-
 /usr/include/c++/15/compare:
 
-/usr/include/x86_64-linux-gnu/bits/sigcontext.h:
+/usr/include/c++/15/bits/valarray_before.h:
 
 /usr/include/c++/15/bits/specfun.h:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/TestIdentifyCluster.a:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BLEEndPoint.h:
+
+/usr/include/x86_64-linux-gnu/bits/types/res_state.h:
 
 /usr/include/c++/15/bits/cpp_type_traits.h:
 
@@ -2961,27 +3045,17 @@ CMakeFiles/HomeAssistantCore.dir/src/main.cpp.o:
 
 /usr/include/c++/15/bits/locale_classes.h:
 
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libEndpointTests.a:
-
-/usr/include/linux/stddef.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/TestEvseTargetsStorage.a:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/TestDeviceEnergyManagementClusterBackwardsCompatibility.a:
-
-/usr/include/c++/15/ratio:
-
-/usr/include/c++/15/bits/stl_map.h:
-
-/usr/include/c++/15/list:
-
 CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o:
 
 /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libIMInterfaceTests.a:
 
 /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/Optional.h:
 
-/usr/include/c++/15/bits/atomic_lockfree_defines.h:
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libEndpointTests.a:
+
+/usr/include/linux/stddef.h:
+
+/usr/include/c++/15/list:
 
 /usr/include/c++/15/set:
 
@@ -2993,19 +3067,15 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o:
 
 /usr/include/c++/15/bits/exception_ptr.h:
 
-/usr/include/c++/15/bits/gslice.h:
-
-/usr/include/c++/15/bits/regex_scanner.tcc:
-
 /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libTestIlluminanceMeasurementCluster.a:
 
 /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/TestProximityRanging.a:
 
 /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlbyteorder.hpp:
 
-/usr/include/c++/15/bits/postypes.h:
+/usr/include/c++/15/bits/gslice.h:
 
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/DLLUtil.h:
+/usr/include/c++/15/bits/regex_scanner.tcc:
 
 /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/obj/src/lib/dnssd/minimal_mdns/lib/default_policy.a:
 
@@ -3019,27 +3089,37 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o:
 
 /usr/include/x86_64-linux-gnu/bits/mman.h:
 
+/usr/include/stdlib.h:
+
+/usr/include/c++/15/bits/locale_facets.tcc:
+
 /usr/include/ctype.h:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPEncoding.h:
+
+/usr/lib/x86_64-linux-gnu/crtn.o:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/obj/src/access/lib/libaccess.a:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libTestCommissionerControlCluster.a:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/system/SystemBuildConfig.h:
+
+/usr/include/c++/15/bits/hashtable.h:
+
+/home/kdy/home-assistant-core/include/MatterController.hpp:
+
+/usr/include/c++/15/type_traits:
 
 /usr/include/asm-generic/errno-base.h:
 
 /usr/include/c++/15/initializer_list:
 
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libTestTLSClientManagementCluster.a:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/Span.h:
-
 /usr/include/x86_64-linux-gnu/sys/single_threaded.h:
 
-/usr/include/x86_64-linux-gnu/c++/15/bits/c++locale.h:
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/TestEnergyEvseClusterBackwardsCompatibility.a:
 
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/Ble.h:
-
-/usr/include/stdint.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libTestHumidistatCluster.a:
-
-/usr/include/endian.h:
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPConfig.h:
 
 /usr/include/x86_64-linux-gnu/c++/15/bits/gthr.h:
 
@@ -3055,19 +3135,13 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o:
 
 /usr/include/c++/15/bits/istream.tcc:
 
-/usr/lib/x86_64-linux-gnu/libmvec.so.1:
-
-/usr/include/asm-generic/socket.h:
-
-/usr/include/x86_64-linux-gnu/sys/types.h:
-
 /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libControllerDataModelTests.a:
 
 /usr/include/c++/15/bits/charconv.h:
 
-/usr/include/c++/15/tr1/poly_laguerre.tcc:
-
 /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlbyteorder-little.h:
+
+/usr/include/c++/15/tr1/poly_laguerre.tcc:
 
 /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/TestElectricalPowerMeasurementClusterBackwardsCompatibility.a:
 
@@ -3075,13 +3149,19 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o:
 
 /usr/include/c++/15/bits/list.tcc:
 
+/usr/include/x86_64-linux-gnu/bits/types/struct_timespec.h:
+
+/usr/include/x86_64-linux-gnu/bits/stdint-uintn.h:
+
 /usr/include/c++/15/bits/predefined_ops.h:
 
 /usr/include/c++/15/optional:
 
-/usr/include/c++/15/type_traits:
+/usr/include/c++/15/bits/exception_defines.h:
 
-/home/kdy/home-assistant-core/include/MatterController.hpp:
+/usr/include/c++/15/backward/auto_ptr.h:
+
+/usr/include/c++/15/bits/stl_heap.h:
 
 /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libaccesstest.a:
 
@@ -3101,9 +3181,7 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o:
 
 /usr/include/linux/sched/types.h:
 
-/home/kdy/home-assistant-core/src/json.hpp:
-
-/usr/include/x86_64-linux-gnu/bits/types/struct_timeval.h:
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/CHIPBleServiceData.h:
 
 /usr/include/c++/15/numeric:
 
@@ -3114,6 +3192,8 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o:
 /usr/include/c++/15/bits/stl_uninitialized.h:
 
 /usr/include/c++/15/bits/shared_ptr_base.h:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/CodeUtils.h:
 
 /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/obj/src/lib/dnssd/lib/dnssd.a:
 
@@ -3131,15 +3211,19 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o:
 
 /usr/include/c++/15/bits/string_view.tcc:
 
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/SetupDiscriminator.h:
+
+/usr/include/x86_64-linux-gnu/bits/signum-arch.h:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/setup_payload/SetupPayload.h:
+
+/usr/include/c++/15/bits/ostream_insert.h:
+
 /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/obj/src/lib/support/jsontlv/lib/jsontlv.a:
 
 /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/TestAmbientContextSensingCluster.a:
 
 /usr/include/wctype.h:
-
-/usr/include/netdb.h:
-
-/usr/include/sched.h:
 
 /usr/include/c++/15/bits/utility.h:
 
@@ -3148,10 +3232,6 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o:
 /usr/include/c++/15/cerrno:
 
 /usr/include/netinet/in.h:
-
-/usr/include/c++/15/cstdint:
-
-/usr/include/c++/15/bits/stl_pair.h:
 
 /usr/include/c++/15/bits/stl_bvector.h:
 
@@ -3179,7 +3259,11 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o:
 
 /usr/include/x86_64-linux-gnu/bits/types/wint_t.h:
 
-/home/kdy/home-assistant-core/include/HTTPServer.hpp:
+/usr/include/x86_64-linux-gnu/sys/param.h:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio-private.h:
+
+/usr/include/x86_64-linux-gnu/bits/atomic_wide_counter.h:
 
 /usr/include/c++/15/bits/exception.h:
 
@@ -3201,15 +3285,11 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o:
 
 /usr/include/c++/15/ext/type_traits.h:
 
-/usr/include/x86_64-linux-gnu/sys/time.h:
-
-/usr/include/c++/15/bits/memory_resource.h:
-
-/usr/include/c++/15/bits/stl_function.h:
-
 /usr/include/c++/15/bits/fs_dir.h:
 
 /usr/include/c++/15/cwchar:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPCore.h:
 
 /usr/include/c++/15/backward/binders.h:
 
@@ -3218,8 +3298,6 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o:
 /usr/include/asm-generic/int-ll64.h:
 
 /usr/include/c++/15/csignal:
-
-/usr/include/c++/15/bits/enable_special_members.h:
 
 /usr/include/c++/15/ext/concurrence.h:
 
@@ -3231,21 +3309,11 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o:
 
 /usr/include/c++/15/ext/numeric_traits.h:
 
-/usr/include/x86_64-linux-gnu/bits/mathcalls-narrow.h:
-
-/usr/include/c++/15/bits/std_abs.h:
-
-/usr/include/c++/15/ios:
-
 /usr/include/rpc/netdb.h:
 
 /usr/include/c++/15/iosfwd:
 
 /usr/include/x86_64-linux-gnu/bits/sigevent-consts.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/TestEnergyEvseClusterBackwardsCompatibility.a:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPConfig.h:
 
 /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libInteractionModelTests.a:
 
@@ -3269,6 +3337,24 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o:
 
 /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemConfig.h:
 
+/usr/include/c++/15/stdexcept:
+
+/usr/include/c++/15/atomic:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/TestEvseTargetsStorage.a:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/TestDeviceEnergyManagementClusterBackwardsCompatibility.a:
+
+/usr/include/c++/15/bits/stl_map.h:
+
+/usr/include/c++/15/ratio:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libTestHumidistatCluster.a:
+
+/usr/include/endian.h:
+
+/usr/include/stdint.h:
+
 /usr/include/x86_64-linux-gnu/asm/sockios.h:
 
 /usr/include/c++/15/string:
@@ -3287,11 +3373,25 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o:
 
 /usr/include/c++/15/system_error:
 
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPCallback.h:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libTestFlowMeasurementCluster.a:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libMinimalMdnstests.a:
+
+/usr/include/x86_64-linux-gnu/c++/15/bits/opt_random.h:
+
+/usr/include/c++/15/bits/valarray_array.h:
+
+/usr/include/c++/15/pstl/glue_numeric_defs.h:
+
 /usr/lib/gcc/x86_64-linux-gnu/15/include/stdarg.h:
 
 /usr/include/c++/15/bits/stl_iterator.h:
 
 /usr/include/c++/15/vector:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BlePlatformDelegate.h:
 
 /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libMinimalMdnsCoreTests.a:
 
@@ -3302,6 +3402,10 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o:
 /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libTestScenesManagement.a:
 
 /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlbyteorder.h:
+
+/usr/include/x86_64-linux-gnu/sys/un.h:
+
+/usr/include/x86_64-linux-gnu/c++/15/bits/gthr-default.h:
 
 /usr/include/c++/15/bits/regex_compiler.h:
 
@@ -3317,27 +3421,9 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o:
 
 /usr/include/c++/15/bits/forward_list.h:
 
-/usr/include/c++/15/bits/uses_allocator_args.h:
-
-/home/kdy/home-assistant-core/include/DatabaseManager.hpp:
-
-/usr/include/c++/15/bits/chrono.h:
-
 /usr/include/x86_64-linux-gnu/bits/types/__sigset_t.h:
 
 /usr/include/c++/15/ext/alloc_traits.h:
-
-/usr/include/linux/falloc.h:
-
-/usr/include/x86_64-linux-gnu/bits/types/mbstate_t.h:
-
-/usr/include/c++/15/condition_variable:
-
-/usr/lib/x86_64-linux-gnu/libc.so.6:
-
-/usr/include/linux/types.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/BitFlags.h:
 
 /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libNetworkTestHelpers.a:
 
@@ -3351,33 +3437,291 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o:
 
 /usr/include/locale.h:
 
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BtpEngine.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/15/include/syslimits.h:
+
 /usr/include/sqlite3.h:
 
 /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libTestTimeFormatLocalizationCluster.a:
 
 /usr/include/stdio.h:
 
-/usr/include/arpa/nameser.h:
-
-/usr/include/c++/15/bits/locale_facets.tcc:
-
-/usr/include/stdlib.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/EnforceFormat.h:
-
 /usr/include/c++/15/bits/ios_base.h:
 
 /usr/include/c++/15/sstream:
+
+/usr/include/x86_64-linux-gnu/bits/types/struct_tm.h:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/TypeTraits.h:
+
+/usr/include/c++/15/pstl/glue_algorithm_defs.h:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/logging/Constants.h:
+
+/usr/include/time.h:
+
+/usr/include/c++/15/tr1/hypergeometric.tcc:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libCHIPShell.a:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/logging/TextOnlyLogging.h:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/platform/Linux/BlePlatformConfig.h:
+
+/usr/include/c++/15/limits:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/platform/Linux/InetPlatformConfig.h:
+
+/usr/include/c++/15/bits/stl_iterator_base_types.h:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/platform/Linux/SystemPlatformConfig.h:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libTestAdministratorCommissioningCluster.a:
+
+/usr/include/x86_64-linux-gnu/bits/struct_mutex.h:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/setup_payload/ManualSetupPayloadParser.h:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SocketEvents.h:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemPacketBuffer.h:
+
+/usr/include/c++/15/ostream:
+
+/usr/include/c++/15/bits/basic_string.h:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemPacketBufferInternal.h:
+
+/usr/include/ifaddrs.h:
+
+/usr/include/x86_64-linux-gnu/bits/types/siginfo_t.h:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio-byteorder-big.hpp:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/TestGroupsCluster.a:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio-byteorder.hpp:
+
+/usr/include/c++/15/debug/debug.h:
+
+/usr/include/x86_64-linux-gnu/bits/errno.h:
+
+/usr/include/c++/15/bits/regex.tcc:
+
+/usr/include/x86_64-linux-gnu/bits/sigcontext.h:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libInetTestHelpers.a:
+
+/usr/include/x86_64-linux-gnu/bits/struct_rwlock.h:
+
+/usr/include/c++/15/bits/algorithmfwd.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/15/libgcc_s.so:
+
+/usr/include/x86_64-linux-gnu/bits/long-double.h:
+
+/usr/include/x86_64-linux-gnu/bits/socket.h:
+
+/usr/include/c++/15/bits/atomic_base.h:
+
+/usr/include/c++/15/bits/atomic_lockfree_defines.h:
+
+/home/kdy/home-assistant-core/include/DatabaseManager.hpp:
+
+/usr/include/c++/15/bits/uses_allocator_args.h:
+
+/usr/include/c++/15/bits/chrono.h:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleLayerDelegate.h:
+
+/home/kdy/home-assistant-core/include/ProtocolDriver.hpp:
+
+/usr/include/c++/15/bits/cxxabi_init_exception.h:
+
+/usr/include/x86_64-linux-gnu/sys/mman.h:
+
+/usr/include/c++/15/bits/enable_special_members.h:
+
+/usr/include/c++/15/bits/node_handle.h:
+
+/usr/include/c++/15/bits/parse_numbers.h:
+
+/usr/include/sched.h:
+
+/usr/include/netdb.h:
+
+/usr/include/c++/15/iomanip:
+
+/usr/include/c++/15/bits/shared_ptr.h:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/obj/examples/common/websocket-server/lib/libWebSocketServer.a:
+
+/usr/include/c++/15/bits/shared_ptr_atomic.h:
+
+/usr/include/c++/15/bits/erase_if.h:
+
+/usr/include/c++/15/bits/std_mutex.h:
+
+/usr/include/c++/15/bits/ostream.h:
+
+/usr/include/c++/15/bits/stl_raw_storage_iter.h:
+
+/usr/include/c++/15/bits/stl_tempbuf.h:
+
+/usr/include/c++/15/bits/deque.tcc:
+
+/usr/include/c++/15/bits/unique_lock.h:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libTestBridgedDeviceBasicInformationCluster.a:
+
+/usr/include/c++/15/bits/stl_list.h:
+
+/usr/include/x86_64-linux-gnu/bits/environments.h:
+
+/usr/include/c++/15/bits/move.h:
+
+/usr/include/c++/15/bits/unique_ptr.h:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/TestOOBDataSerializer.a:
+
+/usr/include/asm-generic/sockios.h:
+
+/usr/include/c++/15/chrono:
+
+/usr/include/c++/15/unordered_map:
+
+/usr/include/c++/15/bits/vector.tcc:
+
+/usr/include/c++/15/climits:
+
+/usr/include/c++/15/bits/stl_pair.h:
+
+/usr/include/c++/15/cstdint:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/TestElectricalEnergyMeasurementClusterBackwardsCompatibility.a:
+
+/usr/include/x86_64-linux-gnu/bits/time64.h:
+
+/usr/include/c++/15/ext/aligned_buffer.h:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libTestGroupKeyManagementCluster.a:
+
+/usr/include/c++/15/bits/refwrap.h:
+
+/usr/include/c++/15/map:
+
+/usr/include/c++/15/memory:
+
+/usr/lib/x86_64-linux-gnu/libevent_pthreads.so:
+
+/usr/include/x86_64-linux-gnu/bits/types/sigval_t.h:
+
+/usr/include/c++/15/mutex:
+
+/usr/include/x86_64-linux-gnu/bits/types/mbstate_t.h:
+
+/usr/include/c++/15/condition_variable:
+
+/usr/include/linux/falloc.h:
+
+/usr/include/x86_64-linux-gnu/bits/in.h:
+
+/usr/include/c++/15/bits/std_abs.h:
+
+/usr/include/c++/15/ios:
+
+/usr/include/x86_64-linux-gnu/bits/mathcalls-narrow.h:
+
+/usr/include/c++/15/pstl/execution_defs.h:
+
+/usr/include/x86_64-linux-gnu/bits/netdb.h:
+
+/usr/include/c++/15/utility:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/TestOTARequestorCluster.a:
+
+/usr/include/inttypes.h:
+
+/usr/include/x86_64-linux-gnu/c++/15/bits/basic_file.h:
+
+/usr/include/linux/limits.h:
+
+/usr/include/c++/15/bits/stl_tree.h:
+
+/usr/include/string.h:
+
+/usr/include/x86_64-linux-gnu/bits/local_lim.h:
 
 /usr/include/c++/15/bits/codecvt.h:
 
 /usr/include/c++/15/bits/std_function.h:
 
-/usr/include/x86_64-linux-gnu/bits/local_lim.h:
+/usr/include/x86_64-linux-gnu/bits/locale.h:
 
-/usr/include/c++/15/bits/deque.tcc:
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/platform/Linux/CHIPPlatformConfig.h:
 
-/usr/include/c++/15/bits/stl_tempbuf.h:
+/usr/include/x86_64-linux-gnu/bits/posix1_lim.h:
+
+/usr/include/x86_64-linux-gnu/bits/posix2_lim.h:
+
+/usr/include/x86_64-linux-gnu/bits/stdint-least.h:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/obj/third_party/ot-commissioner/lib/ot-commissioner.a:
+
+/usr/include/x86_64-linux-gnu/bits/xopen_lim.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/15/include/stdint.h:
+
+/usr/include/c++/15/bits/memory_resource.h:
+
+/usr/include/c++/15/bits/stl_function.h:
+
+/usr/include/x86_64-linux-gnu/sys/time.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/15/include/limits.h:
+
+/home/kdy/home-assistant-core/include/HTTPServer.hpp:
+
+/home/kdy/home-assistant-core/src/httplib.h:
+
+/usr/include/x86_64-linux-gnu/bits/types/struct_timeval.h:
+
+/home/kdy/home-assistant-core/src/json.hpp:
+
+/usr/include/arpa/nameser_compat.h:
+
+/usr/include/arpa/nameser.h:
+
+/usr/include/asm-generic/param.h:
+
+/usr/lib/x86_64-linux-gnu/libglib-2.0.so:
+
+/usr/include/c++/15/bits/stl_vector.h:
+
+/usr/include/linux/openat2.h:
+
+/usr/lib/x86_64-linux-gnu/libmvec.so.1:
+
+/usr/include/x86_64-linux-gnu/sys/types.h:
+
+/usr/include/asm-generic/socket.h:
+
+/usr/include/c++/15/bits/quoted_string.h:
+
+/usr/include/assert.h:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libCodegenDataModelProviderTests.a:
+
+/usr/include/c++/15/fstream:
+
+/usr/include/c++/15/bits/stl_algo.h:
+
+/usr/include/c++/15/random:
+
+/home/kdy/home-assistant-core/src/HTTPServer.cpp:
+
+/usr/include/c++/15/any:
 
 /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libControllerTests.a:
 
@@ -3393,15 +3737,15 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o:
 
 /usr/include/c++/15/bits/locale_facets_nonio.tcc:
 
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/TestElectricalPowerMeasurementCluster.a:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio-base.h:
+
+/usr/include/c++/15/bits/mask_array.h:
+
 /usr/include/c++/15/bits/random.h:
 
 /usr/include/c++/15/stack:
-
-/usr/include/c++/15/debug/debug.h:
-
-/usr/include/x86_64-linux-gnu/bits/errno.h:
-
-/usr/include/c++/15/bits/regex.tcc:
 
 /usr/include/pthread.h:
 
@@ -3433,13 +3777,9 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o:
 
 /usr/include/c++/15/bits/regex_executor.tcc:
 
-/usr/include/c++/15/iomanip:
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/Unchecked.h:
 
-/usr/include/c++/15/bits/shared_ptr.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/obj/examples/common/websocket-server/lib/libWebSocketServer.a:
-
-/usr/include/c++/15/bits/shared_ptr_atomic.h:
+/usr/include/c++/15/bits/regex_scanner.h:
 
 /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/obj/src/platform/Linux/dbus/bluez/lib/bluez.a:
 
@@ -3447,33 +3787,21 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o:
 
 /usr/include/c++/15/bits/sstream.tcc:
 
-/usr/include/c++/15/random:
-
-/usr/include/c++/15/bits/stl_algo.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libTestNetworkCommissioningCluster.a:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleLayer.h:
-
 /usr/include/c++/15/bits/stl_multiset.h:
 
 /usr/include/c++/15/bits/stl_numeric.h:
 
-/usr/include/c++/15/bits/ostream.h:
+/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/obj/src/protocols/interaction_model/lib/libInteractionModel.a:
 
-/usr/include/c++/15/bits/stl_raw_storage_iter.h:
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleApplicationDelegate.h:
+
+/usr/include/c++/15/bits/stl_set.h:
 
 /usr/include/x86_64-linux-gnu/sys/ucontext.h:
 
 /usr/include/x86_64-linux-gnu/bits/types/struct_iovec.h:
 
-/usr/include/x86_64-linux-gnu/sys/socket.h:
-
 /usr/include/c++/15/bits/stl_stack.h:
-
-/usr/include/c++/15/bits/stl_iterator_base_types.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/platform/Linux/SystemPlatformConfig.h:
 
 /usr/include/x86_64-linux-gnu/bits/types/clock_t.h:
 
@@ -3485,18 +3813,6 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o:
 
 /usr/include/c++/15/bits/valarray_after.h:
 
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libTestFlowMeasurementCluster.a:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libMinimalMdnstests.a:
-
-/usr/include/x86_64-linux-gnu/c++/15/bits/opt_random.h:
-
-/usr/include/c++/15/bits/valarray_array.h:
-
-/usr/include/c++/15/pstl/glue_numeric_defs.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPCallback.h:
-
 /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libTestDiagnosticLogsCluster.a:
 
 /usr/include/c++/15/bits/valarray_array.tcc:
@@ -3506,10 +3822,6 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o:
 /usr/include/c++/15/cassert:
 
 /usr/include/x86_64-linux-gnu/bits/poll.h:
-
-/usr/include/c++/15/bits/vector.tcc:
-
-/usr/include/c++/15/climits:
 
 /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libTvCastingCommonTests.a:
 
@@ -3527,27 +3839,13 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o:
 
 /usr/include/c++/15/deque:
 
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libCHIPShell.a:
+/home/kdy/home-assistant-core/include/SystemProjectConfig.h:
 
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/logging/TextOnlyLogging.h:
+/usr/include/x86_64-linux-gnu/bits/types/struct_sigstack.h:
+
+/usr/include/c++/15/functional:
 
 /usr/include/c++/15/locale:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libTestGroupKeyManagementCluster.a:
-
-/usr/include/c++/15/bits/refwrap.h:
-
-/usr/include/c++/15/map:
-
-/usr/include/c++/15/memory:
-
-/usr/lib/x86_64-linux-gnu/libevent_pthreads.so:
-
-/usr/include/x86_64-linux-gnu/bits/types/sigval_t.h:
-
-/usr/include/c++/15/pstl/execution_defs.h:
-
-/usr/include/x86_64-linux-gnu/bits/netdb.h:
 
 /usr/include/c++/15/tr1/bessel_function.tcc:
 
@@ -3557,13 +3855,9 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o:
 
 /usr/include/c++/15/tr1/exp_integral.tcc:
 
-/usr/include/time.h:
+/usr/include/limits.h:
 
-/usr/include/c++/15/tr1/hypergeometric.tcc:
-
-/usr/include/c++/15/pstl/glue_algorithm_defs.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/logging/Constants.h:
+/usr/include/c++/15/tr1/gamma.tcc:
 
 /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/obj/src/lib/dnssd/minimal_mdns/lib/minimal_mdns.a:
 
@@ -3577,27 +3871,15 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o:
 
 /usr/include/c++/15/tr1/riemann_zeta.tcc:
 
-/usr/include/c++/15/utility:
-
 /usr/include/c++/15/version:
 
-/usr/include/resolv.h:
-
 /usr/include/x86_64-linux-gnu/sys/poll.h:
+
+/usr/include/resolv.h:
 
 /usr/include/c++/15/tr1/modified_bessel_func.tcc:
 
 /usr/include/fcntl.h:
-
-/usr/include/ifaddrs.h:
-
-/usr/include/x86_64-linux-gnu/bits/types/siginfo_t.h:
-
-/usr/include/c++/15/ostream:
-
-/usr/include/c++/15/bits/basic_string.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemPacketBufferInternal.h:
 
 /usr/include/x86_64-linux-gnu/bits/thread-shared-types.h:
 
@@ -3605,23 +3887,7 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o:
 
 /usr/include/libintl.h:
 
-/usr/include/c++/15/tr1/gamma.tcc:
-
-/usr/include/limits.h:
-
 /usr/include/linux/close_range.h:
-
-/usr/include/x86_64-linux-gnu/c++/15/bits/basic_file.h:
-
-/usr/include/linux/limits.h:
-
-/usr/include/linux/stat.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleUUID.h:
-
-/usr/include/c++/15/bits/stl_tree.h:
-
-/usr/include/string.h:
 
 /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/TimeUtils.h:
 
@@ -3663,8 +3929,6 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o:
 
 /usr/include/x86_64-linux-gnu/bits/param.h:
 
-/usr/include/x86_64-linux-gnu/bits/posix2_lim.h:
-
 /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libTestUserLabelCluster.a:
 
 /usr/include/x86_64-linux-gnu/bits/posix_opt.h:
@@ -3703,6 +3967,12 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o:
 
 /usr/include/x86_64-linux-gnu/bits/ss_flags.h:
 
+/usr/include/net/if.h:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemClock.h:
+
+/usr/include/x86_64-linux-gnu/bits/types/sig_atomic_t.h:
+
 /usr/include/x86_64-linux-gnu/bits/stdlib-float.h:
 
 /usr/include/wchar.h:
@@ -3727,158 +3997,8 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o:
 
 /usr/include/x86_64-linux-gnu/bits/types/struct_statx.h:
 
-/usr/include/x86_64-linux-gnu/bits/uio_lim.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/core/CHIPBuildConfig.h:
-
 /usr/include/c++/15/bits/uniform_int_dist.h:
 
 /usr/include/x86_64-linux-gnu/bits/unistd_ext.h:
 
 /usr/include/x86_64-linux-gnu/c++/15/bits/messages_members.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio-private.h:
-
-/usr/include/x86_64-linux-gnu/bits/atomic_wide_counter.h:
-
-/usr/include/x86_64-linux-gnu/sys/param.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libTestBooleanStateCluster.a:
-
-/usr/include/c++/15/debug/assertions.h:
-
-/usr/include/x86_64-linux-gnu/sys/stat.h:
-
-/usr/include/x86_64-linux-gnu/c++/15/bits/gthr-default.h:
-
-/usr/include/x86_64-linux-gnu/sys/un.h:
-
-/usr/lib/gcc/x86_64-linux-gnu/15/include/limits.h:
-
-/usr/lib/gcc/x86_64-linux-gnu/15/include/syslimits.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BtpEngine.h:
-
-/home/kdy/home-assistant-core/src/MatterController.cpp:
-
-/home/kdy/home-assistant-core/include/CHIPProjectConfig.h:
-
-/usr/include/x86_64-linux-gnu/bits/types/struct_sigstack.h:
-
-/usr/include/c++/15/functional:
-
-/home/kdy/home-assistant-core/include/SystemProjectConfig.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/LambdaBridge.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/inet/InetBuildConfig.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/TestIdentifyCluster.a:
-
-/usr/include/x86_64-linux-gnu/bits/types/res_state.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BLEEndPoint.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/obj/src/protocols/interaction_model/lib/libInteractionModel.a:
-
-/usr/include/c++/15/bits/stl_set.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleApplicationDelegate.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libTestCameraAvSettingsUserLevelManagementCluster.a:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/TestPowerTopologyClusterBackwardsCompatibility.a:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleConfig.h:
-
-/usr/include/x86_64-linux-gnu/bits/sched.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleConnectionDelegate.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleError.h:
-
-/home/kdy/home-assistant-core/include/ProtocolDriver.hpp:
-
-/usr/include/c++/15/bits/cxxabi_init_exception.h:
-
-/usr/include/x86_64-linux-gnu/sys/mman.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleLayerDelegate.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BlePlatformDelegate.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleRole.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/CHIPBleServiceData.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/inet/InetConfig.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPCore.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPError.h:
-
-/usr/include/c++/15/bits/ostream.tcc:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/ErrorStr.h:
-
-/usr/include/c++/15/bits/regex_scanner.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/Unchecked.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libTestTimeSynchronizationCluster.a:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/BufferWriter.h:
-
-/usr/include/c++/15/bits/ostream_insert.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/setup_payload/SetupPayload.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/CodeUtils.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/IntrusiveList.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/ObjectDump.h:
-
-/usr/include/x86_64-linux-gnu/bits/signum-arch.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/SetupDiscriminator.h:
-
-/usr/include/x86_64-linux-gnu/bits/types/struct_tm.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/TypeTraits.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/platform/Linux/BlePlatformConfig.h:
-
-/usr/include/x86_64-linux-gnu/bits/locale.h:
-
-/usr/include/x86_64-linux-gnu/bits/posix1_lim.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/platform/Linux/CHIPPlatformConfig.h:
-
-/usr/include/c++/15/limits:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/platform/Linux/InetPlatformConfig.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libTestAdministratorCommissioningCluster.a:
-
-/usr/include/x86_64-linux-gnu/bits/struct_mutex.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/setup_payload/ManualSetupPayloadParser.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SocketEvents.h:
-
-/usr/include/net/if.h:
-
-/usr/include/x86_64-linux-gnu/bits/types/sig_atomic_t.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemClock.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemPacketBuffer.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/TestElectricalPowerMeasurementCluster.a:
-
-/usr/include/c++/15/bits/mask_array.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio-base.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio-byteorder-big.hpp:

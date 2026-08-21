@@ -301,6 +301,7 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o: \
  /usr/include/c++/15/bits/std_mutex.h \
  /usr/include/c++/15/bits/unique_lock.h /usr/include/c++/15/atomic \
  /home/kdy/home-assistant-core/include/Device.hpp \
+ /usr/include/c++/15/sstream /usr/include/c++/15/bits/sstream.tcc \
  /usr/include/c++/15/fstream /usr/include/c++/15/bits/codecvt.h \
  /usr/include/x86_64-linux-gnu/c++/15/bits/basic_file.h \
  /usr/include/x86_64-linux-gnu/c++/15/bits/c++io.h \

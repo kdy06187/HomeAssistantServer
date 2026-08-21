@@ -192,4 +192,113 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o: \
  /home/kdy/home-assistant-core/include/Device.hpp \
  /home/kdy/home-assistant-core/include/ProtocolDriver.hpp \
  /home/kdy/home-assistant-core/include/DatabaseManager.hpp \
- /usr/include/sqlite3.h /usr/include/c++/15/chrono
+ /usr/include/sqlite3.h \
+ /home/kdy/home-assistant-core/include/MatterController.hpp \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPCore.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPConfig.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/core/CHIPBuildConfig.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleConfig.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/ble/BleBuildConfig.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/platform/CHIPDeviceBuildConfig.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemConfig.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/system/SystemBuildConfig.h \
+ /home/kdy/home-assistant-core/include/CHIPProjectConfig.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/platform/Linux/CHIPPlatformConfig.h \
+ /home/kdy/home-assistant-core/include/SystemProjectConfig.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/platform/Linux/SystemPlatformConfig.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/platform/Linux/BlePlatformConfig.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/inet/InetConfig.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/inet/InetBuildConfig.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/platform/Linux/InetPlatformConfig.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemLayer.h \
+ /usr/include/c++/15/utility /usr/include/c++/15/bits/stl_relops.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPCallback.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CriticalFailure.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPError.h \
+ /usr/include/inttypes.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/TypeTraits.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/CodeUtils.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/ErrorStr.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/Assertions.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/ObjectDump.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/logging/TextOnlyLogging.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/Compiler.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/DLLUtil.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/EnforceFormat.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/logging/Constants.h \
+ /usr/include/c++/15/memory /usr/include/c++/15/bits/stl_tempbuf.h \
+ /usr/include/c++/15/bits/stl_raw_storage_iter.h \
+ /usr/include/c++/15/bits/align.h /usr/include/c++/15/bits/shared_ptr.h \
+ /usr/include/c++/15/bits/shared_ptr_base.h \
+ /usr/include/c++/15/bits/allocated_ptr.h \
+ /usr/include/c++/15/ext/concurrence.h \
+ /usr/include/c++/15/bits/shared_ptr_atomic.h \
+ /usr/include/c++/15/backward/auto_ptr.h \
+ /usr/include/c++/15/pstl/glue_memory_defs.h \
+ /usr/include/c++/15/pstl/execution_defs.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/LambdaBridge.h \
+ /usr/include/string.h /usr/include/strings.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemClock.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/TimeUtils.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemError.h \
+ /usr/include/x86_64-linux-gnu/sys/time.h /usr/include/c++/15/chrono \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemEvent.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/IntrusiveList.h \
+ /usr/include/c++/15/iterator /usr/include/c++/15/bits/stream_iterator.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SocketEvents.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/BitFlags.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/Ble.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BLEEndPoint.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemPacketBuffer.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemPacketBufferInternal.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/BufferWriter.h \
+ /usr/include/c++/15/climits \
+ /usr/lib/gcc/x86_64-linux-gnu/15/include/limits.h \
+ /usr/lib/gcc/x86_64-linux-gnu/15/include/syslimits.h \
+ /usr/include/limits.h /usr/include/x86_64-linux-gnu/bits/posix1_lim.h \
+ /usr/include/x86_64-linux-gnu/bits/local_lim.h \
+ /usr/include/linux/limits.h \
+ /usr/include/x86_64-linux-gnu/bits/posix2_lim.h \
+ /usr/include/x86_64-linux-gnu/bits/xopen_lim.h \
+ /usr/include/x86_64-linux-gnu/bits/uio_lim.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/Span.h \
+ /usr/include/c++/15/array /usr/include/c++/15/compare \
+ /usr/include/c++/15/cstring \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/Unchecked.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/system/SystemAlignSize.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleConnectionDelegate.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/SetupDiscriminator.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleError.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleLayerDelegate.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleUUID.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BlePlatformDelegate.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleRole.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BtpEngine.h \
+ /usr/include/c++/15/algorithm /usr/include/c++/15/bits/stl_algo.h \
+ /usr/include/c++/15/bits/algorithmfwd.h \
+ /usr/include/c++/15/bits/stl_heap.h \
+ /usr/include/c++/15/bits/uniform_int_dist.h \
+ /usr/include/c++/15/pstl/glue_algorithm_defs.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleApplicationDelegate.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleLayer.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/CHIPBleServiceData.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPEncoding.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlbyteorder.hpp \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlbyteorder.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio-private.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlbyteorder-little.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio-byteorder.hpp \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio-base.hpp \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio-base.h \
+ /usr/lib/gcc/x86_64-linux-gnu/15/include/stdbool.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio-byteorder-big.hpp \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio-byteorder-little.hpp \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio.hpp \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/setup_payload/SetupPayload.h \
+ /usr/include/c++/15/map /usr/include/c++/15/bits/stl_tree.h \
+ /usr/include/c++/15/bits/stl_map.h \
+ /usr/include/c++/15/bits/stl_multimap.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/Optional.h \
+ /usr/include/c++/15/optional \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/InPlace.h \
+ /home/kdy/home-assistant-core/third_party/connectedhomeip/src/setup_payload/ManualSetupPayloadParser.h

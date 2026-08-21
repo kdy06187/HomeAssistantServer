@@ -42,6 +42,9 @@ public:
 
     bool removeDeviceRegistration(uint64_t nodeId);
 
+    std::string getPowerUsage(std::string deviceId);
+    std::string getCumulativeEnergy(std::string deviceId);
+
 private:
     std::string mChipToolPath;
     bool commissionDevice(uint64_t nodeId, std::string name, const std::string& manualPincode,
