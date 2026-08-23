@@ -25,4 +25,5 @@ DeviceManager& mDeviceManager;
     std::string handleCommissionDevice(const std::string& requestBody);
     std::string handleDeleteDevice(const std::string& requestBody);
     std::string handleGetDeviceEnergy(const std::string& deviceId);
+    std::string handleGetDeviceEnergyHistory(const std::string& deviceId);
 };

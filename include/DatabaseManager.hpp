@@ -3,7 +3,11 @@
 #include <vector>
 #include <sqlite3.h>
 #include "Device.hpp"
-
+#include <algorithm>
+struct EnergyLog{
+    std::string timestamp;
+    long total_mwh;
+};
 class DatabaseManager {
 public:
     static DatabaseManager& getInstance() {
@@ -21,6 +25,12 @@ public:
     bool removeDevice(const std::string& id);             // 기기 삭제
     void close();
 
+    bool initEnergyTable(); // 전력량 테이블 초기화
+    bool updateEnergyStat(const std::string& deviceId, long current_mwh, long& out_real_total);
+    bool initHistoryTable();
+    bool insertEnergyLog(const std::string& deviceId, long total_mwh);
+    
+    std::vector<EnergyLog> getEnergyHistory(const std::string& deviceId, int limit = 50);
 private:
     DatabaseManager() : db_(nullptr) {}
     ~DatabaseManager() { close(); }

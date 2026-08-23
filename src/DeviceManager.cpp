@@ -181,15 +181,16 @@ void DeviceManager::healthCheckRoutine() {
 
         std::cout << "\n[DeviceManager] 모든 기기의 상태 점검 시작..." << std::endl;
 
-        std::vector<std::string> deviceIds;
+        std::vector<Device> devices;
         {
             std::lock_guard<std::mutex> lock(mutex_);
             for (const auto& pair : devices_) {
-                deviceIds.push_back(pair.first);
+                devices.push_back(pair.second);
             }
         } 
 
-        for (const auto& id : deviceIds) {
+        for (const auto& device : devices) {
+            const auto& id = device.id;
             // 우리가 예전에 최적화해 둔 그 함수! (알아서 통신하고, 알아서 DB 업데이트까지 다 함)
             std::string state = this->getDeviceState(id);
             std::cout << "[DeviceManager] 기기 상태 점검 : " << id << " 현재 상태 ➔ [" << state << "]" << std::endl;
@@ -197,6 +198,15 @@ void DeviceManager::healthCheckRoutine() {
                 std::cerr << "[DeviceManager] 기기 오프라인 : " << id << std::endl;
                 // 필요하다면 여기서 DB를 오프라인 상태로 바꾸는 코드를 추가해도 좋습니다.
                 DatabaseManager::getInstance().updateDeviceState(id, 0); // 오프라인 상태로 DB 업데이트
+            }
+            if (device.protocol_type == ProtocolType::MATTER && state != "UNKNOWN") {
+                int activePower_mW = 0;
+                long real_total_mWh = 0;
+                
+                if (getDeviceEnergyInfo(id, activePower_mW, real_total_mWh)) {
+                    DatabaseManager::getInstance().insertEnergyLog(id, real_total_mWh);
+                    std::cout << "[DeviceManager] 📊 기기(" << id << ") 시계열 데이터 기록: " << real_total_mWh << " mWh" << std::endl;
+                }
             }
         }
         std::cout << "[DeviceManager] 점검 완료.\n" << std::endl;
@@ -238,4 +248,29 @@ std::string DeviceManager::getDeviceTotalEnergy(std::string deviceId) {
         }
     }
     return "UNKNOWN";
+}
+
+bool DeviceManager::getDeviceEnergyInfo(const std::string& deviceId, int& out_activePower_mW,long& out_real_total_mWh) {
+    std::string activePowerStr = getDeviceActivePower(deviceId);
+    std::string totalEnergyStr = getDeviceTotalEnergy(deviceId);
+
+    // 2. 실시간 전력량 처리
+    if (activePowerStr != "UNKNOWN" && !activePowerStr.empty()) {
+        out_activePower_mW = std::stoi(activePowerStr);
+    } else {
+        out_activePower_mW = 0;
+    }
+
+    // 3. 누적 전력량 RAW 데이터 파싱
+    long hardware_total_mWh = 0;
+    if (totalEnergyStr != "UNKNOWN" && !totalEnergyStr.empty()) {
+        hardware_total_mWh = std::stoll(totalEnergyStr);
+    }
+
+    DatabaseManager::getInstance().updateEnergyStat(deviceId, hardware_total_mWh, out_real_total_mWh);
+
+    return true;
+}
+std::vector<EnergyLog> DeviceManager::getDeviceEnergyHistory(const std::string& deviceId, int limit) {
+    return DatabaseManager::getInstance().getEnergyHistory(deviceId, limit);
 }

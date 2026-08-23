@@ -265,7 +265,8 @@ CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o: \
  /home/kdy/home-assistant-core/include/DeviceManager.hpp \
  /usr/include/c++/15/iostream \
  /home/kdy/home-assistant-core/include/Device.hpp \
- /usr/include/x86_64-linux-gnu/sys/socket.h \
+ /home/kdy/home-assistant-core/include/DatabaseManager.hpp \
+ /usr/include/sqlite3.h /usr/include/x86_64-linux-gnu/sys/socket.h \
  /usr/include/x86_64-linux-gnu/bits/types/struct_iovec.h \
  /usr/include/x86_64-linux-gnu/bits/socket.h \
  /usr/include/x86_64-linux-gnu/bits/socket_type.h \

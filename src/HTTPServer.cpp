@@ -81,6 +81,12 @@ void HTTPServer::run(){
         }
         res.set_content(jsonResponse, "application/json");
     });
+
+    svr.Get(R"(/api/devices/([^/]+)/energy/history)", [this](const httplib::Request& req, httplib::Response& res) {
+    std::string deviceId = req.matches[1];
+    std::string result = this->handleGetDeviceEnergyHistory(deviceId);
+    res.set_content(result, "application/json");
+    });
     std::cout << "[HTTPServer]네트워크 소켓 개방 완료" << std::endl;
     svr.listen("0.0.0.0", mPort);
 }
@@ -194,26 +200,44 @@ std::string HTTPServer::handleGetDeviceEnergy(const std::string& deviceId) {
     std::cout << "[HTTPServer] 기기 전력량(실시간/누적) GET 요청 수신 Device ID: " << deviceId << std::endl;
 
     try{
-        std::string activePower = mDeviceManager.getDeviceActivePower(deviceId);
-        std::string totalEnergy = mDeviceManager.getDeviceTotalEnergy(deviceId);
+        int activePower_mW = 0;
+        long real_total_mWh = 0;
+
+        mDeviceManager.getDeviceEnergyInfo(deviceId, activePower_mW, real_total_mWh);
 
         json response;
         response["deviceId"] = deviceId;
-        if (activePower != "UNKNOWN" && !activePower.empty()) {
-            response["activePower_mW"] = std::stoi(activePower); 
-        } else {
-            response["activePower_mW"] = 0; // 에러 시 0 처리
-        }
-
-        if (totalEnergy != "UNKNOWN" && !totalEnergy.empty()) {
-            response["totalEnergy_mWh"] = std::stoll(totalEnergy); // 값이 크므로 stoll 사용
-        } else {
-            response["totalEnergy_mWh"] = 0;
-        }
+        response["activePower_mW"] = activePower_mW;
+        response["totalEnergy_mWh"] = real_total_mWh; // DB 보정이 끝난 진짜 데이터
 
         return response.dump();
     } catch (const json::exception& e) {
         std::cerr << "[HTTPServer] ❌ 데이터 처리 에러: " << e.what() << std::endl;
+        return R"({"error": "서버 내부 데이터 처리 오류입니다."})";
+    }
+}
+
+std::string HTTPServer::handleGetDeviceEnergyHistory(const std::string& deviceId) {
+    std::cout << "[HTTPServer] 시계열 데이터 GET 요청 수신 Device ID: " << deviceId << std::endl;
+
+    try {
+        // 1. DeviceManager를 통해 시계열 배열 받아오기
+        std::vector<EnergyLog> logs = mDeviceManager.getDeviceEnergyHistory(deviceId);
+        
+        // 2. nlohmann/json을 사용해 JSON 배열(Array) 생성
+        json response = json::array(); 
+
+        for (const auto& log : logs) {
+            json item;
+            item["timestamp"] = log.timestamp;
+            item["totalEnergy_mWh"] = log.total_mwh;
+            response.push_back(item);
+        }
+
+        return response.dump();
+        
+    } catch (const std::exception& e) {
+        std::cerr << "[HTTPServer] ❌ 시계열 데이터 처리 에러: " << e.what() << std::endl;
         return R"({"error": "서버 내부 데이터 처리 오류입니다."})";
     }
 }

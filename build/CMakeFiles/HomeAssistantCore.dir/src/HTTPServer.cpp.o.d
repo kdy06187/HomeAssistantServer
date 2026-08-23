@@ -192,6 +192,15 @@ CMakeFiles/HomeAssistantCore.dir/src/HTTPServer.cpp.o: \
  /usr/include/c++/15/bits/vector.tcc \
  /home/kdy/home-assistant-core/include/Device.hpp \
  /home/kdy/home-assistant-core/include/ProtocolDriver.hpp \
+ /home/kdy/home-assistant-core/include/DatabaseManager.hpp \
+ /usr/include/sqlite3.h /usr/include/c++/15/algorithm \
+ /usr/include/c++/15/bits/stl_algo.h \
+ /usr/include/c++/15/bits/algorithmfwd.h \
+ /usr/include/c++/15/bits/stl_heap.h \
+ /usr/include/c++/15/bits/uniform_int_dist.h \
+ /usr/include/c++/15/bits/stl_tempbuf.h \
+ /usr/include/c++/15/pstl/glue_algorithm_defs.h \
+ /usr/include/c++/15/pstl/execution_defs.h \
  /home/kdy/home-assistant-core/src/httplib.h /usr/include/arpa/inet.h \
  /usr/include/netinet/in.h /usr/include/x86_64-linux-gnu/sys/socket.h \
  /usr/include/x86_64-linux-gnu/bits/types/struct_iovec.h \
@@ -258,14 +267,7 @@ CMakeFiles/HomeAssistantCore.dir/src/HTTPServer.cpp.o: \
  /usr/include/x86_64-linux-gnu/bits/mman-shared.h \
  /usr/include/x86_64-linux-gnu/bits/mman_ext.h \
  /usr/include/x86_64-linux-gnu/sys/un.h /usr/include/string.h \
- /usr/include/strings.h /usr/include/c++/15/algorithm \
- /usr/include/c++/15/bits/stl_algo.h \
- /usr/include/c++/15/bits/algorithmfwd.h \
- /usr/include/c++/15/bits/stl_heap.h \
- /usr/include/c++/15/bits/uniform_int_dist.h \
- /usr/include/c++/15/bits/stl_tempbuf.h \
- /usr/include/c++/15/pstl/glue_algorithm_defs.h \
- /usr/include/c++/15/pstl/execution_defs.h /usr/include/c++/15/array \
+ /usr/include/strings.h /usr/include/c++/15/array \
  /usr/include/c++/15/compare /usr/include/c++/15/cassert \
  /usr/include/assert.h /usr/include/c++/15/chrono \
  /usr/include/c++/15/climits /usr/include/c++/15/condition_variable \

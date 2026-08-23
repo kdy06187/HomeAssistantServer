@@ -22,6 +22,7 @@ int main() {
     DeviceManager& manager = DeviceManager::getInstance();
     manager.initFromDatabase();
     manager.startHealthCheck();
+    // manager.startEnergyTimer(); // 전력량 수집 타이머 시작
     // 2. TCP 드라이버 생성 및 포트 8080으로 서버 시작
     TCPDriver* tcpDriver = new TCPDriver(manager);
     tcpDriver->startServer(8080);

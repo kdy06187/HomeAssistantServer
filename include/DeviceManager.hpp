@@ -8,6 +8,7 @@
 #include <atomic>
 #include "Device.hpp"
 #include "ProtocolDriver.hpp"
+#include "DatabaseManager.hpp"
 
 class DeviceManager {
 public:
@@ -43,6 +44,8 @@ public:
 
     std::string getDeviceActivePower(std::string deviceId);
     std::string getDeviceTotalEnergy(std::string deviceId);
+    bool getDeviceEnergyInfo(const std::string& deviceId, int& out_activePower_mW,long& out_real_total_mWh);
+    std::vector<EnergyLog> getDeviceEnergyHistory(const std::string& deviceId, int limit = 50);
 private:
     // 외부 생성 방지
     DeviceManager(){
@@ -58,5 +61,4 @@ private:
     std::unordered_map<ProtocolType, ProtocolDriver*> drivers_;
     std::mutex mutex_;
     
-
 };
