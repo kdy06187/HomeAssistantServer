@@ -67,36 +67,7 @@ int main() {
     bool isTurnedOn = false;
     int consecutiveFailures = 0;      // 연속 실패 횟수 추적
     const int MAX_FAILURES = 3;       // 치명적 장애로 판단할 임계치
-    while (true) {
-        std::this_thread::sleep_for(std::chrono::seconds(10));
-        // isTurnedOn = !isTurnedOn;
-        // std::string command = isTurnedOn ? "TURN_ON" : "TURN_OFF";
-        std::cout << "\n[Main] 시스템 테스트: 기기에 제어 명령 대기!" << std::endl;
-        // manager.executeCommand("Arduino_1", command);
-
-        // bool success = manager.executeCommand("1", command);
-        
-        // if (success) {
-        //     consecutiveFailures = 0; // 성공 시 실패 카운터 즉시 리셋
-        //     std::cout << "🟢 [System] 명령 전송 성공! 기기가 정상 응답했습니다." << std::endl;
-        // } else {
-        //     consecutiveFailures++;
-        //     std::cerr << "🔴 [System] 기기 응답 없음! 연속 실패: " << consecutiveFailures << "/" << MAX_FAILURES << std::endl;
-            
-        //     // 임계치(3회) 도달 시 자가 치유(Self-Healing) 발동
-        //     if (consecutiveFailures >= MAX_FAILURES) {
-        //         std::cerr << "🚨 [System] 치명적 장애 감지! 해당 기기를 시스템에서 분리합니다." << std::endl;
-                
-        //         // 파일 및 chip-tool 내부 캐시에서 기기 완전 삭제
-        //         matterController->removeDeviceRegistration(targetNodeId);
-                
-        //         std::cout << "📱 [System] 모바일 앱으로 [연결 끊김 및 재등록 필요] 알림 푸시 전송 (예정)" << std::endl;
-                
-        //         // 루프를 탈출하여 무의미한 명령 중단 (실제 서버에서는 루프 탈출 대신 해당 기기만 건너뜁니다)
-        //         break; 
-        //     }
-        // }
-    }
+    
     httpServer.stop();
     matterController->shutdown();
     delete matterController;

@@ -151,6 +151,15 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o: \
  /usr/include/c++/15/bits/chrono.h /usr/include/c++/15/ratio \
  /usr/include/c++/15/limits /usr/include/c++/15/ctime \
  /usr/include/c++/15/bits/parse_numbers.h \
+ /usr/include/c++/15/unordered_set \
+ /usr/include/c++/15/bits/unordered_set.h \
+ /usr/include/c++/15/bits/hashtable.h \
+ /usr/include/c++/15/bits/hashtable_policy.h \
+ /usr/include/c++/15/ext/aligned_buffer.h \
+ /usr/include/c++/15/bits/enable_special_members.h \
+ /usr/include/c++/15/bits/node_handle.h \
+ /usr/include/c++/15/bits/erase_if.h /usr/include/c++/15/unordered_map \
+ /usr/include/c++/15/bits/unordered_map.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPCore.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPConfig.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/core/CHIPBuildConfig.h \
@@ -190,7 +199,6 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o: \
  /usr/include/c++/15/bits/align.h /usr/include/c++/15/bits/shared_ptr.h \
  /usr/include/c++/15/bits/shared_ptr_base.h \
  /usr/include/c++/15/bits/allocated_ptr.h \
- /usr/include/c++/15/ext/aligned_buffer.h \
  /usr/include/c++/15/ext/atomicity.h \
  /usr/include/x86_64-linux-gnu/c++/15/bits/atomic_word.h \
  /usr/include/x86_64-linux-gnu/sys/single_threaded.h \
@@ -271,16 +279,13 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o: \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio.hpp \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/setup_payload/SetupPayload.h \
  /usr/include/c++/15/map /usr/include/c++/15/bits/stl_tree.h \
- /usr/include/c++/15/bits/node_handle.h \
  /usr/include/c++/15/bits/stl_map.h \
- /usr/include/c++/15/bits/stl_multimap.h \
- /usr/include/c++/15/bits/erase_if.h /usr/include/c++/15/vector \
+ /usr/include/c++/15/bits/stl_multimap.h /usr/include/c++/15/vector \
  /usr/include/c++/15/bits/stl_vector.h \
  /usr/include/c++/15/bits/stl_bvector.h \
  /usr/include/c++/15/bits/vector.tcc \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/Optional.h \
  /usr/include/c++/15/optional \
- /usr/include/c++/15/bits/enable_special_members.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/InPlace.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/setup_payload/ManualSetupPayloadParser.h \
  /home/kdy/home-assistant-core/include/DeviceManager.hpp \
@@ -294,10 +299,7 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o: \
  /usr/include/c++/15/bits/locale_facets.tcc \
  /usr/include/c++/15/bits/basic_ios.tcc \
  /usr/include/c++/15/bits/ostream.tcc /usr/include/c++/15/istream \
- /usr/include/c++/15/bits/istream.tcc /usr/include/c++/15/unordered_map \
- /usr/include/c++/15/bits/unordered_map.h \
- /usr/include/c++/15/bits/hashtable.h \
- /usr/include/c++/15/bits/hashtable_policy.h /usr/include/c++/15/mutex \
+ /usr/include/c++/15/bits/istream.tcc /usr/include/c++/15/mutex \
  /usr/include/c++/15/bits/std_mutex.h \
  /usr/include/c++/15/bits/unique_lock.h /usr/include/c++/15/atomic \
  /home/kdy/home-assistant-core/include/Device.hpp \

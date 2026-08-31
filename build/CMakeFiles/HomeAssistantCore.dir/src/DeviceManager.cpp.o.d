@@ -201,6 +201,8 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o: \
  /usr/include/c++/15/pstl/glue_algorithm_defs.h \
  /usr/include/c++/15/pstl/execution_defs.h \
  /home/kdy/home-assistant-core/include/MatterController.hpp \
+ /usr/include/c++/15/unordered_set \
+ /usr/include/c++/15/bits/unordered_set.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPCore.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/CHIPConfig.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/gen/include/core/CHIPBuildConfig.h \

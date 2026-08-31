@@ -143,7 +143,7 @@ bool TCPDriver::unpairDevice(std::string deviceId){
     }
     return false;
 }
-std::string TCPDriver::readDeviceState(std::string deviceId){
+std::string TCPDriver::readDeviceState(std::string deviceId, bool isManualRequest){
     // 상태 요청 패킷 생성
     json req;
     req["action"] = "GET_STATE";

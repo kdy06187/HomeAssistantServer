@@ -216,6 +216,9 @@ std::vector<EnergyLog> DatabaseManager::getEnergyHistory(const std::string& devi
     }
 
     std::reverse(logs.begin(), logs.end());
-    
+
+    if (logs.empty()) {
+        std::cout << "[DatabaseManager] 기기(" << deviceId << ")의 저장된 시계열 데이터가 없습니다." << std::endl;
+    }
     return logs;
 }

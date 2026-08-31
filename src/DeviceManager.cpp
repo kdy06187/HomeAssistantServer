@@ -194,12 +194,12 @@ void DeviceManager::healthCheckRoutine() {
             // 우리가 예전에 최적화해 둔 그 함수! (알아서 통신하고, 알아서 DB 업데이트까지 다 함)
             std::string state = this->getDeviceState(id);
             std::cout << "[DeviceManager] 기기 상태 점검 : " << id << " 현재 상태 ➔ [" << state << "]" << std::endl;
-            if (state == "UNKNOWN") {
+            if (state == "UNKNOWN" || state == "OFFLINE") {
                 std::cerr << "[DeviceManager] 기기 오프라인 : " << id << std::endl;
                 // 필요하다면 여기서 DB를 오프라인 상태로 바꾸는 코드를 추가해도 좋습니다.
                 DatabaseManager::getInstance().updateDeviceState(id, 0); // 오프라인 상태로 DB 업데이트
             }
-            if (device.protocol_type == ProtocolType::MATTER && state != "UNKNOWN") {
+            if (device.protocol_type == ProtocolType::MATTER && state != "UNKNOWN" && state != "OFFLINE") {
                 int activePower_mW = 0;
                 long real_total_mWh = 0;
                 

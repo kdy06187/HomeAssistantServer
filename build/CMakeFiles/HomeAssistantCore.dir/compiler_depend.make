@@ -396,6 +396,7 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o: /home/kdy/home-assista
   /usr/include/c++/15/bits/unique_lock.h \
   /usr/include/c++/15/bits/unique_ptr.h \
   /usr/include/c++/15/bits/unordered_map.h \
+  /usr/include/c++/15/bits/unordered_set.h \
   /usr/include/c++/15/bits/uses_allocator.h \
   /usr/include/c++/15/bits/uses_allocator_args.h \
   /usr/include/c++/15/bits/utility.h \
@@ -454,6 +455,7 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o: /home/kdy/home-assista
   /usr/include/c++/15/type_traits \
   /usr/include/c++/15/typeinfo \
   /usr/include/c++/15/unordered_map \
+  /usr/include/c++/15/unordered_set \
   /usr/include/c++/15/utility \
   /usr/include/c++/15/vector \
   /usr/include/ctype.h \
@@ -1050,6 +1052,7 @@ CMakeFiles/HomeAssistantCore.dir/src/HTTPServer.cpp.o: /home/kdy/home-assistant-
 
 CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o: /home/kdy/home-assistant-core/src/MatterController.cpp \
   /home/kdy/home-assistant-core/include/CHIPProjectConfig.h \
+  /home/kdy/home-assistant-core/include/DatabaseManager.hpp \
   /home/kdy/home-assistant-core/include/Device.hpp \
   /home/kdy/home-assistant-core/include/DeviceManager.hpp \
   /home/kdy/home-assistant-core/include/MatterController.hpp \
@@ -1227,6 +1230,7 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o: /home/kdy/home-assi
   /usr/include/c++/15/bits/unique_lock.h \
   /usr/include/c++/15/bits/unique_ptr.h \
   /usr/include/c++/15/bits/unordered_map.h \
+  /usr/include/c++/15/bits/unordered_set.h \
   /usr/include/c++/15/bits/uses_allocator.h \
   /usr/include/c++/15/bits/uses_allocator_args.h \
   /usr/include/c++/15/bits/utility.h \
@@ -1287,6 +1291,7 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o: /home/kdy/home-assi
   /usr/include/c++/15/type_traits \
   /usr/include/c++/15/typeinfo \
   /usr/include/c++/15/unordered_map \
+  /usr/include/c++/15/unordered_set \
   /usr/include/c++/15/utility \
   /usr/include/c++/15/vector \
   /usr/include/ctype.h \
@@ -1305,6 +1310,7 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o: /home/kdy/home-assi
   /usr/include/locale.h \
   /usr/include/pthread.h \
   /usr/include/sched.h \
+  /usr/include/sqlite3.h \
   /usr/include/stdc-predef.h \
   /usr/include/stdint.h \
   /usr/include/stdio.h \
@@ -1414,6 +1420,7 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o: /home/kdy/home-assi
 
 CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o: /home/kdy/home-assistant-core/src/TCPDriver.cpp \
   /home/kdy/home-assistant-core/src/json.hpp \
+  /home/kdy/home-assistant-core/include/DatabaseManager.hpp \
   /home/kdy/home-assistant-core/include/Device.hpp \
   /home/kdy/home-assistant-core/include/DeviceManager.hpp \
   /home/kdy/home-assistant-core/include/ProtocolDriver.hpp \
@@ -1647,6 +1654,7 @@ CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o: /home/kdy/home-assistant-c
   /usr/include/netinet/in.h \
   /usr/include/pthread.h \
   /usr/include/sched.h \
+  /usr/include/sqlite3.h \
   /usr/include/stdc-predef.h \
   /usr/include/stdint.h \
   /usr/include/stdio.h \
@@ -1973,6 +1981,7 @@ CMakeFiles/HomeAssistantCore.dir/src/main.cpp.o: /home/kdy/home-assistant-core/s
   /usr/include/c++/15/bits/unique_lock.h \
   /usr/include/c++/15/bits/unique_ptr.h \
   /usr/include/c++/15/bits/unordered_map.h \
+  /usr/include/c++/15/bits/unordered_set.h \
   /usr/include/c++/15/bits/uses_allocator.h \
   /usr/include/c++/15/bits/uses_allocator_args.h \
   /usr/include/c++/15/bits/utility.h \
@@ -2058,6 +2067,7 @@ CMakeFiles/HomeAssistantCore.dir/src/main.cpp.o: /home/kdy/home-assistant-core/s
   /usr/include/c++/15/type_traits \
   /usr/include/c++/15/typeinfo \
   /usr/include/c++/15/unordered_map \
+  /usr/include/c++/15/unordered_set \
   /usr/include/c++/15/utility \
   /usr/include/c++/15/valarray \
   /usr/include/c++/15/vector \
@@ -3601,6 +3611,10 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o:
 
 /usr/include/asm-generic/sockios.h:
 
+/usr/include/x86_64-linux-gnu/bits/types/clock_t.h:
+
+/usr/include/c++/15/bits/unordered_set.h:
+
 /usr/include/c++/15/chrono:
 
 /usr/include/c++/15/unordered_map:
@@ -3646,6 +3660,10 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o:
 /usr/include/c++/15/ios:
 
 /usr/include/x86_64-linux-gnu/bits/mathcalls-narrow.h:
+
+/usr/include/c++/15/unordered_set:
+
+/usr/include/c++/15/tr1/beta_function.tcc:
 
 /usr/include/c++/15/utility:
 
@@ -3813,10 +3831,6 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o:
 
 /usr/include/c++/15/bits/stl_stack.h:
 
-/usr/include/x86_64-linux-gnu/bits/types/clock_t.h:
-
-/usr/include/c++/15/bits/unordered_set.h:
-
 /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libTestPowerSourceCluster.a:
 
 /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/TestClosureDimensionCluster.a:
@@ -3858,10 +3872,6 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o:
 /usr/include/c++/15/locale:
 
 /usr/include/c++/15/tr1/bessel_function.tcc:
-
-/usr/include/c++/15/tr1/beta_function.tcc:
-
-/usr/include/c++/15/unordered_set:
 
 /usr/include/c++/15/tr1/exp_integral.tcc:
 

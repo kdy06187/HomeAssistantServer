@@ -55,8 +55,39 @@ std::string MatterController::executeCommandWithOutput(std::string cmd){
     }
     return result;
 }
+std::string MatterController::executeCommandWithErrorResponse(const std::string& cmd, const std::string& deviceId){
+    std::string output = executeCommandWithOutput(cmd);
+        std::vector<std::string> errorKeywords = {
+            "Timeout",
+            "Error resolving node",
+            "AccessDenied",
+            "Incorrect state",
+            "CHIP_ERROR_"
+        };
+
+        for (const auto& keyword : errorKeywords) {
+            if (output.find(keyword) != std::string::npos) {
+                std::cerr << "[MatterController] 기기(" << deviceId << ") 통신 에러/오프라인. 사유: " << keyword << std::endl;
+                mOfflineNodes[deviceId] = std::chrono::steady_clock::now(); // 오프라인 명부에 추가
+                // 안드로이드가 쉽게 식별할 수 있도록 OFFLINE을 반환합니다.
+                return "OFFLINE"; 
+            }
+        }
+        // 통신 성공 시 오프라인 명부에서 제거 (온라인 복구)
+        if (mOfflineNodes.count(deviceId) > 0) {
+            mOfflineNodes.erase(deviceId);
+        }
+
+    return output; 
+}
 bool MatterController::removeDeviceRegistration(uint64_t deviceId) {
-    // 1. 텍스트 파일에서 해당 기기 번호만 삭제
+    std::string deviceIdStr = std::to_string(deviceId);
+
+    // 방어막(캐시) 명부에서 기기 정보 즉시 완전 삭제
+    mPairingNodes.erase(deviceId);
+    mOfflineNodes.erase(deviceIdStr);
+
+    // 텍스트 파일에서 해당 기기 번호만 삭제
     std::ifstream fileIn(mConfigFilePath);
     std::vector<std::string> lines;
     std::string line;
@@ -79,14 +110,17 @@ bool MatterController::removeDeviceRegistration(uint64_t deviceId) {
     fileOut.close();
     
     // 2. chip-tool의 내부 KVS 데이터베이스에서도 이별 통보 (unpair)
-    std::string cmd = mChipToolPath + " pairing unpair " + std::to_string(deviceId);
-    std::cout << "[MatterController] 페어링 해제 중..." << std::endl;
+    std::string cmd = mChipToolPath + " pairing unpair " + std::to_string(deviceId) + " 2>&1";
+    std::cout << "[MatterController] 기기(" << deviceIdStr << ") 페어링 해제 중..." << std::endl;
     std::thread([this,cmd,deviceId](){
-        bool success = this->executeCommand(cmd);
-        if (success) {
-            std::cout << "[MatterController] 기기(" << deviceId << ") 페어링 해제 완료" << std::endl;
+        std::string deviceIdStr = std::to_string(deviceId);
+        std::string output = this->executeCommandWithOutput(cmd);
+        
+        // 오프라인이어서 타임아웃이 나더라도 KVS에서는 지워지므로 상황에 맞게 로그만 분기
+        if (output.find("Timeout") != std::string::npos || output.find("Error") != std::string::npos) {
+            std::cerr << "[MatterController] 기기(" << deviceIdStr << ") 오프라인 상태. 로컬에서 강제 페어링 해제 완료." << std::endl;
         } else {
-            std::cerr << "[MatterController] 기기(" << deviceId << ") 페어링 해제 실패" << std::endl;
+            std::cout << "[MatterController] 기기(" << deviceIdStr << ") 정상 페어링 해제 완료" << std::endl;
         }
     }).detach();
 
@@ -134,31 +168,61 @@ bool MatterController::commissionDevice(uint64_t nodeId, std::string name,const 
     std::string cmd = mChipToolPath + " pairing ble-wifi " + std::to_string(nodeId) + " " + wifiSsid + " " + wifiPassword + " " 
             + std::to_string(payload.setUpPINCode) + " " + "3830"+ 
             " --paa-trust-store-path ../paa_certs/paa-root-certs";
+
+    mPairingNodes.insert(nodeId);
+
     std::thread([this, cmd, nodeId, name]() {
-        bool success = executeCommand(cmd);
-        if (success) {
+        // 2. 에러 스트림 통합 및 결과 읽기 (executeCommand 대신 사용)
+        std::string cmdWithErr = cmd + " 2>&1";
+        std::string output = executeCommandWithOutput(cmdWithErr);
+        
+        // 3. 성공 키워드 검사 (chip-tool 페어링 성공 로그 기준)
+        if (output.find("Device commissioning completed with success") != std::string::npos ||
+            output.find("CHIP_NO_ERROR") != std::string::npos) {
             this->onDevicePairingComplete(nodeId, name);
             std::cout << "[MatterController] 커미셔닝 성공. 기기 정보를 내부 스토리지에 저장" << std::endl;
+        } else {
+            std::cerr << "[MatterController] 커미셔닝 실패 (타임아웃 또는 에러): \n" << output << std::endl;
         }
+
+        // 4. 작업 완료 후 Lock 해제
+        mPairingNodes.erase(nodeId);
     }).detach();
     return true;
 }
 
 // 기기 제어 Turn on
 bool MatterController::turnOn(uint64_t nodeId,uint16_t endpointId){
-    std::cout << "[MatterController] 💡 기기 켜기 요청 전송 중..." << std::endl;
-    std::cout << " -> Target NodeId: " << nodeId << ", EndpointId: " << endpointId << std::endl;
+    if (mPairingNodes.count(nodeId) > 0) {
+        std::cout << "[MatterController] 기기 페어링 중... 켜기 요청 스킵." << std::endl;
+        return false;
+    }
+    std::cout << "[MatterController] 💡 기기 켜기 요청 (NodeID: " << nodeId << ")" << std::endl;
 
-    std::string cmd = mChipToolPath + " onoff on " + std::to_string(nodeId) + " " + std::to_string(endpointId);
-    return executeCommand(cmd);
+    std::string cmd = mChipToolPath + " onoff on " + std::to_string(nodeId) + " " + std::to_string(endpointId) + " 2>&1";
+    std::string output = executeCommandWithErrorResponse(cmd, std::to_string(nodeId));
+    if (output == "OFFLINE" || output == "UNKNOWN") {
+        return false;
+    }
+
+    return true;
 }
 
 // 기기 제어 Turn off
 bool MatterController::turnOff(uint64_t nodeId,uint16_t endpointId){
+    if (mPairingNodes.count(nodeId) > 0) {
+        std::cout << "[MatterController] ⏳ 기기 페어링 중. 끄기 요청 스킵." << std::endl;
+        return false;
+    }
     std::cout << "[MatterController] 🔌 기기 끄기 요청 (NodeID: " << nodeId << ")" << std::endl;
 
-    std::string cmd = mChipToolPath + " onoff off " + std::to_string(nodeId) + " " + std::to_string(endpointId);
-    return executeCommand(cmd);
+    std::string cmd = mChipToolPath + " onoff off " + std::to_string(nodeId) + " " + std::to_string(endpointId) + " 2>&1";
+    std::string output = executeCommandWithErrorResponse(cmd, std::to_string(nodeId));
+    if (output == "OFFLINE" || output == "UNKNOWN") {
+        return false;
+    }
+
+    return true;
 }
 
 // 인터페이스 구현
@@ -186,15 +250,34 @@ bool MatterController::unpairDevice(std::string deviceId){
     bool success = this->removeDeviceRegistration(std::stoull(deviceId));
     return success;
 }
-std::string MatterController::readDeviceState(std::string deviceId){
+std::string MatterController::readDeviceState(std::string deviceId, bool isManualRequest){
     deviceId.erase(std::remove(deviceId.begin(), deviceId.end(), '\n'), deviceId.end());
     deviceId.erase(std::remove(deviceId.begin(), deviceId.end(), '\r'), deviceId.end());
     deviceId.erase(std::remove(deviceId.begin(), deviceId.end(), '\"'), deviceId.end());
     deviceId.erase(std::remove(deviceId.begin(), deviceId.end(), ' '), deviceId.end());
+
+    uint64_t nodeId = std::stoull(deviceId);
+
+    // 기기가 현재 페어링 중이면 즉시 스킵
+    if (mPairingNodes.count(nodeId) > 0) {
+        std::cout << "[MatterController] 기기(" << deviceId << ") 페어링 중. 헬스체크 스킵." << std::endl;
+        return "PAIRING";
+    }
+
+    // 자동 헬스체크인데 기기가 오프라인 명부에 있다면 쉘 명령 실행 스킵
+    if (!isManualRequest && mOfflineNodes.count(deviceId) > 0) {
+        std::cout << "[MatterController] 기기(" << deviceId << ") 오프라인 상태. 헬스체크 스킵." << std::endl;
+        return "OFFLINE";
+    }
+
     std::cout << "[MatterController] 기기 상태 읽기 요청 : NodeId = " << deviceId << std::endl;
-    std::string cmd = mChipToolPath + " onoff read on-off " + deviceId + " 1";
+    std::string cmd = mChipToolPath + " onoff read on-off " + deviceId + " 1 2>&1";
     try{
-        std::string output = executeCommandWithOutput(cmd);
+        std::string output = this->executeCommandWithErrorResponse(cmd, deviceId);
+        
+        if (output == "OFFLINE" || output == "UNKNOWN") return output;
+
+        // 출력된 로그 중에 Data = true(또는 1)이 있으면 ON
         if (output.find("Data = true") != std::string::npos || output.find("Data: 1") != std::string::npos) {
             return "ON";
         } 
@@ -208,10 +291,21 @@ std::string MatterController::readDeviceState(std::string deviceId){
     }
     return "UNKNOWN";
 }
-std::string MatterController::getPowerUsage(std::string deviceId){
+std::string MatterController::getPowerUsage(std::string deviceId, bool isManualRequest){
+    uint64_t nodeId = std::stoull(deviceId);
+
+    // 기기가 현재 페어링 중이면 스킵
+    if (mPairingNodes.count(nodeId) > 0) return "PAIRING";
+
+    // 오프라인 기기의 자동 조회 스킵
+    if (!isManualRequest && mOfflineNodes.count(deviceId) > 0) return "OFFLINE";
+
     std::cout << "[MatterController] 기기 전력량(실시간) 조회 요청 : NodeId = " << deviceId << std::endl;
-    std::string cmd = mChipToolPath + " electricalpowermeasurement read active-power " + deviceId + " 1";
-    std::string output = this->executeCommandWithOutput(cmd);
+    std::string cmd = mChipToolPath + " electricalpowermeasurement read active-power " + deviceId + " 1 2>&1";
+    
+    std::string output = this->executeCommandWithErrorResponse(cmd, deviceId);
+
+    if (output == "OFFLINE" || output == "UNKNOWN") return output;
 
     if (output.empty()) return "UNKNOWN";
 
@@ -236,10 +330,13 @@ std::string MatterController::getPowerUsage(std::string deviceId){
     }
     return result;
 }
-std::string MatterController::getCumulativeEnergy(std::string deviceId){
+std::string MatterController::getCumulativeEnergy(std::string deviceId, bool isManualRequest){
     std::cout << "[MatterController] 기기 전력량(누적) 조회 요청 : NodeId = " << deviceId << std::endl;
     std::string cmd = mChipToolPath + " electricalenergymeasurement read cumulative-energy-imported " + deviceId + " 1";
-    std::string output = this->executeCommandWithOutput(cmd);
+    
+    std::string output = this->executeCommandWithErrorResponse(cmd, deviceId);
+
+    if (output == "OFFLINE" || output == "UNKNOWN") return output;
 
     if (output.empty()) return "UNKNOWN";
 
