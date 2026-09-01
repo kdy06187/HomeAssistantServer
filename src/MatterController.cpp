@@ -171,24 +171,26 @@ bool MatterController::commissionDevice(uint64_t nodeId, std::string name,const 
 
     mPairingNodes.insert(nodeId);
 
-    std::thread([this, cmd, nodeId, name]() {
-        // 2. 에러 스트림 통합 및 결과 읽기 (executeCommand 대신 사용)
-        std::string cmdWithErr = cmd + " 2>&1";
-        std::string output = executeCommandWithOutput(cmdWithErr);
-        
-        // 3. 성공 키워드 검사 (chip-tool 페어링 성공 로그 기준)
-        if (output.find("Device commissioning completed with success") != std::string::npos ||
-            output.find("CHIP_NO_ERROR") != std::string::npos) {
-            this->onDevicePairingComplete(nodeId, name);
-            std::cout << "[MatterController] 커미셔닝 성공. 기기 정보를 내부 스토리지에 저장" << std::endl;
-        } else {
-            std::cerr << "[MatterController] 커미셔닝 실패 (타임아웃 또는 에러): \n" << output << std::endl;
-        }
+    bool isSuccess = false;
+    // 2. 에러 스트림 통합 및 결과 읽기 (executeCommand 대신 사용)
+    std::string cmdWithErr = cmd + " 2>&1";
+    std::string output = executeCommandWithOutput(cmdWithErr);
+    
+    // 3. 성공 키워드 검사 (chip-tool 페어링 성공 로그 기준)
+    if (output.find("Device commissioning completed with success") != std::string::npos ||
+        output.find("CHIP_NO_ERROR") != std::string::npos) {
+        this->onDevicePairingComplete(nodeId, name);
+        std::cout << "[MatterController] 커미셔닝 성공. 기기 정보를 내부 스토리지에 저장" << std::endl;
+        isSuccess = true;
+    } else {
+        std::cerr << "[MatterController] 커미셔닝 실패 (타임아웃 또는 에러): \n" << output << std::endl;
+        isSuccess = false;
+    }
 
-        // 4. 작업 완료 후 Lock 해제
-        mPairingNodes.erase(nodeId);
-    }).detach();
-    return true;
+    // 4. 작업 완료 후 Lock 해제
+    mPairingNodes.erase(nodeId);
+    
+    return isSuccess;
 }
 
 // 기기 제어 Turn on
