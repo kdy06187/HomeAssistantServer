@@ -103,6 +103,7 @@ std::string HTTPServer::handleGetDevices(){
         deviceObj["id"] = device.id; 
         deviceObj["name"] = device.name;
         deviceObj["type"] = mDeviceManager.getProtocolString(device.protocol_type); // enum 이름 확인!
+        deviceObj["state"] = device.state; // 현재 상태
         
         jsonArray.push_back(deviceObj);
     }
