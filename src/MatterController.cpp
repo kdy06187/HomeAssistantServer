@@ -56,27 +56,40 @@ std::string MatterController::executeCommandWithOutput(std::string cmd){
     return result;
 }
 std::string MatterController::executeCommandWithErrorResponse(const std::string& cmd, const std::string& deviceId){
-    std::string output = executeCommandWithOutput(cmd);
-        std::vector<std::string> errorKeywords = {
-            "Timeout",
-            "Error resolving node",
-            "AccessDenied",
-            "Incorrect state",
-            "CHIP_ERROR_"
-        };
+    std::string output = executeCommandWithOutput("timeout 5 " + cmd);
+    bool isSuccess = false;
+    if (output.find("CHIP_NO_ERROR") != std::string::npos ||
+        output.find("status 0x00 (SUCCESS)") != std::string::npos ||
+        output.find("status = 0x00") != std::string::npos ||
+        output.find("Success status report") != std::string::npos) {
+        isSuccess = true;
+    }
+    if(output.empty() || !isSuccess){
+        std::cerr << "[MatterController] 기기(" << deviceId << ") 통신 에러/오프라인. 사유: 출력 없음" << std::endl;
+        mOfflineNodes[deviceId] = std::chrono::steady_clock::now(); // 오프라인 명부에 추가
+        return "OFFLINE";
+    }
+    std::vector<std::string> errorKeywords = {
+        "Timeout",
+        "Error resolving node",
+        "AccessDenied",
+        "Incorrect state",
+        "CHIP_ERROR_"
+    };
 
-        for (const auto& keyword : errorKeywords) {
-            if (output.find(keyword) != std::string::npos) {
-                std::cerr << "[MatterController] 기기(" << deviceId << ") 통신 에러/오프라인. 사유: " << keyword << std::endl;
-                mOfflineNodes[deviceId] = std::chrono::steady_clock::now(); // 오프라인 명부에 추가
-                // 안드로이드가 쉽게 식별할 수 있도록 OFFLINE을 반환합니다.
-                return "OFFLINE"; 
-            }
+    for (const auto& keyword : errorKeywords) {
+        if (output.find(keyword) != std::string::npos) {
+            std::cerr << "[MatterController] 기기(" << deviceId << ") 통신 에러/오프라인. 사유: " << keyword << std::endl;
+            mOfflineNodes[deviceId] = std::chrono::steady_clock::now(); // 오프라인 명부에 추가
+            // 안드로이드가 쉽게 식별할 수 있도록 OFFLINE을 반환합니다.
+            return "OFFLINE"; 
         }
-        // 통신 성공 시 오프라인 명부에서 제거 (온라인 복구)
-        if (mOfflineNodes.count(deviceId) > 0) {
-            mOfflineNodes.erase(deviceId);
-        }
+    }
+    // 통신 성공 시 오프라인 명부에서 제거 (온라인 복구)
+    if (mOfflineNodes.count(deviceId) > 0) {
+        std::cout << "[MatterController] 기기(" << deviceId << ") 온라인 복구됨." << std::endl;
+        mOfflineNodes.erase(deviceId);
+    }
 
     return output; 
 }

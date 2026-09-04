@@ -129,11 +129,16 @@ std::string HTTPServer::handleControlDevice(const std::string& requestBody){
 
             // DeviceManager로 동적 명령 하달
             bool success = mDeviceManager.executeCommand(targetDeviceId, command);
-
+            Device device;
+            std::string status = mDeviceManager.getDevice(targetDeviceId, device) ? device.state : "UNKNOWN";
+            json response;
+            response["status"] = status;
             if (success) {
-                return R"({"result": "success", "message": "명령 성공!"})";
+                response["message"] = "명령 성공!";
+                return response.dump();
             } else {
-                return R"({"result": "error", "message": "명령 실패 또는 기기 오프라인"})";
+                response["message"] = "명령 실패!";
+                return response.dump();
             }
             
         } catch (const json::exception& e) {
@@ -205,9 +210,12 @@ std::string HTTPServer::handleGetDeviceEnergy(const std::string& deviceId) {
         long real_total_mWh = 0;
 
         mDeviceManager.getDeviceEnergyInfo(deviceId, activePower_mW, real_total_mWh);
-
+        Device device;
+        if (!mDeviceManager.getDevice(deviceId, device)) {
+            return R"({"error": "등록되지 않은 기기입니다."})";
+        }
         json response;
-        response["deviceId"] = deviceId;
+        response["device_status"] = device.state;
         response["activePower_mW"] = activePower_mW;
         response["totalEnergy_mWh"] = real_total_mWh; // DB 보정이 끝난 진짜 데이터
 
@@ -225,16 +233,22 @@ std::string HTTPServer::handleGetDeviceEnergyHistory(const std::string& deviceId
         // 1. DeviceManager를 통해 시계열 배열 받아오기
         std::vector<EnergyLog> logs = mDeviceManager.getDeviceEnergyHistory(deviceId);
         
+        Device device;
+        if (!mDeviceManager.getDevice(deviceId, device)) {
+            return R"({"error": "등록되지 않은 기기입니다."})";
+        }
         // 2. nlohmann/json을 사용해 JSON 배열(Array) 생성
-        json response = json::array(); 
-
+        json response; 
+        response["device_status"] = device.state;
+        json logsArray = json::array();
         for (const auto& log : logs) {
             json item;
-            item["timestamp"] = log.timestamp;
-            item["totalEnergy_mWh"] = log.total_mwh;
-            response.push_back(item);
-        }
 
+            item["timestamp"] = log.timestamp; 
+            item["totalEnergy_mWh"] = log.total_mwh;
+            logsArray.push_back(item);
+        }
+        response["logs"] = logsArray;
         return response.dump();
         
     } catch (const std::exception& e) {

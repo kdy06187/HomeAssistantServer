@@ -89,8 +89,13 @@ bool DeviceManager::executeCommand(std::string id, std::string command){
     // 해당 프로토콜 타입에 맞는 드라이버 조회
     auto driverIt = drivers_.find(deviceType);
     if(driverIt != drivers_.end()){
-        driverIt->second->sendCommand(id,command);
-        return true;
+        if(driverIt->second->sendCommand(id,command)){
+            std::string newState = (command == "ON") ? "ON" : "OFF";
+            this->updateDeviceState(id, newState);
+            return true;
+        } else{
+            this->updateDeviceState(id, "OFFLINE");
+        }
     } else{
         std::cerr << "[DeviceManager] 에러 : 해당 프로토콜 타입에 맞는 드라이버를 찾을 수 없습니다 " << std::endl;
 
