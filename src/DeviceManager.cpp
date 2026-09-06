@@ -133,7 +133,7 @@ bool DeviceManager::removeDevice(std::string id){
     std::cerr << "[DeviceManager] 에러 : 기기를 찾을 수 없습니다 (" << id << ")" << std::endl;
     return false;
 }
-std::string DeviceManager::getDeviceState(std::string id){
+std::string DeviceManager::getDeviceState(std::string id, bool isManualRefresh) {
     ProtocolType type;
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -145,7 +145,7 @@ std::string DeviceManager::getDeviceState(std::string id){
     } 
     auto driverIt = drivers_.find(type);
     if (driverIt != drivers_.end()) {
-        std::string realState = driverIt->second->readDeviceState(id);
+        std::string realState = driverIt->second->readDeviceState(id, isManualRefresh);
   
         if (realState != "UNKNOWN") {
             this->updateDeviceState(id, realState); 

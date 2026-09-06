@@ -64,8 +64,15 @@ void HTTPServer::run(){
 
     svr.Get(R"(/api/devices/([^/]+)/state)", [this](const httplib::Request& req, httplib::Response& res) {
         std::string deviceId = req.matches[1];
-        
-        std::string currentState = mDeviceManager.getDeviceState(deviceId);
+        bool isManualRefresh = false; // 기본값은 false
+        if (req.has_param("isManualRefresh")) {
+            std::string paramValue = req.get_param_value("isManualRefresh");
+            // 안드로이드가 ?isManualRefresh=true 형태로 보냈을 때 처리
+            if (paramValue == "true") { 
+                isManualRefresh = true;
+            }
+        }
+        std::string currentState = mDeviceManager.getDeviceState(deviceId, isManualRefresh);
         
         json response;
         response["deviceId"] = deviceId;
