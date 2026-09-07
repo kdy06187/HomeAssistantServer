@@ -166,7 +166,10 @@ std::string HTTPServer::handleCommissionDevice(const std::string& requestBody){
             std::string payload = j["payload"];
             std::string deviceName = j["deviceName"];
             std::string protocolTypeStr = j["protocolType"];
-            
+
+            std::string ssid = j.value("ssid", "");
+            std::string password = j.value("password", "");
+
             ProtocolType protocolType;
             if (protocolTypeStr == "MATTER") {
                 protocolType = ProtocolType::MATTER;
@@ -176,7 +179,7 @@ std::string HTTPServer::handleCommissionDevice(const std::string& requestBody){
                 return R"({"result": "error", "message": "알 수 없는 프로토콜 타입입니다."})";
             }
 
-            bool isSuccess = mDeviceManager.startCommissioning(protocolType, deviceName, payload);
+            bool isSuccess = mDeviceManager.startCommissioning(protocolType, deviceName, payload, ssid, password);
             if (isSuccess) {
                 return R"({"result": "success", "message": "기기 등록 성공!"})";
             } else {

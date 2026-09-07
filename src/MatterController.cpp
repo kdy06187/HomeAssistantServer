@@ -250,9 +250,9 @@ bool MatterController::sendCommand(std::string deviceId, std::string command){
     }
     return false;
 }
-bool MatterController::commissionDevice(std::string name, std::string payload){
+bool MatterController::commissionDevice(std::string name, std::string payload, const std::string& ssid, const std::string& password){
     uint64_t nodeId = static_cast<uint64_t>(std::time(nullptr));
-    return commissionDevice(nodeId,name,payload,"U+Net8683","38835318M#");
+    return commissionDevice(nodeId,name,payload,ssid,password);
 }
 void MatterController::onDevicePairingComplete(uint64_t nodeId, const std::string& deviceName) {
     std::cout << "[MatterController] 기기 페어링 완료: NodeId=" << nodeId << ", DeviceName=" << deviceName << std::endl;

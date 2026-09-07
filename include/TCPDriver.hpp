@@ -13,7 +13,7 @@ public:
     ~TCPDriver() override;
     // TCPDriver의 sendCommand 메서드 구현
     bool sendCommand(std::string deviceId, std::string command) override;
-    bool commissionDevice(std::string name, std::string payload) override;
+    bool commissionDevice(std::string name, std::string payload, const std::string& ssid = "", const std::string& password = "") override;
     bool unpairDevice(std::string deviceId) override;
     std::string readDeviceState(std::string deviceId, bool isManualRequest) override;
     // TCP 서버 시작 및 종료 메서드

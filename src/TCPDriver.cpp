@@ -37,7 +37,7 @@ bool TCPDriver::sendCommand(std::string device_id, std::string command){
 
     return true;
 }
-bool TCPDriver::commissionDevice(std::string name, std::string payload){
+bool TCPDriver::commissionDevice(std::string name, std::string payload, const std::string& ssid, const std::string& password){
     std::string target_id = "ARD_" + payload;
     
     std::cout << "[TCPDriver] 커미셔닝 요청 확인 중: " << target_id << std::endl;
