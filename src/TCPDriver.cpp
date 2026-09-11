@@ -2,7 +2,9 @@
 #include "DeviceManager.hpp"
 #include <iostream>
 #include <vector>
-
+#include <simpleble/SimpleBLE.h>
+#include <chrono>
+#include <thread>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -38,24 +40,83 @@ bool TCPDriver::sendCommand(std::string device_id, std::string command){
     return true;
 }
 bool TCPDriver::commissionDevice(std::string name, std::string payload, const std::string& ssid, const std::string& password){
-    std::string target_id = "ARD_" + payload;
-    
-    std::cout << "[TCPDriver] 커미셔닝 요청 확인 중: " << target_id << std::endl;
+    std::string server_ip = "192.168.219.108"; 
+    int server_port = 8080;
 
-    std::lock_guard<std::mutex> lock(sockets_mutex_);
-    
-    // 🌟 핵심: 해당 아두이노가 현재 우리 서버에 TCP 연결을 유지하고 있는지 검증!
-    auto it = client_sockets_.find(target_id);
-    if (it != client_sockets_.end()) {
-        mDeviceManager.addDevice(target_id, name, ProtocolType::TCP_DIY);
-        std::cout << "[TCPDriver] 커미셔닝 완료 : " << name << " (" << target_id << ")" << std::endl;
-        return true;
-        
-    } else {
-        // 아직 아두이노가 서버로 접속하지 않은 경우
-        std::cerr << "❌ [TCPDriver] 커미셔닝 실패: " << payload << " IP를 가진 아두이노가 서버에 연결되어 있지 않습니다." << std::endl;
+    std::cout << "[TCPDriver] BLE 스캔 시작... " << std::endl;
+
+    auto adapters = SimpleBLE::Adapter::get_adapters();
+    if (adapters.empty()) {
+        std::cerr << "[TCPDriver] 블루투스 어댑터를 찾을 수 없습니다." << std::endl;
         return false;
     }
+    auto adapter = adapters[0];
+
+    bool found = false;
+    SimpleBLE::Peripheral target_device;
+
+    adapter.set_callback_on_scan_found([&](SimpleBLE::Peripheral peripheral) {
+        if (peripheral.identifier() == "TCPDevice_DIY") {
+            target_device = peripheral;
+            found = true;
+        }
+    });
+
+    adapter.scan_for(5000);
+
+    if (!found) {
+        std::cerr << "❌ [TCPDriver] TCPDevice_DIY 기기를 찾지 못했습니다." << std::endl;
+        return false;
+    }
+
+    std::cout << "[TCPDriver] 기기 발견! 연결 시도 중..." << std::endl;
+    target_device.connect();
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(800));
+    
+    json configJson;
+    configJson["ssid"] = ssid;
+    configJson["pw"] = password;
+    configJson["serverIp"] = server_ip;
+    configJson["serverPort"] = server_port;
+    std::string configStr = configJson.dump();
+
+    target_device.write_request("19b10000-e8f2-537e-4f6c-d104768a1214", 
+                                "19b10001-e8f2-537e-4f6c-d104768a1214", 
+                                configStr);
+    target_device.disconnect();
+
+    std::cout << "[TCPDriver] 와이파이 설정 전송 완료. TCP 접속 대기 중..." << std::endl;
+
+    size_t initial_socket_count = 0;
+    {
+        std::lock_guard<std::mutex> lock(sockets_mutex_);
+        initial_socket_count = client_sockets_.size();
+    }
+    std::string registered_device_id = "";
+    for (int i = 0; i < 15; ++i) {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        
+        std::lock_guard<std::mutex> lock(sockets_mutex_);
+        if (client_sockets_.size() > initial_socket_count) {
+            // 가장 최근에 들어온(혹은 기존에 없던) 기기 ID를 찾아냅니다.
+            for (auto const& [id, socket_fd] : client_sockets_) {
+                // 이전에 없던 새로운 ID인지 확인 (혹은 단순하게 가장 최근 등록된 녀석 획득)
+                // 여기서는 간단하게 새롭게 매핑된 ID를 탐색합니다.
+                registered_device_id = id;
+                break; 
+            }
+            break;
+        }
+    }
+    if (!registered_device_id.empty()) {
+        // acceptLoop에서 이미 "ARD_IP" 형태로 ID와 소켓이 맵핑되었으므로 바로 디바이스 매니저에 등록
+        mDeviceManager.addDevice(registered_device_id, name, ProtocolType::TCP_DIY);
+        std::cout << "[TCPDriver] 커미셔닝 완료 : " << name << " (" << registered_device_id << ")" << std::endl;
+        return true;
+    }
+    
+    std::cerr << "❌ [TCPDriver] 타임아웃: 기기가 와이파이에 접속하지 못했거나 서버에 연결하지 못했습니다." << std::endl;
     return false;
 }
 

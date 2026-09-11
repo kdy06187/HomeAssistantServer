@@ -2432,3 +2432,567 @@ events:
       CMAKE_SYSTEM_LIBRARY_PATH:
         - "/usr/lib/X11"
 ...
+
+---
+events:
+  -
+    kind: "find_package-v1"
+    backtrace:
+      - "CMakeLists.txt:12 (find_package)"
+    name: "simpleble"
+    configs:
+      -
+        filename: "simplebleConfig.cmake"
+        kind: "cmake"
+      -
+        filename: "simpleble-config.cmake"
+        kind: "cmake"
+    version_request:
+      exact: false
+    settings:
+      required: "required_explicit"
+      quiet: false
+      global: false
+      policy_scope: true
+      bypass_provider: false
+      names:
+        - "simpleble"
+      path_suffixes:
+        - ""
+      paths:
+        CMAKE_FIND_USE_CMAKE_PATH: true
+        CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+        CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+        CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+        CMAKE_FIND_USE_INSTALL_PREFIX: true
+        CMAKE_FIND_USE_PACKAGE_ROOT_PATH: true
+        CMAKE_FIND_USE_CMAKE_PACKAGE_REGISTRY: true
+        CMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY: true
+        CMAKE_FIND_ROOT_PATH_MODE: "BOTH"
+    candidates:
+      -
+        path: "/home/kdy/home-assistant-core/build/CMakeFiles/pkgRedirects/simplebleConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/home/kdy/home-assistant-core/build/CMakeFiles/pkgRedirects/simpleble-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/usr/local/simplebleConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/usr/local/simpleble-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/usr/simplebleConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/usr/simpleble-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/simplebleConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/simpleble-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/usr/games/simplebleConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/usr/games/simpleble-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/usr/local/games/simplebleConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/usr/local/games/simpleble-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/snap/simplebleConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/snap/simpleble-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/opt/simplebleConfig.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/opt/simpleble-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+    found: null
+    search_context:
+      ENV{PATH}:
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+        - "/sbin"
+        - "/bin"
+        - "/usr/games"
+        - "/usr/local/games"
+        - "/snap/bin"
+      CMAKE_INSTALL_PREFIX: "/usr/local"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/usr/local"
+        - "/usr"
+        - "/"
+        - "/usr"
+        - "/usr/local"
+        - "/usr/X11R6"
+        - "/usr/pkg"
+        - "/opt"
+...
+
+---
+events:
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/share/cmake-4.2/Modules/FindGit.cmake:111 (find_program)"
+      - "/usr/share/cmake-4.2/Modules/FetchContent.cmake:1884 (find_package)"
+      - "/usr/share/cmake-4.2/Modules/FetchContent.cmake:1619 (__FetchContent_populateSubbuild)"
+      - "/usr/share/cmake-4.2/Modules/FetchContent.cmake:2155:EVAL:2 (__FetchContent_doPopulation)"
+      - "/usr/share/cmake-4.2/Modules/FetchContent.cmake:2155 (cmake_language)"
+      - "/usr/share/cmake-4.2/Modules/FetchContent.cmake:2394 (__FetchContent_Populate)"
+      - "CMakeLists.txt:19 (FetchContent_MakeAvailable)"
+    mode: "program"
+    variable: "GIT_EXECUTABLE"
+    description: "Git command line client"
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "git"
+    candidate_directories:
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+      - "/usr/bin/"
+      - "/sbin/"
+      - "/bin/"
+      - "/usr/games/"
+      - "/usr/local/games/"
+      - "/snap/bin/"
+      - "/usr/local/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/"
+      - "/usr/bin/"
+      - "/usr/sbin/"
+      - "/usr/"
+      - "/bin/"
+      - "/sbin/"
+      - "/usr/X11R6/bin/"
+      - "/usr/X11R6/sbin/"
+      - "/usr/X11R6/"
+      - "/usr/pkg/bin/"
+      - "/usr/pkg/sbin/"
+      - "/usr/pkg/"
+      - "/opt/bin/"
+      - "/opt/sbin/"
+      - "/opt/"
+    searched_directories:
+      - "/usr/local/sbin/git"
+      - "/usr/local/bin/git"
+      - "/usr/sbin/git"
+    found: "/usr/bin/git"
+    search_context:
+      ENV{PATH}:
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+        - "/sbin"
+        - "/bin"
+        - "/usr/games"
+        - "/usr/local/games"
+        - "/snap/bin"
+      CMAKE_INSTALL_PREFIX: "/usr/local"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/usr/local"
+        - "/usr"
+        - "/"
+        - "/usr"
+        - "/usr/local"
+        - "/usr/X11R6"
+        - "/usr/pkg"
+        - "/opt"
+...
+
+---
+events:
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/share/cmake-4.2/Modules/FindPkgConfig.cmake:761 (find_library)"
+      - "/usr/share/cmake-4.2/Modules/FindPkgConfig.cmake:811 (_pkg_find_libs)"
+      - "/usr/share/cmake-4.2/Modules/FindPkgConfig.cmake:1149 (_pkg_recalculate)"
+      - "/usr/share/cmake-4.2/Modules/FindPkgConfig.cmake:1166 (_pkg_check_modules_internal)"
+      - "/usr/lib/x86_64-linux-gnu/cmake/DBus1/DBus1Config.cmake:28 (pkg_check_modules)"
+      - "/usr/local/lib/cmake/simpleble/simpleble-config.cmake:33 (find_package)"
+      - "CMakeLists.txt:13 (find_package)"
+    mode: "library"
+    variable: "pkgcfg_lib_PC_DBUS1_dbus-1"
+    description: "Path to a library."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "dbus-1"
+    candidate_directories:
+      - "/usr/lib/x86_64-linux-gnu/"
+    found: "/usr/lib/x86_64-linux-gnu/libdbus-1.so"
+    search_context:
+      ENV{PATH}:
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+        - "/sbin"
+        - "/bin"
+        - "/usr/games"
+        - "/usr/local/games"
+        - "/snap/bin"
+      CMAKE_INSTALL_PREFIX: "/usr/local"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/usr/local"
+        - "/usr"
+        - "/"
+        - "/usr"
+        - "/usr/local"
+        - "/usr/X11R6"
+        - "/usr/pkg"
+        - "/opt"
+      CMAKE_SYSTEM_LIBRARY_PATH:
+        - "/usr/lib/X11"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/lib/x86_64-linux-gnu/cmake/DBus1/DBus1Config.cmake:51 (find_path)"
+      - "/usr/local/lib/cmake/simpleble/simpleble-config.cmake:33 (find_package)"
+      - "CMakeLists.txt:13 (find_package)"
+    mode: "path"
+    variable: "DBus1_INCLUDE_DIR"
+    description: "Path to a file."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "dbus/dbus.h"
+    candidate_directories:
+      - "/usr/include/dbus-1.0/"
+      - "/usr/include/"
+      - "/usr/include/dbus-1.0/dbus-1.0/"
+      - "/usr/include/dbus-1.0/"
+      - "/usr/lib/x86_64-linux-gnu/dbus-1.0/include/dbus-1.0/"
+      - "/usr/lib/x86_64-linux-gnu/dbus-1.0/include/"
+      - "/usr/local/sbin/dbus-1.0/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/dbus-1.0/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/dbus-1.0/"
+      - "/usr/sbin/"
+      - "/usr/bin/dbus-1.0/"
+      - "/usr/bin/"
+      - "/sbin/dbus-1.0/"
+      - "/sbin/"
+      - "/bin/dbus-1.0/"
+      - "/bin/"
+      - "/usr/games/dbus-1.0/"
+      - "/usr/games/"
+      - "/usr/local/games/dbus-1.0/"
+      - "/usr/local/games/"
+      - "/snap/bin/dbus-1.0/"
+      - "/snap/bin/"
+      - "/usr/local/include/x86_64-linux-gnu/dbus-1.0/"
+      - "/usr/local/include/x86_64-linux-gnu/"
+      - "/usr/local/include/dbus-1.0/"
+      - "/usr/local/include/"
+      - "/usr/local/dbus-1.0/"
+      - "/usr/local/"
+      - "/usr/include/x86_64-linux-gnu/dbus-1.0/"
+      - "/usr/include/x86_64-linux-gnu/"
+      - "/usr/include/dbus-1.0/"
+      - "/usr/include/"
+      - "/usr/dbus-1.0/"
+      - "/usr/"
+      - "/include/x86_64-linux-gnu/dbus-1.0/"
+      - "/include/x86_64-linux-gnu/"
+      - "/include/dbus-1.0/"
+      - "/include/"
+      - "/usr/X11R6/include/x86_64-linux-gnu/dbus-1.0/"
+      - "/usr/X11R6/include/x86_64-linux-gnu/"
+      - "/usr/X11R6/include/dbus-1.0/"
+      - "/usr/X11R6/include/"
+      - "/usr/X11R6/dbus-1.0/"
+      - "/usr/X11R6/"
+      - "/usr/pkg/include/x86_64-linux-gnu/dbus-1.0/"
+      - "/usr/pkg/include/x86_64-linux-gnu/"
+      - "/usr/pkg/include/dbus-1.0/"
+      - "/usr/pkg/include/"
+      - "/usr/pkg/dbus-1.0/"
+      - "/usr/pkg/"
+      - "/opt/include/x86_64-linux-gnu/dbus-1.0/"
+      - "/opt/include/x86_64-linux-gnu/"
+      - "/opt/include/dbus-1.0/"
+      - "/opt/include/"
+      - "/opt/dbus-1.0/"
+      - "/opt/"
+      - "/usr/include/X11/dbus-1.0/"
+      - "/usr/include/X11/"
+    found: "/usr/include/dbus-1.0/"
+    search_context:
+      ENV{PATH}:
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+        - "/sbin"
+        - "/bin"
+        - "/usr/games"
+        - "/usr/local/games"
+        - "/snap/bin"
+      CMAKE_INSTALL_PREFIX: "/usr/local"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/usr/local"
+        - "/usr"
+        - "/"
+        - "/usr"
+        - "/usr/local"
+        - "/usr/X11R6"
+        - "/usr/pkg"
+        - "/opt"
+      CMAKE_SYSTEM_INCLUDE_PATH:
+        - "/usr/include/X11"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/lib/x86_64-linux-gnu/cmake/DBus1/DBus1Config.cmake:54 (find_path)"
+      - "/usr/local/lib/cmake/simpleble/simpleble-config.cmake:33 (find_package)"
+      - "CMakeLists.txt:13 (find_package)"
+    mode: "path"
+    variable: "DBus1_ARCH_INCLUDE_DIR"
+    description: "Path to a file."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "dbus/dbus-arch-deps.h"
+    candidate_directories:
+      - "/usr/lib/x86_64-linux-gnu/dbus-1.0/include/"
+    found: "/usr/lib/x86_64-linux-gnu/dbus-1.0/include/"
+    search_context:
+      ENV{PATH}:
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+        - "/sbin"
+        - "/bin"
+        - "/usr/games"
+        - "/usr/local/games"
+        - "/snap/bin"
+      CMAKE_INSTALL_PREFIX: "/usr/local"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/usr/local"
+        - "/usr"
+        - "/"
+        - "/usr"
+        - "/usr/local"
+        - "/usr/X11R6"
+        - "/usr/pkg"
+        - "/opt"
+      CMAKE_SYSTEM_INCLUDE_PATH:
+        - "/usr/include/X11"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/lib/x86_64-linux-gnu/cmake/DBus1/DBus1Config.cmake:60 (find_library)"
+      - "/usr/local/lib/cmake/simpleble/simpleble-config.cmake:33 (find_package)"
+      - "CMakeLists.txt:13 (find_package)"
+    mode: "library"
+    variable: "DBus1_LIBRARY"
+    description: "Path to a library."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "dbus-1"
+    candidate_directories:
+      - "/usr/lib/x86_64-linux-gnu/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/usr/sbin/"
+      - "/usr/bin/"
+      - "/sbin/"
+      - "/bin/"
+      - "/usr/games/"
+      - "/usr/local/games/"
+      - "/snap/bin/"
+      - "/usr/local/lib/x86_64-linux-gnu/"
+      - "/usr/local/lib/"
+      - "/usr/local/"
+      - "/usr/lib/x86_64-linux-gnu/"
+      - "/usr/lib/"
+      - "/usr/"
+      - "/lib/x86_64-linux-gnu/"
+      - "/lib/"
+      - "/usr/X11R6/lib/x86_64-linux-gnu/"
+      - "/usr/X11R6/lib/"
+      - "/usr/X11R6/"
+      - "/usr/pkg/lib/x86_64-linux-gnu/"
+      - "/usr/pkg/lib/"
+      - "/usr/pkg/"
+      - "/opt/lib/x86_64-linux-gnu/"
+      - "/opt/lib/"
+      - "/opt/"
+      - "/usr/lib/X11/"
+    found: "/usr/lib/x86_64-linux-gnu/libdbus-1.so"
+    search_context:
+      ENV{PATH}:
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+        - "/sbin"
+        - "/bin"
+        - "/usr/games"
+        - "/usr/local/games"
+        - "/snap/bin"
+      CMAKE_INSTALL_PREFIX: "/usr/local"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/usr/local"
+        - "/usr"
+        - "/"
+        - "/usr"
+        - "/usr/local"
+        - "/usr/X11R6"
+        - "/usr/pkg"
+        - "/opt"
+      CMAKE_SYSTEM_LIBRARY_PATH:
+        - "/usr/lib/X11"
+  -
+    kind: "find_package-v1"
+    backtrace:
+      - "/usr/local/lib/cmake/simpleble/simpleble-config.cmake:33 (find_package)"
+      - "CMakeLists.txt:13 (find_package)"
+    name: "DBus1"
+    configs:
+      -
+        filename: "DBus1Config.cmake"
+        kind: "cmake"
+      -
+        filename: "dbus1-config.cmake"
+        kind: "cmake"
+    version_request:
+      exact: false
+    settings:
+      required: "optional"
+      quiet: true
+      global: false
+      policy_scope: true
+      bypass_provider: false
+      names:
+        - "DBus1"
+      path_suffixes:
+        - ""
+      paths:
+        CMAKE_FIND_USE_CMAKE_PATH: true
+        CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+        CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+        CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+        CMAKE_FIND_USE_INSTALL_PREFIX: true
+        CMAKE_FIND_USE_PACKAGE_ROOT_PATH: true
+        CMAKE_FIND_USE_CMAKE_PACKAGE_REGISTRY: true
+        CMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY: true
+        CMAKE_FIND_ROOT_PATH_MODE: "BOTH"
+    candidates:
+      -
+        path: "/home/kdy/home-assistant-core/build/CMakeFiles/pkgRedirects/DBus1Config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/home/kdy/home-assistant-core/build/CMakeFiles/pkgRedirects/dbus1-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/usr/local/DBus1Config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/usr/local/dbus1-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/usr/DBus1Config.cmake"
+        mode: "config"
+        reason: "no_exist"
+      -
+        path: "/usr/dbus1-config.cmake"
+        mode: "config"
+        reason: "no_exist"
+    found:
+      path: "/usr/lib/x86_64-linux-gnu/cmake/DBus1/DBus1Config.cmake"
+      mode: "config"
+      version: "1.16.2"
+    search_context:
+      ENV{PATH}:
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/sbin"
+        - "/usr/bin"
+        - "/sbin"
+        - "/bin"
+        - "/usr/games"
+        - "/usr/local/games"
+        - "/snap/bin"
+      CMAKE_INSTALL_PREFIX: "/usr/local"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/usr/local"
+        - "/usr"
+        - "/"
+        - "/usr"
+        - "/usr/local"
+        - "/usr/X11R6"
+        - "/usr/pkg"
+        - "/opt"
+...

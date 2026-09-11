@@ -1532,10 +1532,12 @@ CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o: /home/kdy/home-assistant-c
   /usr/include/c++/15/bits/stl_iterator_base_types.h \
   /usr/include/c++/15/bits/stl_map.h \
   /usr/include/c++/15/bits/stl_multimap.h \
+  /usr/include/c++/15/bits/stl_multiset.h \
   /usr/include/c++/15/bits/stl_numeric.h \
   /usr/include/c++/15/bits/stl_pair.h \
   /usr/include/c++/15/bits/stl_raw_storage_iter.h \
   /usr/include/c++/15/bits/stl_relops.h \
+  /usr/include/c++/15/bits/stl_set.h \
   /usr/include/c++/15/bits/stl_tempbuf.h \
   /usr/include/c++/15/bits/stl_tree.h \
   /usr/include/c++/15/bits/stl_uninitialized.h \
@@ -1562,6 +1564,7 @@ CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o: /home/kdy/home-assistant-c
   /usr/include/c++/15/cassert \
   /usr/include/c++/15/cctype \
   /usr/include/c++/15/cerrno \
+  /usr/include/c++/15/chrono \
   /usr/include/c++/15/clocale \
   /usr/include/c++/15/cmath \
   /usr/include/c++/15/codecvt \
@@ -1610,6 +1613,7 @@ CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o: /home/kdy/home-assistant-c
   /usr/include/c++/15/pstl/glue_numeric_defs.h \
   /usr/include/c++/15/pstl/pstl_config.h \
   /usr/include/c++/15/ratio \
+  /usr/include/c++/15/set \
   /usr/include/c++/15/sstream \
   /usr/include/c++/15/stdexcept \
   /usr/include/c++/15/streambuf \
@@ -1777,7 +1781,24 @@ CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o: /home/kdy/home-assistant-c
   /usr/include/x86_64-linux-gnu/sys/types.h \
   /usr/lib/gcc/x86_64-linux-gnu/15/include/stdarg.h \
   /usr/lib/gcc/x86_64-linux-gnu/15/include/stddef.h \
-  /usr/lib/gcc/x86_64-linux-gnu/15/include/stdint.h
+  /usr/lib/gcc/x86_64-linux-gnu/15/include/stdint.h \
+  /usr/local/include/simpleble/Adapter.h \
+  /usr/local/include/simpleble/AdapterSafe.h \
+  /usr/local/include/simpleble/Characteristic.h \
+  /usr/local/include/simpleble/Config.h \
+  /usr/local/include/simpleble/Descriptor.h \
+  /usr/local/include/simpleble/Exceptions.h \
+  /usr/local/include/simpleble/Peripheral.h \
+  /usr/local/include/simpleble/PeripheralSafe.h \
+  /usr/local/include/simpleble/Service.h \
+  /usr/local/include/simpleble/SimpleBLE.h \
+  /usr/local/include/simpleble/Types.h \
+  /usr/local/include/simpleble/Utils.h \
+  /usr/local/include/simpleble/export.h \
+  /usr/local/include/simpleble/kvn/kvn_bytearray.h \
+  /usr/local/include/simpleble/local/Characteristic.h \
+  /usr/local/include/simpleble/local/Peripheral.h \
+  /usr/local/include/simpleble/local/Service.h
 
 CMakeFiles/HomeAssistantCore.dir/src/main.cpp.o: /home/kdy/home-assistant-core/src/main.cpp \
   /home/kdy/home-assistant-core/src/json.hpp \
@@ -2418,7 +2439,6 @@ HomeAssistantCore: /home/kdy/home-assistant-core/third_party/connectedhomeip/out
   /usr/lib/x86_64-linux-gnu/libavahi-client.so \
   /usr/lib/x86_64-linux-gnu/libavahi-common.so \
   /usr/lib/x86_64-linux-gnu/libc.so \
-  /usr/lib/x86_64-linux-gnu/libdbus-1.so \
   /usr/lib/x86_64-linux-gnu/libevent.so \
   /usr/lib/x86_64-linux-gnu/libevent_pthreads.so \
   /usr/lib/x86_64-linux-gnu/libgcc_s.so.1 \
@@ -2436,9 +2456,12 @@ HomeAssistantCore: /home/kdy/home-assistant-core/third_party/connectedhomeip/out
   /usr/lib/x86_64-linux-gnu/libc.so.6 \
   /usr/lib/x86_64-linux-gnu/libc_nonshared.a \
   /usr/lib/x86_64-linux-gnu/libcrypto.so \
+  /usr/lib/x86_64-linux-gnu/libdbus-1.so \
   /usr/lib/x86_64-linux-gnu/libm.so.6 \
   /usr/lib/x86_64-linux-gnu/libmvec.so.1 \
   /usr/lib/x86_64-linux-gnu/libssl.so \
+  /usr/lib/x86_64-linux-gnu/libsystemd.so.0 \
+  /usr/local/lib/libsimpleble.a \
   CMakeFiles/HomeAssistantCore.dir/src/DatabaseManager.cpp.o \
   CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o \
   CMakeFiles/HomeAssistantCore.dir/src/HTTPServer.cpp.o \
@@ -2449,7 +2472,13 @@ HomeAssistantCore: /home/kdy/home-assistant-core/third_party/connectedhomeip/out
 
 CMakeFiles/HomeAssistantCore.dir/src/DatabaseManager.cpp.o:
 
+/usr/local/lib/libsimpleble.a:
+
+/usr/lib/x86_64-linux-gnu/libsystemd.so.0:
+
 /usr/lib/x86_64-linux-gnu/libssl.so:
+
+/usr/lib/x86_64-linux-gnu/libdbus-1.so:
 
 /usr/lib/x86_64-linux-gnu/libcrypto.so:
 
@@ -2459,15 +2488,11 @@ CMakeFiles/HomeAssistantCore.dir/src/DatabaseManager.cpp.o:
 
 /usr/lib/gcc/x86_64-linux-gnu/15/crtendS.o:
 
-/usr/lib/gcc/x86_64-linux-gnu/15/crtbeginS.o:
-
 /usr/lib/x86_64-linux-gnu/libsqlite3.so:
 
 /usr/lib/x86_64-linux-gnu/libm.so:
 
 /usr/lib/x86_64-linux-gnu/libgobject-2.0.so:
-
-/usr/lib/x86_64-linux-gnu/libdbus-1.so:
 
 /usr/lib/x86_64-linux-gnu/libavahi-common.so:
 
@@ -2719,6 +2744,26 @@ CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o:
 
 /home/kdy/home-assistant-core/src/main.cpp:
 
+/usr/local/include/simpleble/local/Service.h:
+
+/usr/local/include/simpleble/local/Peripheral.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/15/crtbeginS.o:
+
+/usr/local/include/simpleble/export.h:
+
+/usr/local/include/simpleble/SimpleBLE.h:
+
+/usr/local/include/simpleble/Service.h:
+
+/usr/local/include/simpleble/PeripheralSafe.h:
+
+/usr/local/include/simpleble/Descriptor.h:
+
+/usr/local/include/simpleble/Config.h:
+
+/usr/local/include/simpleble/Adapter.h:
+
 /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/obj/src/platform/lib/libDeviceLayer.a:
 
 /home/kdy/home-assistant-core/include/TCPDriver.hpp:
@@ -2764,6 +2809,8 @@ CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o:
 /usr/include/x86_64-linux-gnu/c++/15/bits/error_constants.h:
 
 /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libTestTLSCertificateManagementCluster.a:
+
+/usr/local/include/simpleble/AdapterSafe.h:
 
 /usr/include/x86_64-linux-gnu/c++/15/bits/cpu_defines.h:
 
@@ -2942,6 +2989,8 @@ CMakeFiles/HomeAssistantCore.dir/src/main.cpp.o:
 /usr/include/x86_64-linux-gnu/bits/types/sigset_t.h:
 
 /usr/include/asm-generic/types.h:
+
+/usr/local/include/simpleble/Exceptions.h:
 
 /usr/include/c++/15/bits/regex.h:
 
@@ -3357,6 +3406,8 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o:
 
 /usr/include/x86_64-linux-gnu/bits/netdb.h:
 
+/usr/local/include/simpleble/kvn/kvn_bytearray.h:
+
 /usr/include/c++/15/iosfwd:
 
 /usr/include/x86_64-linux-gnu/bits/sigevent-consts.h:
@@ -3490,6 +3541,8 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o:
 /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/IntrusiveList.h:
 
 /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/ObjectDump.h:
+
+/usr/local/include/simpleble/Types.h:
 
 /usr/include/x86_64-linux-gnu/bits/signum-arch.h:
 
@@ -3645,6 +3698,8 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o:
 
 /usr/include/x86_64-linux-gnu/bits/types/sigval_t.h:
 
+/usr/local/include/simpleble/Characteristic.h:
+
 /usr/include/c++/15/mutex:
 
 /usr/include/x86_64-linux-gnu/bits/types/mbstate_t.h:
@@ -3662,6 +3717,8 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o:
 /usr/include/x86_64-linux-gnu/bits/mathcalls-narrow.h:
 
 /usr/include/c++/15/unordered_set:
+
+/usr/local/include/simpleble/local/Characteristic.h:
 
 /usr/include/c++/15/tr1/beta_function.tcc:
 
@@ -3887,6 +3944,8 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o:
 
 /usr/include/x86_64-linux-gnu/bits/mathcalls-helper-functions.h:
 
+/usr/local/include/simpleble/Utils.h:
+
 /usr/include/c++/15/regex:
 
 /usr/include/c++/15/tr1/riemann_zeta.tcc:
@@ -3986,6 +4045,8 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o:
 /usr/include/c++/15/bits/align.h:
 
 /usr/include/x86_64-linux-gnu/bits/ss_flags.h:
+
+/usr/local/include/simpleble/Peripheral.h:
 
 /usr/include/net/if.h:
 

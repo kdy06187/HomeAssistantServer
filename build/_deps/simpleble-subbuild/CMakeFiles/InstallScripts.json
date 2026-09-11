@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"/home/kdy/home-assistant-core/build/_deps/simpleble-subbuild/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

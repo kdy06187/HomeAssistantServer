@@ -10,6 +10,7 @@ find_package(Threads REQUIRED)
 
 find_package(OpenSSL REQUIRED)
 
+find_package(simpleble REQUIRED)
 
 # Matter SDK 경로 설정 (⚠️ 주의: 실제 학생님의 환경에 맞게 수정해야 합니다)
 set(MATTER_SDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/connectedhomeip") # Matter SDK 최상위 디렉토리
@@ -51,12 +52,14 @@ add_executable(${PROJECT_NAME}
 )
 target_include_directories(HomeAssistantCore PRIVATE
     ${GLIB2_INCLUDE_DIRS}
+
 )
 target_link_libraries(${PROJECT_NAME} PRIVATE
     -Wl,--start-group
     ${MATTER_LIBS}
     ${GLIB2_LIBRARIES}
     -Wl,--end-group
+    simpleble
 )
 # SQLite DB와 스레드 라이브러리 연결
 target_link_libraries(${PROJECT_NAME} PRIVATE 

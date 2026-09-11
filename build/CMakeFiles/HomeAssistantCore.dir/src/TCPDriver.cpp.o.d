@@ -266,7 +266,26 @@ CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o: \
  /usr/include/c++/15/iostream \
  /home/kdy/home-assistant-core/include/Device.hpp \
  /home/kdy/home-assistant-core/include/DatabaseManager.hpp \
- /usr/include/sqlite3.h /usr/include/x86_64-linux-gnu/sys/socket.h \
+ /usr/include/sqlite3.h /usr/local/include/simpleble/SimpleBLE.h \
+ /usr/local/include/simpleble/Adapter.h \
+ /usr/local/include/simpleble/export.h \
+ /usr/local/include/simpleble/Exceptions.h \
+ /usr/local/include/simpleble/Types.h \
+ /usr/local/include/simpleble/kvn/kvn_bytearray.h \
+ /usr/local/include/simpleble/Peripheral.h \
+ /usr/local/include/simpleble/Service.h \
+ /usr/local/include/simpleble/Characteristic.h \
+ /usr/local/include/simpleble/Descriptor.h \
+ /usr/local/include/simpleble/local/Peripheral.h \
+ /usr/local/include/simpleble/local/Service.h /usr/include/c++/15/set \
+ /usr/include/c++/15/bits/stl_set.h \
+ /usr/include/c++/15/bits/stl_multiset.h \
+ /usr/local/include/simpleble/local/Characteristic.h \
+ /usr/local/include/simpleble/AdapterSafe.h \
+ /usr/local/include/simpleble/PeripheralSafe.h \
+ /usr/local/include/simpleble/Config.h /usr/include/c++/15/chrono \
+ /usr/local/include/simpleble/Utils.h \
+ /usr/include/x86_64-linux-gnu/sys/socket.h \
  /usr/include/x86_64-linux-gnu/bits/types/struct_iovec.h \
  /usr/include/x86_64-linux-gnu/bits/socket.h \
  /usr/include/x86_64-linux-gnu/bits/socket_type.h \

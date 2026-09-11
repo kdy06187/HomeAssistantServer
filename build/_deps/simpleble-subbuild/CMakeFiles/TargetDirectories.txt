@@ -1,0 +1,3 @@
+/home/kdy/home-assistant-core/build/_deps/simpleble-subbuild/CMakeFiles/simpleble-populate.dir
+/home/kdy/home-assistant-core/build/_deps/simpleble-subbuild/CMakeFiles/edit_cache.dir
+/home/kdy/home-assistant-core/build/_deps/simpleble-subbuild/CMakeFiles/rebuild_cache.dir

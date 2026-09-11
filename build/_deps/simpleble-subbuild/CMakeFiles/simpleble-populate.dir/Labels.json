@@ -1,0 +1,46 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/home/kdy/home-assistant-core/build/_deps/simpleble-subbuild/CMakeFiles/simpleble-populate"
+		},
+		{
+			"file" : "/home/kdy/home-assistant-core/build/_deps/simpleble-subbuild/CMakeFiles/simpleble-populate.rule"
+		},
+		{
+			"file" : "/home/kdy/home-assistant-core/build/_deps/simpleble-subbuild/CMakeFiles/simpleble-populate-complete.rule"
+		},
+		{
+			"file" : "/home/kdy/home-assistant-core/build/_deps/simpleble-subbuild/simpleble-populate-prefix/src/simpleble-populate-stamp/simpleble-populate-build.rule"
+		},
+		{
+			"file" : "/home/kdy/home-assistant-core/build/_deps/simpleble-subbuild/simpleble-populate-prefix/src/simpleble-populate-stamp/simpleble-populate-configure.rule"
+		},
+		{
+			"file" : "/home/kdy/home-assistant-core/build/_deps/simpleble-subbuild/simpleble-populate-prefix/src/simpleble-populate-stamp/simpleble-populate-download.rule"
+		},
+		{
+			"file" : "/home/kdy/home-assistant-core/build/_deps/simpleble-subbuild/simpleble-populate-prefix/src/simpleble-populate-stamp/simpleble-populate-install.rule"
+		},
+		{
+			"file" : "/home/kdy/home-assistant-core/build/_deps/simpleble-subbuild/simpleble-populate-prefix/src/simpleble-populate-stamp/simpleble-populate-mkdir.rule"
+		},
+		{
+			"file" : "/home/kdy/home-assistant-core/build/_deps/simpleble-subbuild/simpleble-populate-prefix/src/simpleble-populate-stamp/simpleble-populate-patch.rule"
+		},
+		{
+			"file" : "/home/kdy/home-assistant-core/build/_deps/simpleble-subbuild/simpleble-populate-prefix/src/simpleble-populate-stamp/simpleble-populate-test.rule"
+		},
+		{
+			"file" : "/home/kdy/home-assistant-core/build/_deps/simpleble-subbuild/simpleble-populate-prefix/src/simpleble-populate-stamp/simpleble-populate-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"simpleble-populate"
+		],
+		"name" : "simpleble-populate"
+	}
+}

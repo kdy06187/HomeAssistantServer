@@ -381,6 +381,7 @@ HomeAssistantCore: /home/kdy/home-assistant-core/third_party/connectedhomeip/out
 HomeAssistantCore: /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/obj/third_party/uriparser/lib/uriparser.a
 HomeAssistantCore: /usr/lib/x86_64-linux-gnu/libssl.so
 HomeAssistantCore: /usr/lib/x86_64-linux-gnu/libcrypto.so
+HomeAssistantCore: /usr/lib/x86_64-linux-gnu/libdbus-1.so
 HomeAssistantCore: CMakeFiles/HomeAssistantCore.dir/link.txt
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/kdy/home-assistant-core/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_7) "Linking CXX executable HomeAssistantCore"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/HomeAssistantCore.dir/link.txt --verbose=$(VERBOSE)
