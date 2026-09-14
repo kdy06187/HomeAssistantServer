@@ -213,7 +213,7 @@ std::string TCPDriver::readDeviceState(std::string deviceId, bool isManualReques
     json res = sendAndReceive(deviceId, req);
     if (res.is_null() || !res.contains("state")) {
         std::cerr << "[TCPDriver] 기기 상태 조회 실패 (오프라인 또는 응답 오류): " << deviceId << std::endl;
-        return "UNKNOWN";
+        return "OFFLINE";
     }
     std::string currentState = res["state"].get<std::string>();
     std::cout << "[TCPDriver] 기기 상태 조회 : " << deviceId << " 현재 상태 ➔ [" << currentState << "]" << std::endl;
@@ -226,6 +226,7 @@ json TCPDriver::sendAndReceive(const std::string& deviceId, const json& requestJ
         std::lock_guard<std::mutex> lock(sockets_mutex_);
         auto it = client_sockets_.find(deviceId);
         if (it == client_sockets_.end()) {
+            std::cerr << "[TCPDriver] 기기 소켓을 찾을 수 없습니다: " << deviceId << std::endl;
             return nullptr;
         }
         socket_fd = it->second;
