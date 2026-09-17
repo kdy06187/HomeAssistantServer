@@ -87,25 +87,42 @@ bool TCPDriver::commissionDevice(std::string name, std::string payload, const st
     target_device.disconnect();
 
     std::cout << "[TCPDriver] 와이파이 설정 전송 완료. TCP 접속 대기 중..." << std::endl;
-
-    size_t initial_socket_count = 0;
+    // 소켓 목록과 DB 동기화 
     {
         std::lock_guard<std::mutex> lock(sockets_mutex_);
-        initial_socket_count = client_sockets_.size();
+        for (auto it = client_sockets_.begin(); it != client_sockets_.end(); ) {
+            // DB(앱 목록)에 없는 ID가 소켓을 차지하고 있다면
+            if (!mDeviceManager.hasDevice(it->first)) {
+                std::cout << "🧹 [TCPDriver] 미등록 좀비 기기 소켓 강제 종료 및 삭제: " << it->first << std::endl;
+                close(it->second);
+                it = client_sockets_.erase(it); // 소켓 목록에서 지움
+            } else {
+                ++it;
+            }
+        }
     }
+    // 현재 연결된 ID 목록 저장
+    std::vector<std::string> existing_ids;
+    {
+        std::lock_guard<std::mutex> lock(sockets_mutex_);
+        for (auto const& [id, socket_fd] : client_sockets_) {
+            existing_ids.push_back(id);
+        }
+    }
+
     std::string registered_device_id = "";
     for (int i = 0; i < 15; ++i) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
         
         std::lock_guard<std::mutex> lock(sockets_mutex_);
-        if (client_sockets_.size() > initial_socket_count) {
-            // 가장 최근에 들어온(혹은 기존에 없던) 기기 ID를 찾아냅니다.
-            for (auto const& [id, socket_fd] : client_sockets_) {
-                // 이전에 없던 새로운 ID인지 확인 (혹은 단순하게 가장 최근 등록된 녀석 획득)
-                // 여기서는 간단하게 새롭게 매핑된 ID를 탐색합니다.
+        for (auto const& [id, socket_fd] : client_sockets_) {
+            // 현재 소켓 목록의 ID가 기존 목록(existing_ids)에 없다면 = '새로 접속한 기기'
+            if (std::find(existing_ids.begin(), existing_ids.end(), id) == existing_ids.end()) {
                 registered_device_id = id;
-                break; 
+                break;
             }
+        }
+        if (!registered_device_id.empty()) {
             break;
         }
     }
@@ -197,6 +214,10 @@ bool TCPDriver::unpairDevice(std::string deviceId){
     auto it = client_sockets_.find(deviceId);
     if(it != client_sockets_.end()){
         int client_socket = it->second;
+
+        std::string reset_cmd = "{\"action\":\"RESET\"}\n";
+        send(client_socket, reset_cmd.c_str(), reset_cmd.length(), 0);
+
         close(client_socket);
         client_sockets_.erase(it);
         std::cout << "[TCPDriver] 아두이노 연결 해제 완료: " << deviceId << std::endl;
