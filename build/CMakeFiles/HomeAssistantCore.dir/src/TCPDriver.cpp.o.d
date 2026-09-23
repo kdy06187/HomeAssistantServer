@@ -164,8 +164,9 @@ CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o: \
  /usr/include/x86_64-linux-gnu/sys/single_threaded.h \
  /usr/include/c++/15/thread /usr/include/c++/15/bits/std_thread.h \
  /usr/include/c++/15/bits/unique_ptr.h \
- /usr/include/c++/15/bits/this_thread_sleep.h /usr/include/c++/15/atomic \
- /usr/include/c++/15/bits/atomic_base.h \
+ /usr/include/c++/15/bits/this_thread_sleep.h \
+ /home/kdy/home-assistant-core/include/IMessageSender.hpp \
+ /usr/include/c++/15/atomic /usr/include/c++/15/bits/atomic_base.h \
  /usr/include/c++/15/bits/atomic_lockfree_defines.h \
  /home/kdy/home-assistant-core/include/../src/json.hpp \
  /usr/include/c++/15/algorithm /usr/include/c++/15/bits/stl_algo.h \
@@ -266,7 +267,9 @@ CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o: \
  /usr/include/c++/15/iostream \
  /home/kdy/home-assistant-core/include/Device.hpp \
  /home/kdy/home-assistant-core/include/DatabaseManager.hpp \
- /usr/include/sqlite3.h /usr/local/include/simpleble/SimpleBLE.h \
+ /usr/include/sqlite3.h \
+ /home/kdy/home-assistant-core/include/IDeviceDriver.hpp \
+ /usr/local/include/simpleble/SimpleBLE.h \
  /usr/local/include/simpleble/Adapter.h \
  /usr/local/include/simpleble/export.h \
  /usr/local/include/simpleble/Exceptions.h \

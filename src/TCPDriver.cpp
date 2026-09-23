@@ -25,19 +25,38 @@ TCPDriver::~TCPDriver(){
 }
 
 bool TCPDriver::sendCommand(std::string device_id, std::string command){
-    // JSON 명령 패킷 생성
-    json res;
-    res["action"] = "CONTROL";
-    res["command"] = command; // "ON" 또는 "OFF"
+    json requestJson;
+
+    // 1. 입력값이 JSON 형태 '{' 로 시작하는지 확인하여 유연하게 분기
+    if (!command.empty() && command.front() == '{') {
+        try {
+            requestJson = json::parse(command);
+        } catch (const json::parse_error& e) {
+            std::cerr << "[TCPDriver] 명령어 JSON 파싱 실패: " << e.what() << std::endl;
+            return false;
+        }
+    } else {
+        // 2. 단순 "ON", "OFF" 문자열이 들어온 경우 기본 제어 패킷으로 자동 래핑 (하위 호환성 유지)
+        requestJson["action"] = "CONTROL";
+        requestJson["target"] = "RELAY";
+        requestJson["value"] = command; 
+    }
     
-    res = sendAndReceive(device_id, res);
-    if (res.is_null()) {
+    json responseJson = sendAndReceive(device_id, requestJson);
+
+    if (responseJson.is_null()) {
         std::cerr << "[TCPDriver] 명령 전송 실패 (기기 오프라인): " << device_id << std::endl;
         return false;
     }
-    std::cout << "[TCPDriver] 명령 전송 성공: " << device_id << " -> " << command << std::endl;
-
-    return true;
+    // 응답 패킷에 "status" 필드가 "success"인지 확인
+    if (responseJson.contains("status") && responseJson["status"] == "success") {
+        std::cout << "[TCPDriver] 명령 전송 성공: " << device_id << std::endl;
+        return true;
+    }
+    // 에러 상태이거나 규격에 맞지 않는 응답인 경우
+    std::string error_msg = responseJson.contains("message") ? responseJson["message"].get<std::string>() : "알 수 없는 에러";
+    std::cerr << "[TCPDriver] 기기에서 에러 반환: " << error_msg << std::endl;
+    return false;
 }
 bool TCPDriver::commissionDevice(std::string name, std::string payload, const std::string& ssid, const std::string& password){
     std::string server_ip = "192.168.219.108"; 

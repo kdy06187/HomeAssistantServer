@@ -201,6 +201,17 @@ CMakeFiles/HomeAssistantCore.dir/src/HTTPServer.cpp.o: \
  /usr/include/c++/15/bits/stl_tempbuf.h \
  /usr/include/c++/15/pstl/glue_algorithm_defs.h \
  /usr/include/c++/15/pstl/execution_defs.h \
+ /home/kdy/home-assistant-core/include/IDeviceDriver.hpp \
+ /home/kdy/home-assistant-core/include/IMessageSender.hpp \
+ /usr/include/c++/15/memory \
+ /usr/include/c++/15/bits/stl_raw_storage_iter.h \
+ /usr/include/c++/15/bits/align.h /usr/include/c++/15/bits/shared_ptr.h \
+ /usr/include/c++/15/bits/shared_ptr_base.h \
+ /usr/include/c++/15/bits/allocated_ptr.h \
+ /usr/include/c++/15/ext/concurrence.h \
+ /usr/include/c++/15/bits/shared_ptr_atomic.h \
+ /usr/include/c++/15/backward/auto_ptr.h \
+ /usr/include/c++/15/pstl/glue_memory_defs.h \
  /home/kdy/home-assistant-core/src/httplib.h /usr/include/arpa/inet.h \
  /usr/include/netinet/in.h /usr/include/x86_64-linux-gnu/sys/socket.h \
  /usr/include/x86_64-linux-gnu/bits/types/struct_iovec.h \
@@ -271,11 +282,8 @@ CMakeFiles/HomeAssistantCore.dir/src/HTTPServer.cpp.o: \
  /usr/include/c++/15/compare /usr/include/c++/15/cassert \
  /usr/include/assert.h /usr/include/c++/15/chrono \
  /usr/include/c++/15/climits /usr/include/c++/15/condition_variable \
- /usr/include/c++/15/bits/shared_ptr.h \
- /usr/include/c++/15/bits/shared_ptr_base.h \
- /usr/include/c++/15/bits/allocated_ptr.h \
- /usr/include/c++/15/ext/concurrence.h /usr/include/c++/15/cstring \
- /usr/include/fcntl.h /usr/include/x86_64-linux-gnu/bits/fcntl.h \
+ /usr/include/c++/15/cstring /usr/include/fcntl.h \
+ /usr/include/x86_64-linux-gnu/bits/fcntl.h \
  /usr/include/x86_64-linux-gnu/bits/fcntl-linux.h \
  /usr/include/linux/falloc.h /usr/include/linux/openat2.h \
  /usr/include/x86_64-linux-gnu/bits/openat2.h \
@@ -298,12 +306,7 @@ CMakeFiles/HomeAssistantCore.dir/src/HTTPServer.cpp.o: \
  /usr/include/c++/15/bits/stl_list.h /usr/include/c++/15/bits/list.tcc \
  /usr/include/c++/15/map /usr/include/c++/15/bits/stl_tree.h \
  /usr/include/c++/15/bits/stl_map.h \
- /usr/include/c++/15/bits/stl_multimap.h /usr/include/c++/15/memory \
- /usr/include/c++/15/bits/stl_raw_storage_iter.h \
- /usr/include/c++/15/bits/align.h \
- /usr/include/c++/15/bits/shared_ptr_atomic.h \
- /usr/include/c++/15/backward/auto_ptr.h \
- /usr/include/c++/15/pstl/glue_memory_defs.h /usr/include/c++/15/random \
+ /usr/include/c++/15/bits/stl_multimap.h /usr/include/c++/15/random \
  /usr/include/c++/15/cmath /usr/include/math.h \
  /usr/include/x86_64-linux-gnu/bits/math-vector.h \
  /usr/include/x86_64-linux-gnu/bits/libm-simd-decl-stubs.h \

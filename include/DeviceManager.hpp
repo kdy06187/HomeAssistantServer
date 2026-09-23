@@ -9,6 +9,8 @@
 #include "Device.hpp"
 #include "ProtocolDriver.hpp"
 #include "DatabaseManager.hpp"
+#include "IDeviceDriver.hpp"
+#include <memory>
 
 class DeviceManager {
 public:
@@ -46,6 +48,10 @@ public:
     std::string getDeviceTotalEnergy(std::string deviceId);
     bool getDeviceEnergyInfo(const std::string& deviceId, int& out_activePower_mW,long& out_real_total_mWh);
     std::vector<EnergyLog> getDeviceEnergyHistory(const std::string& deviceId, int limit = 50);
+
+    // 특정 기기에 부가 기능 드라이버(예: PCDriver)를 부착하는 API
+    void attachExtraDriver(const std::string& id, std::shared_ptr<IDeviceDriver> driver);
+
 private:
     // 외부 생성 방지
     DeviceManager(){
@@ -61,4 +67,5 @@ private:
     std::unordered_map<ProtocolType, ProtocolDriver*> drivers_;
     std::mutex mutex_;
     
+    std::unordered_map<std::string, std::shared_ptr<IDeviceDriver>> extra_drivers_;
 };

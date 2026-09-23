@@ -4,10 +4,11 @@
 #include <unordered_map>
 #include <mutex>
 #include <thread>
+#include "IMessageSender.hpp"
 #include <atomic>
 #include "../src/json.hpp"
 
-class TCPDriver : public ProtocolDriver {
+class TCPDriver : public ProtocolDriver, public IMessageSender {
 public:
     TCPDriver(DeviceManager& deviceManager);
     ~TCPDriver() override;
@@ -16,6 +17,11 @@ public:
     bool commissionDevice(std::string name, std::string payload, const std::string& ssid = "", const std::string& password = "") override;
     bool unpairDevice(std::string deviceId) override;
     std::string readDeviceState(std::string deviceId, bool isManualRequest) override;
+    //IMessageSender의 SendCommandTo 메서드 구현
+    void SendCommandTo(const std::string& target_id, const std::string& command) override{
+        
+        sendCommand(target_id, command);
+    }
     // TCP 서버 시작 및 종료 메서드
     void startServer(int port);
     void stopServer();

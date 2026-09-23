@@ -71,10 +71,14 @@ bool DeviceManager::updateDeviceState(std::string id, std::string newState){
     }
     return false;
 }
-
+void DeviceManager::attachExtraDriver(const std::string& id, std::shared_ptr<IDeviceDriver> driver) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    extra_drivers_[id] = std::move(driver);
+}
 // 기기 제어
 bool DeviceManager::executeCommand(std::string id, std::string command){
     ProtocolType deviceType;
+    Device targetDevice;
     // 기기 존재 여부 확인 및 프로토콜 타입 조회
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -84,24 +88,46 @@ bool DeviceManager::executeCommand(std::string id, std::string command){
             return false;
         } 
         deviceType = it -> second.protocol_type;
+        targetDevice = it->second;
     }// 자동으로 mutex 해제
-
-    // 해당 프로토콜 타입에 맞는 드라이버 조회
-    auto driverIt = drivers_.find(deviceType);
-    if(driverIt != drivers_.end()){
-        if(driverIt->second->sendCommand(id,command)){
-            std::string newState = (command == "ON") ? "ON" : "OFF";
-            this->updateDeviceState(id, newState);
-            return true;
-        } else{
-            this->updateDeviceState(id, "OFFLINE");
+    DriverResult action = { true, 0 };
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto extra_it = extra_drivers_.find(id);
+        if (extra_it != extra_drivers_.end()) {
+            action = extra_it->second->handleCommand(targetDevice, command);
         }
-    } else{
-        std::cerr << "[DeviceManager] 에러 : 해당 프로토콜 타입에 맞는 드라이버를 찾을 수 없습니다 " << std::endl;
+    }
+    if (!action.proceed_hardware) {
+        return true; 
+    }
+    auto execute_hardware = [this, id, command, deviceType]() {
+        auto driverIt = drivers_.find(deviceType);
+        if (driverIt != drivers_.end()) {
+            if (driverIt->second->sendCommand(id, command)) {
+                std::string newState = (command == "ON") ? "ON" : "OFF";
+                this->updateDeviceState(id, newState); // DB 및 서버 상태 변경
+            } else {
+                this->updateDeviceState(id, "OFFLINE");
+            }
+        } else {
+            std::cerr << "[DeviceManager] 에러 : 프로토콜 드라이버를 찾을 수 없습니다\n";
+        }
+    };
 
+    if (action.delay_seconds > 0) {
+        int delay = action.delay_seconds;
+        // 서버가 멈추지 않도록 스레드를 생성하여 대기 후 하드웨어 제어
+        std::thread([execute_hardware, delay]() {
+            std::this_thread::sleep_for(std::chrono::seconds(delay));
+            execute_hardware();
+        }).detach();
+    } else {
+        // 대기 시간이 없다면 즉시 실행
+        execute_hardware();
     }
     
-    return false;
+    return true;
 }
 bool DeviceManager::startCommissioning(ProtocolType type, std::string name, std::string payload, const std::string& ssid, const std::string& password){
     std::cout << "[DeviceManager] 커미셔닝 시작: " << getProtocolString(type) << ", " << name << ", " << payload << std::endl;

@@ -226,6 +226,8 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o
  /home/kdy/home-assistant-core/include/DatabaseManager.hpp
  /home/kdy/home-assistant-core/include/Device.hpp
  /home/kdy/home-assistant-core/include/DeviceManager.hpp
+ /home/kdy/home-assistant-core/include/IDeviceDriver.hpp
+ /home/kdy/home-assistant-core/include/IMessageSender.hpp
  /home/kdy/home-assistant-core/include/MatterController.hpp
  /home/kdy/home-assistant-core/include/ProtocolDriver.hpp
  /home/kdy/home-assistant-core/include/SystemProjectConfig.h
@@ -588,6 +590,7 @@ CMakeFiles/HomeAssistantCore.dir/src/HTTPServer.cpp.o
  /home/kdy/home-assistant-core/include/Device.hpp
  /home/kdy/home-assistant-core/include/DeviceManager.hpp
  /home/kdy/home-assistant-core/include/HTTPServer.hpp
+ /home/kdy/home-assistant-core/include/IDeviceDriver.hpp
  /home/kdy/home-assistant-core/include/ProtocolDriver.hpp
  /home/kdy/home-assistant-core/src/httplib.h
  /home/kdy/home-assistant-core/src/json.hpp
@@ -1059,6 +1062,7 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o
  /home/kdy/home-assistant-core/include/DatabaseManager.hpp
  /home/kdy/home-assistant-core/include/Device.hpp
  /home/kdy/home-assistant-core/include/DeviceManager.hpp
+ /home/kdy/home-assistant-core/include/IDeviceDriver.hpp
  /home/kdy/home-assistant-core/include/MatterController.hpp
  /home/kdy/home-assistant-core/include/ProtocolDriver.hpp
  /home/kdy/home-assistant-core/include/SystemProjectConfig.h
@@ -1428,6 +1432,7 @@ CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o
  /home/kdy/home-assistant-core/include/DatabaseManager.hpp
  /home/kdy/home-assistant-core/include/Device.hpp
  /home/kdy/home-assistant-core/include/DeviceManager.hpp
+ /home/kdy/home-assistant-core/include/IDeviceDriver.hpp
  /home/kdy/home-assistant-core/include/ProtocolDriver.hpp
  /home/kdy/home-assistant-core/include/TCPDriver.hpp
  /home/kdy/home-assistant-core/src/json.hpp

@@ -224,6 +224,8 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o: /home/kdy/home-assista
   /home/kdy/home-assistant-core/include/DatabaseManager.hpp \
   /home/kdy/home-assistant-core/include/Device.hpp \
   /home/kdy/home-assistant-core/include/DeviceManager.hpp \
+  /home/kdy/home-assistant-core/include/IDeviceDriver.hpp \
+  /home/kdy/home-assistant-core/include/IMessageSender.hpp \
   /home/kdy/home-assistant-core/include/MatterController.hpp \
   /home/kdy/home-assistant-core/include/ProtocolDriver.hpp \
   /home/kdy/home-assistant-core/include/SystemProjectConfig.h \
@@ -585,6 +587,7 @@ CMakeFiles/HomeAssistantCore.dir/src/HTTPServer.cpp.o: /home/kdy/home-assistant-
   /home/kdy/home-assistant-core/include/Device.hpp \
   /home/kdy/home-assistant-core/include/DeviceManager.hpp \
   /home/kdy/home-assistant-core/include/HTTPServer.hpp \
+  /home/kdy/home-assistant-core/include/IDeviceDriver.hpp \
   /home/kdy/home-assistant-core/include/ProtocolDriver.hpp \
   /home/kdy/home-assistant-core/src/httplib.h \
   /home/kdy/home-assistant-core/src/json.hpp \
@@ -1055,6 +1058,7 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o: /home/kdy/home-assi
   /home/kdy/home-assistant-core/include/DatabaseManager.hpp \
   /home/kdy/home-assistant-core/include/Device.hpp \
   /home/kdy/home-assistant-core/include/DeviceManager.hpp \
+  /home/kdy/home-assistant-core/include/IDeviceDriver.hpp \
   /home/kdy/home-assistant-core/include/MatterController.hpp \
   /home/kdy/home-assistant-core/include/ProtocolDriver.hpp \
   /home/kdy/home-assistant-core/include/SystemProjectConfig.h \
@@ -1423,6 +1427,7 @@ CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o: /home/kdy/home-assistant-c
   /home/kdy/home-assistant-core/include/DatabaseManager.hpp \
   /home/kdy/home-assistant-core/include/Device.hpp \
   /home/kdy/home-assistant-core/include/DeviceManager.hpp \
+  /home/kdy/home-assistant-core/include/IDeviceDriver.hpp \
   /home/kdy/home-assistant-core/include/ProtocolDriver.hpp \
   /home/kdy/home-assistant-core/include/TCPDriver.hpp \
   /home/kdy/home-assistant-core/src/json.hpp \
@@ -2774,6 +2779,8 @@ CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o:
 
 /usr/include/x86_64-linux-gnu/sys/socket.h:
 
+/usr/include/x86_64-linux-gnu/c++/15/bits/time_members.h:
+
 /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libTestTimeSynchronizationCluster.a:
 
 /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/BufferWriter.h:
@@ -2903,6 +2910,14 @@ CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o:
 /usr/include/x86_64-linux-gnu/bits/stdio_lim.h:
 
 /usr/include/x86_64-linux-gnu/bits/timex.h:
+
+/home/kdy/home-assistant-core/include/IDeviceDriver.hpp:
+
+/usr/include/x86_64-linux-gnu/sys/param.h:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio-private.h:
+
+/usr/include/x86_64-linux-gnu/bits/atomic_wide_counter.h:
 
 /usr/include/x86_64-linux-gnu/bits/types/__fpos64_t.h:
 
@@ -3042,6 +3057,8 @@ CMakeFiles/HomeAssistantCore.dir/src/main.cpp.o:
 
 /usr/include/c++/15/bits/stringfwd.h:
 
+/home/kdy/home-assistant-core/include/IMessageSender.hpp:
+
 /usr/include/c++/15/bits/cxxabi_forced.h:
 
 /usr/include/c++/15/compare:
@@ -3079,8 +3096,6 @@ CMakeFiles/HomeAssistantCore.dir/src/main.cpp.o:
 /usr/include/c++/15/algorithm:
 
 /usr/include/x86_64-linux-gnu/bits/math-vector.h:
-
-/usr/include/x86_64-linux-gnu/c++/15/bits/time_members.h:
 
 /usr/include/c++/15/bits/stl_construct.h:
 
@@ -3166,6 +3181,10 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o:
 
 /usr/include/asm-generic/posix_types.h:
 
+/usr/include/c++/15/bits/gslice_array.h:
+
+/usr/include/c++/15/bits/exception.h:
+
 /usr/include/strings.h:
 
 /usr/include/c++/15/bits/range_access.h:
@@ -3226,6 +3245,14 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o:
 
 /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/Span.h:
 
+/usr/include/x86_64-linux-gnu/sys/mman.h:
+
+/home/kdy/home-assistant-core/include/ProtocolDriver.hpp:
+
+/usr/include/c++/15/bits/cxxabi_init_exception.h:
+
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleLayerDelegate.h:
+
 /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/libTestCameraAvSettingsUserLevelManagementCluster.a:
 
 /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/TestPowerTopologyClusterBackwardsCompatibility.a:
@@ -3251,8 +3278,6 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o:
 /usr/include/x86_64-linux-gnu/bits/long-double.h:
 
 /usr/include/x86_64-linux-gnu/bits/socket.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/CodeUtils.h:
 
 /home/kdy/home-assistant-core/third_party/connectedhomeip/out/host/lib/TestEnergyEvseClusterBackwardsCompatibility.a:
 
@@ -3351,16 +3376,6 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o:
 /usr/include/x86_64-linux-gnu/bits/struct_stat.h:
 
 /usr/include/x86_64-linux-gnu/bits/types/wint_t.h:
-
-/usr/include/x86_64-linux-gnu/sys/param.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/third_party/nlio/repo/include/nlio-private.h:
-
-/usr/include/x86_64-linux-gnu/bits/atomic_wide_counter.h:
-
-/usr/include/c++/15/bits/exception.h:
-
-/usr/include/c++/15/bits/gslice_array.h:
 
 /usr/include/c++/15/bits/requires_hosted.h:
 
@@ -3538,6 +3553,8 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o:
 
 /usr/include/locale.h:
 
+/home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/CodeUtils.h:
+
 /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/IntrusiveList.h:
 
 /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/support/ObjectDump.h:
@@ -3613,14 +3630,6 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o:
 /home/kdy/home-assistant-core/include/DatabaseManager.hpp:
 
 /usr/include/c++/15/bits/chrono.h:
-
-/home/kdy/home-assistant-core/include/ProtocolDriver.hpp:
-
-/usr/include/c++/15/bits/cxxabi_init_exception.h:
-
-/home/kdy/home-assistant-core/third_party/connectedhomeip/src/ble/BleLayerDelegate.h:
-
-/usr/include/x86_64-linux-gnu/sys/mman.h:
 
 /usr/include/c++/15/bits/enable_special_members.h:
 
