@@ -1,4 +1,5 @@
 #include "DeviceManager.hpp"
+#include "DriverManager.hpp"
 #include "DatabaseManager.hpp"
 #include "MatterController.hpp"
 #include <iostream>
@@ -18,9 +19,13 @@ void DeviceManager::initFromDatabase(){
     std::cout << "[DeviceManager] DB에서 기기 로드 완료 (" << loadedDevices.size() << "개)" << std::endl;
 }
 // 기기 추가
-void DeviceManager::addDevice(std::string id, std::string name, ProtocolType protocol_type){
+void DeviceManager::addDevice(std::string id, std::string name, ProtocolType protocol_type, IMessageSender* sender){
     std::lock_guard<std::mutex> lock(mutex_);
-    Device newDevice = {id,name,protocol_type,"UNKNOWN"};
+    Device newDevice(id, name, protocol_type);
+    newDevice.state = "UNKNOWN";
+    if (sender) {
+        DriverManager::getInstance().attachReservedDrivers(newDevice, id, sender);
+    }
     devices_[id] = newDevice;
     DatabaseManager::getInstance().insertDevice(newDevice);
     std::cout << "[DeviceManager] 기기 추가 완료: " << name << "(" << id << ")" << std::endl;
@@ -71,10 +76,7 @@ bool DeviceManager::updateDeviceState(std::string id, std::string newState){
     }
     return false;
 }
-void DeviceManager::attachExtraDriver(const std::string& id, std::shared_ptr<IDeviceDriver> driver) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    extra_drivers_[id] = std::move(driver);
-}
+
 // 기기 제어
 bool DeviceManager::executeCommand(std::string id, std::string command){
     ProtocolType deviceType;
@@ -90,14 +92,8 @@ bool DeviceManager::executeCommand(std::string id, std::string command){
         deviceType = it -> second.protocol_type;
         targetDevice = it->second;
     }// 자동으로 mutex 해제
-    DriverResult action = { true, 0 };
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        auto extra_it = extra_drivers_.find(id);
-        if (extra_it != extra_drivers_.end()) {
-            action = extra_it->second->handleCommand(targetDevice, command);
-        }
-    }
+    DriverResult action = DriverManager::getInstance().executeDriversForDevice(targetDevice, command);
+
     if (!action.proceed_hardware) {
         return true; 
     }
@@ -129,12 +125,15 @@ bool DeviceManager::executeCommand(std::string id, std::string command){
     
     return true;
 }
-bool DeviceManager::startCommissioning(ProtocolType type, std::string name, std::string payload, const std::string& ssid, const std::string& password){
+bool DeviceManager::startCommissioning(ProtocolType type, std::string name, std::string payload
+        , const std::string& ssid, const std::string& password, const std::vector<DriverType>& driverTypes){
     std::cout << "[DeviceManager] 커미셔닝 시작: " << getProtocolString(type) << ", " << name << ", " << payload << std::endl;
     auto driverIt = drivers_.find(type);
     if(driverIt != drivers_.end()){
+        DriverManager::getInstance().reserveDrivers(name, driverTypes);
         driverIt->second->commissionDevice(name, payload, ssid, password);
         std::cout << "[DeviceManager] " << getProtocolString(type) << " 커미셔닝 요청 완료" << std::endl;
+
         return true;
     } else{
         std::cerr << "[DeviceManager] 에러 : " << getProtocolString(type) << " 드라이버를 찾을 수 없습니다 " << std::endl;

@@ -164,7 +164,7 @@ bool MatterController::commissionDevice(uint64_t nodeId, std::string name,const 
         if (!mDeviceManager.hasDevice(deviceIdStr)) {
             std::cout << "[MatterController] ⚠️ DB에 기기 정보가 누락되어 복구(Sync)를 수행합니다." << std::endl;
             
-            mDeviceManager.addDevice(deviceIdStr, name, ProtocolType::MATTER);
+            mDeviceManager.addDevice(deviceIdStr, name, ProtocolType::MATTER,this);
         } else {
             std::cout << "[MatterController] ✅ DB에도 이미 존재합니다. 커미셔닝을 완전히 건너뜁니다." << std::endl;
         }
@@ -258,7 +258,7 @@ void MatterController::onDevicePairingComplete(uint64_t nodeId, const std::strin
     std::cout << "[MatterController] 기기 페어링 완료: NodeId=" << nodeId << ", DeviceName=" << deviceName << std::endl;
     saveDeviceRegistration(nodeId);
     std::string newId = std::to_string(nodeId);
-    mDeviceManager.addDevice(newId, deviceName, ProtocolType::MATTER);
+    mDeviceManager.addDevice(newId, deviceName, ProtocolType::MATTER,this);
 }
 bool MatterController::unpairDevice(std::string deviceId){
     std::cout << "[MatterController] Matter 기기 페어링 해제 : NodeId = " << deviceId << std::endl;

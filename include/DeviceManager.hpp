@@ -11,6 +11,8 @@
 #include "DatabaseManager.hpp"
 #include "IDeviceDriver.hpp"
 #include <memory>
+#include "DriverType.hpp"
+#include "IMessageSender.hpp"
 
 class DeviceManager {
 public:
@@ -27,13 +29,13 @@ public:
 
     void initFromDatabase();
     // 디바이스 등록 API - 디바이스를 등록하고, 프로토콜 타입에 맞는 드라이버를 통해 초기화
-    void addDevice(std::string id, std::string name, ProtocolType protocol_type);
+    void addDevice(std::string id, std::string name, ProtocolType protocol_type, IMessageSender* sender);
     bool getDevice(std::string id, Device& outDevice);
     std::string getDeviceState(std::string id, bool isManualRefresh = false);
     std::vector<Device> getAllDevices();
     std::string getProtocolString(ProtocolType type);
     bool updateDeviceState(std::string id, std::string newState);
-    bool startCommissioning(ProtocolType type, std::string name, std::string payload, const std::string& ssid = "", const std::string& password = "");
+    bool startCommissioning(ProtocolType type, std::string name, std::string payload, const std::string& ssid = "", const std::string& password = "",const std::vector<DriverType>& driverTypes ={});
     // 디바이스 제어 API - 디바이스 ID와 명령을 받아 해당 디바이스를 제어
     bool executeCommand(std::string id, std::string command);
     bool removeDevice(std::string id);
@@ -49,8 +51,7 @@ public:
     bool getDeviceEnergyInfo(const std::string& deviceId, int& out_activePower_mW,long& out_real_total_mWh);
     std::vector<EnergyLog> getDeviceEnergyHistory(const std::string& deviceId, int limit = 50);
 
-    // 특정 기기에 부가 기능 드라이버(예: PCDriver)를 부착하는 API
-    void attachExtraDriver(const std::string& id, std::shared_ptr<IDeviceDriver> driver);
+    
 
 private:
     // 외부 생성 방지
@@ -67,5 +68,5 @@ private:
     std::unordered_map<ProtocolType, ProtocolDriver*> drivers_;
     std::mutex mutex_;
     
-    std::unordered_map<std::string, std::shared_ptr<IDeviceDriver>> extra_drivers_;
+
 };

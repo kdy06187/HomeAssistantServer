@@ -119,6 +119,7 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o: \
  /usr/include/c++/15/bits/memory_resource.h /usr/include/c++/15/cstddef \
  /usr/include/c++/15/bits/uses_allocator.h \
  /usr/include/c++/15/bits/uses_allocator_args.h /usr/include/c++/15/tuple \
+ /home/kdy/home-assistant-core/include/IMessageSender.hpp \
  /usr/include/c++/15/cstdint \
  /usr/lib/gcc/x86_64-linux-gnu/15/include/stdint.h /usr/include/stdint.h \
  /usr/include/x86_64-linux-gnu/bits/stdint-uintn.h \
@@ -303,10 +304,10 @@ CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o: \
  /usr/include/c++/15/bits/std_mutex.h \
  /usr/include/c++/15/bits/unique_lock.h /usr/include/c++/15/atomic \
  /home/kdy/home-assistant-core/include/Device.hpp \
+ /home/kdy/home-assistant-core/include/IDeviceDriver.hpp \
  /home/kdy/home-assistant-core/include/DatabaseManager.hpp \
  /usr/include/sqlite3.h \
- /home/kdy/home-assistant-core/include/IDeviceDriver.hpp \
- /home/kdy/home-assistant-core/include/IMessageSender.hpp \
+ /home/kdy/home-assistant-core/include/DriverType.hpp \
  /usr/include/c++/15/sstream /usr/include/c++/15/bits/sstream.tcc \
  /usr/include/c++/15/fstream /usr/include/c++/15/bits/codecvt.h \
  /usr/include/x86_64-linux-gnu/c++/15/bits/basic_file.h \

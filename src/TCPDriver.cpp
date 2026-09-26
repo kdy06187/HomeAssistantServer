@@ -147,7 +147,7 @@ bool TCPDriver::commissionDevice(std::string name, std::string payload, const st
     }
     if (!registered_device_id.empty()) {
         // acceptLoop에서 이미 "ARD_IP" 형태로 ID와 소켓이 맵핑되었으므로 바로 디바이스 매니저에 등록
-        mDeviceManager.addDevice(registered_device_id, name, ProtocolType::TCP_DIY);
+        mDeviceManager.addDevice(registered_device_id, name, ProtocolType::TCP_DIY,this);
         std::cout << "[TCPDriver] 커미셔닝 완료 : " << name << " (" << registered_device_id << ")" << std::endl;
         return true;
     }

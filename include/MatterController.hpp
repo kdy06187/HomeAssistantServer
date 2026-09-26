@@ -1,5 +1,6 @@
 #pragma once
 #include "ProtocolDriver.hpp"
+#include "IMessageSender.hpp"
 #include <string>
 #include <cstdint>
 #include <thread>
@@ -10,7 +11,7 @@
 #include <setup_payload/SetupPayload.h>
 #include <setup_payload/ManualSetupPayloadParser.h>
 
-class MatterController : public ProtocolDriver {
+class MatterController : public ProtocolDriver, public IMessageSender {
 public:
     MatterController(DeviceManager& deviceManager);
     ~MatterController();
@@ -46,6 +47,9 @@ public:
     std::string getPowerUsage(std::string deviceId, bool isManualRequest = false);
     std::string getCumulativeEnergy(std::string deviceId, bool isManualRequest = false);
 
+    void SendCommandTo(const std::string& target_id, const std::string& command) override{
+        // 사용안함
+    }
 private:
     std::string mChipToolPath;
     bool commissionDevice(uint64_t nodeId, std::string name, const std::string& manualPincode,

@@ -170,6 +170,13 @@ std::string HTTPServer::handleCommissionDevice(const std::string& requestBody){
             std::string ssid = j.value("ssid", "");
             std::string password = j.value("password", "");
 
+            std::vector<DriverType> driverTypes;
+            if (j.contains("driverTypes") && j["driverTypes"].is_array()) {
+                for (int typeInt : j["driverTypes"]) {
+                    driverTypes.push_back(static_cast<DriverType>(typeInt));
+                }
+            }
+
             ProtocolType protocolType;
             if (protocolTypeStr == "MATTER") {
                 protocolType = ProtocolType::MATTER;
@@ -179,7 +186,7 @@ std::string HTTPServer::handleCommissionDevice(const std::string& requestBody){
                 return R"({"result": "error", "message": "알 수 없는 프로토콜 타입입니다."})";
             }
 
-            bool isSuccess = mDeviceManager.startCommissioning(protocolType, deviceName, payload, ssid, password);
+            bool isSuccess = mDeviceManager.startCommissioning(protocolType, deviceName, payload, ssid, password, driverTypes);
             if (isSuccess) {
                 return R"({"result": "success", "message": "기기 등록 성공!"})";
             } else {

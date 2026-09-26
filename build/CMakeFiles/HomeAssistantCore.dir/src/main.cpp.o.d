@@ -189,18 +189,7 @@ CMakeFiles/HomeAssistantCore.dir/src/main.cpp.o: \
  /usr/include/c++/15/bits/atomic_base.h \
  /usr/include/c++/15/bits/atomic_lockfree_defines.h \
  /home/kdy/home-assistant-core/include/Device.hpp \
- /home/kdy/home-assistant-core/include/ProtocolDriver.hpp \
- /home/kdy/home-assistant-core/include/DatabaseManager.hpp \
- /usr/include/c++/15/algorithm /usr/include/c++/15/bits/stl_algo.h \
- /usr/include/c++/15/bits/algorithmfwd.h \
- /usr/include/c++/15/bits/stl_heap.h \
- /usr/include/c++/15/bits/uniform_int_dist.h \
- /usr/include/c++/15/bits/stl_tempbuf.h \
- /usr/include/c++/15/pstl/glue_algorithm_defs.h \
- /usr/include/c++/15/pstl/execution_defs.h \
- /home/kdy/home-assistant-core/include/IDeviceDriver.hpp \
- /home/kdy/home-assistant-core/include/IMessageSender.hpp \
- /usr/include/c++/15/memory \
+ /usr/include/c++/15/memory /usr/include/c++/15/bits/stl_tempbuf.h \
  /usr/include/c++/15/bits/stl_raw_storage_iter.h \
  /usr/include/c++/15/bits/align.h /usr/include/c++/15/bits/shared_ptr.h \
  /usr/include/c++/15/bits/shared_ptr_base.h \
@@ -209,6 +198,17 @@ CMakeFiles/HomeAssistantCore.dir/src/main.cpp.o: \
  /usr/include/c++/15/bits/shared_ptr_atomic.h \
  /usr/include/c++/15/backward/auto_ptr.h \
  /usr/include/c++/15/pstl/glue_memory_defs.h \
+ /usr/include/c++/15/pstl/execution_defs.h \
+ /home/kdy/home-assistant-core/include/IDeviceDriver.hpp \
+ /home/kdy/home-assistant-core/include/ProtocolDriver.hpp \
+ /home/kdy/home-assistant-core/include/DatabaseManager.hpp \
+ /usr/include/c++/15/algorithm /usr/include/c++/15/bits/stl_algo.h \
+ /usr/include/c++/15/bits/algorithmfwd.h \
+ /usr/include/c++/15/bits/stl_heap.h \
+ /usr/include/c++/15/bits/uniform_int_dist.h \
+ /usr/include/c++/15/pstl/glue_algorithm_defs.h \
+ /home/kdy/home-assistant-core/include/DriverType.hpp \
+ /home/kdy/home-assistant-core/include/IMessageSender.hpp \
  /home/kdy/home-assistant-core/include/TCPDriver.hpp \
  /home/kdy/home-assistant-core/include/../src/json.hpp \
  /usr/include/c++/15/functional /usr/include/c++/15/bits/std_function.h \

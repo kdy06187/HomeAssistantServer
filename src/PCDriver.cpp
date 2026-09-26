@@ -26,3 +26,8 @@ DriverResult PCDriver::handleCommand(const Device& device, const std::string& co
 
     return { true, 0 };
 }
+namespace {
+    const DriverRegistrar registrar(DriverType::PC_DRIVER, [](IMessenger* m) {
+        return std::make_shared<PCDriver>(m);
+    });
+}
