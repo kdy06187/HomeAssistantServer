@@ -3,7 +3,8 @@
 #include <vector>
 #include <memory>
 #include "IDeviceDriver.hpp"
-
+#include "DriverType.hpp"
+class IDeviceDriver;
 // 통신 프로토콜 열거형
 enum class ProtocolType {
     MATTER,
@@ -21,7 +22,7 @@ struct Device {
     // 🌟 핵심: 기기에 부착된 특수 드라이버들을 담아두는 배열
     // (이 드라이버들을 꺼내서 실행하는 역할은 DriverManager가 담당합니다)
     std::vector<std::shared_ptr<IDeviceDriver>> attached_drivers;
-
+    std::vector<DriverType> driver_types;
     // 기본 생성자
     Device() : protocol_type(ProtocolType::UNKNOWN), state("OFF") {}
 

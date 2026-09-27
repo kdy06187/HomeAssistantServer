@@ -3,7 +3,7 @@
 #include "ProtocolDriver.hpp" // 기존 통신 추상화 클래스 활용
 #include <memory>
 #include <string>
-
+class IMessageSender;
 class PCDriver : public IDeviceDriver {
 private:
     IMessageSender* pc_messenger_;

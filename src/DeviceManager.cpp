@@ -13,8 +13,22 @@ void DeviceManager::registerDriver(ProtocolType type, ProtocolDriver* driver){
 void DeviceManager::initFromDatabase(){
     std::lock_guard<std::mutex> lock(mutex_);
     auto loadedDevices = DatabaseManager::getInstance().loadAllDevices();
-    for(const auto& dev : loadedDevices){
-        devices_[dev.id] = dev;
+    for(auto dev : loadedDevices){ 
+        
+        // 1. 이 기기가 사용하는 통신 프로토콜 드라이버(메신저) 찾기
+        auto driverIt = drivers_.find(dev.protocol_type);
+        
+        if (driverIt != drivers_.end()) {
+            IMessageSender* sender = dynamic_cast<IMessageSender*>(driverIt->second);
+            
+            // 2. 조립할 부품(driver_types)이 있고, 발송기(sender)가 정상적으로 찾아졌다면 조립!
+            if (sender && !dev.driver_types.empty()) {
+                DriverManager::getInstance().attachDriversToDevice(dev, dev.driver_types, sender);
+            }
+        }
+        
+        // 3. 조립이 완료된 완성품을 맵에 이동(move)시켜서 등록
+        devices_[dev.id] = std::move(dev);
     }
     std::cout << "[DeviceManager] DB에서 기기 로드 완료 (" << loadedDevices.size() << "개)" << std::endl;
 }
@@ -24,7 +38,7 @@ void DeviceManager::addDevice(std::string id, std::string name, ProtocolType pro
     Device newDevice(id, name, protocol_type);
     newDevice.state = "UNKNOWN";
     if (sender) {
-        DriverManager::getInstance().attachReservedDrivers(newDevice, id, sender);
+        DriverManager::getInstance().attachReservedDrivers(newDevice, name, sender);
     }
     devices_[id] = newDevice;
     DatabaseManager::getInstance().insertDevice(newDevice);

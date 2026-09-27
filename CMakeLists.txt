@@ -49,6 +49,7 @@ add_executable(${PROJECT_NAME}
     src/MatterController.cpp
     src/HTTPServer.cpp
     src/DatabaseManager.cpp
+    src/PCDriver.cpp
 )
 target_include_directories(HomeAssistantCore PRIVATE
     ${GLIB2_INCLUDE_DIRS}

@@ -7,6 +7,9 @@
 #include "TCPDriver.hpp"
 #include "MatterController.hpp"
 #include "HTTPServer.hpp"
+#include "DriverManager.hpp"
+#include "PCDriver.hpp"
+#include "IMessageSender.hpp"
 
 int main() {
     std::cout << "=== 🏠 홈 어시스턴트 코어 부팅 ===" << std::endl;
@@ -17,7 +20,9 @@ int main() {
         return 1;
     }
     std::cout << "✅ 데이터베이스 로드 완료!" << std::endl;
-
+    DriverManager::getInstance().registerDriver(DriverType::PC_DRIVER, [](IMessageSender* sender) {
+        return std::make_shared<PCDriver>(sender);
+    });
     // 1. 시스템 두뇌(DeviceManager) 가져오기
     DeviceManager& manager = DeviceManager::getInstance();
     manager.initFromDatabase();
@@ -42,6 +47,8 @@ int main() {
 
     HTTPServer httpServer(manager, 8000);
     httpServer.start();
+
+
     //  관리 대상 기기 임시 등록
     // manager.addDevice("Arduino_1", "거실 전등", ProtocolType::TCP_DIY);
     // manager.addDevice("1", "스마트 플러그", ProtocolType::MATTER);

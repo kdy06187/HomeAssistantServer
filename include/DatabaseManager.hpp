@@ -4,6 +4,7 @@
 #include <sqlite3.h>
 #include "Device.hpp"
 #include <algorithm>
+#include "DriverType.hpp"
 struct EnergyLog{
     std::string timestamp;
     long total_mwh;

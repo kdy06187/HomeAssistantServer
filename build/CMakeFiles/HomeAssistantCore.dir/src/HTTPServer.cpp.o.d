@@ -202,6 +202,7 @@ CMakeFiles/HomeAssistantCore.dir/src/HTTPServer.cpp.o: \
  /usr/include/c++/15/pstl/glue_memory_defs.h \
  /usr/include/c++/15/pstl/execution_defs.h \
  /home/kdy/home-assistant-core/include/IDeviceDriver.hpp \
+ /home/kdy/home-assistant-core/include/DriverType.hpp \
  /home/kdy/home-assistant-core/include/ProtocolDriver.hpp \
  /home/kdy/home-assistant-core/include/DatabaseManager.hpp \
  /usr/include/sqlite3.h /usr/include/c++/15/algorithm \
@@ -210,7 +211,6 @@ CMakeFiles/HomeAssistantCore.dir/src/HTTPServer.cpp.o: \
  /usr/include/c++/15/bits/stl_heap.h \
  /usr/include/c++/15/bits/uniform_int_dist.h \
  /usr/include/c++/15/pstl/glue_algorithm_defs.h \
- /home/kdy/home-assistant-core/include/DriverType.hpp \
  /home/kdy/home-assistant-core/include/IMessageSender.hpp \
  /home/kdy/home-assistant-core/src/httplib.h /usr/include/arpa/inet.h \
  /usr/include/netinet/in.h /usr/include/x86_64-linux-gnu/sys/socket.h \

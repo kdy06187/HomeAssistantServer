@@ -267,10 +267,9 @@ CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o: \
  /usr/include/c++/15/iostream \
  /home/kdy/home-assistant-core/include/Device.hpp \
  /home/kdy/home-assistant-core/include/IDeviceDriver.hpp \
- /home/kdy/home-assistant-core/include/DatabaseManager.hpp \
- /usr/include/sqlite3.h \
  /home/kdy/home-assistant-core/include/DriverType.hpp \
- /usr/local/include/simpleble/SimpleBLE.h \
+ /home/kdy/home-assistant-core/include/DatabaseManager.hpp \
+ /usr/include/sqlite3.h /usr/local/include/simpleble/SimpleBLE.h \
  /usr/local/include/simpleble/Adapter.h \
  /usr/local/include/simpleble/export.h \
  /usr/local/include/simpleble/Exceptions.h \

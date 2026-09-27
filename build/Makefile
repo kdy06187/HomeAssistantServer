@@ -225,6 +225,30 @@ src/MatterController.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/HomeAssistantCore.dir/build.make CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.s
 .PHONY : src/MatterController.cpp.s
 
+src/PCDriver.o: src/PCDriver.cpp.o
+.PHONY : src/PCDriver.o
+
+# target to build an object file
+src/PCDriver.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/HomeAssistantCore.dir/build.make CMakeFiles/HomeAssistantCore.dir/src/PCDriver.cpp.o
+.PHONY : src/PCDriver.cpp.o
+
+src/PCDriver.i: src/PCDriver.cpp.i
+.PHONY : src/PCDriver.i
+
+# target to preprocess a source file
+src/PCDriver.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/HomeAssistantCore.dir/build.make CMakeFiles/HomeAssistantCore.dir/src/PCDriver.cpp.i
+.PHONY : src/PCDriver.cpp.i
+
+src/PCDriver.s: src/PCDriver.cpp.s
+.PHONY : src/PCDriver.s
+
+# target to generate assembly for a file
+src/PCDriver.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/HomeAssistantCore.dir/build.make CMakeFiles/HomeAssistantCore.dir/src/PCDriver.cpp.s
+.PHONY : src/PCDriver.cpp.s
+
 src/TCPDriver.o: src/TCPDriver.cpp.o
 .PHONY : src/TCPDriver.o
 
@@ -294,6 +318,9 @@ help:
 	@echo "... src/MatterController.o"
 	@echo "... src/MatterController.i"
 	@echo "... src/MatterController.s"
+	@echo "... src/PCDriver.o"
+	@echo "... src/PCDriver.i"
+	@echo "... src/PCDriver.s"
 	@echo "... src/TCPDriver.o"
 	@echo "... src/TCPDriver.i"
 	@echo "... src/TCPDriver.s"

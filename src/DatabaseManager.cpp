@@ -1,6 +1,7 @@
 #include "DatabaseManager.hpp"
 #include <iostream>
-
+#include "DriverType.hpp"
+#include <sstream>
 bool DatabaseManager::init(const std::string& dbPath) {
     int rc = sqlite3_open(dbPath.c_str(), &db_);
     if (rc) {
@@ -12,7 +13,8 @@ bool DatabaseManager::init(const std::string& dbPath) {
                       "device_id TEXT PRIMARY KEY, "
                       "display_name TEXT, "
                       "protocol_type INTEGER, "
-                      "is_active INTEGER);";
+                      "is_active INTEGER, "
+                      "driverType TEXT);";
     char* errMsg = nullptr;
     rc = sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg);
     if (rc != SQLITE_OK) {
@@ -32,7 +34,7 @@ void DatabaseManager::close() {
 
 // 기기 저장하기 (INSERT)
 bool DatabaseManager::insertDevice(const Device& device) {
-    const char* sql = "INSERT OR REPLACE INTO devices (device_id, display_name, protocol_type, is_active) VALUES (?, ?, ?, ?);";
+    const char* sql = "INSERT OR REPLACE INTO devices (device_id, display_name, protocol_type, is_active, driverTypes) VALUES (?, ?, ?, ?, ?);";
     sqlite3_stmt* stmt;
 
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
@@ -46,6 +48,15 @@ bool DatabaseManager::insertDevice(const Device& device) {
     int isActive = (device.state == "ON" || device.state == "TURN_ON") ? 1 : 0;
     sqlite3_bind_int(stmt, 4, isActive);
 
+    std::string driverStr = "";
+    for (size_t i = 0; i < device.driver_types.size(); ++i) {
+        driverStr += std::to_string(static_cast<int>(device.driver_types[i]));
+        if (i != device.driver_types.size() - 1) {
+            driverStr += ","; // 마지막 요소가 아니면 쉼표 추가
+        }
+    }
+    sqlite3_bind_text(stmt, 5, driverStr.c_str(), -1, SQLITE_TRANSIENT);
+    
     bool success = (sqlite3_step(stmt) == SQLITE_DONE);
     sqlite3_finalize(stmt);
     return success;
@@ -54,7 +65,7 @@ bool DatabaseManager::insertDevice(const Device& device) {
 // 부팅 시 DB에서 전체 기기 읽어오기 (SELECT)
 std::vector<Device> DatabaseManager::loadAllDevices() {
     std::vector<Device> devices;
-    const char* sql = "SELECT device_id, display_name, protocol_type, is_active FROM devices;";
+    const char* sql = "SELECT device_id, display_name, protocol_type, is_active, driverTypes FROM devices;";
     sqlite3_stmt* stmt;
 
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) return devices;
@@ -67,6 +78,27 @@ std::vector<Device> DatabaseManager::loadAllDevices() {
         
         int isActive = sqlite3_column_int(stmt, 3);
         dev.state = (isActive == 1) ? "ON" : "OFF"; // 1/0을 다시 문자열로 복원
+        
+        const unsigned char* driverTypesText = sqlite3_column_text(stmt, 4);
+        if (driverTypesText != nullptr) {
+            std::string driverStr = reinterpret_cast<const char*>(driverTypesText);
+            
+            // 3. 쉼표(,)를 기준으로 문자열 분리 및 변환
+            std::stringstream ss(driverStr);
+            std::string token;
+            
+            while (std::getline(ss, token, ',')) {
+                if (!token.empty()) {
+                    try {
+                        int typeNum = std::stoi(token);
+                        dev.driver_types.push_back(static_cast<DriverType>(typeNum));
+                    } catch (const std::exception& e) {
+                        // 잘못된 문자열이 저장되어 있을 경우의 예외 처리
+                        std::cerr << "[DB] 드라이버 타입 파싱 에러: " << e.what() << '\n';
+                    }
+                }
+            }
+        }
 
         devices.push_back(dev);
     }

@@ -9,6 +9,7 @@
 #include "IDeviceDriver.hpp"
 #include "IMessageSender.hpp" // ProtocolDriver 대신 가벼운 인터페이스 사용
 #include "Device.hpp"
+#include <mutex>
 
 class DriverManager {
 public:
@@ -31,15 +32,17 @@ public:
     }
 
     // 기기 등록 완료 시: 예약된 드라이버를 꺼내어 최종 부착 (DeviceManager가 호출)
-    void attachReservedDrivers(Device& device, const std::string& id, IMessageSender* sender) {
+    void attachReservedDrivers(Device& device, const std::string& name, IMessageSender* sender) {
         std::lock_guard<std::mutex> lock(mutex_);
-        auto it = pending_drivers_.find(id);
+        auto it = pending_drivers_.find(name);
         
         if (it != pending_drivers_.end()) {
+            device.driver_types = it->second;
             // 기존에 만들어둔 순수 조립 함수를 재활용
             attachDriversToDevice(device, it->second, sender); 
             // 조립이 끝났으므로 예약 명단에서 삭제
             pending_drivers_.erase(it);
+            std::cout << "[DriverManager] 기기 [" << name << "] 드라이버 부착 완료" << std::endl;
         }
     }
 

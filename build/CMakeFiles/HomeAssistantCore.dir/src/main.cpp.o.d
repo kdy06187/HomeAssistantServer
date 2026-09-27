@@ -200,6 +200,7 @@ CMakeFiles/HomeAssistantCore.dir/src/main.cpp.o: \
  /usr/include/c++/15/pstl/glue_memory_defs.h \
  /usr/include/c++/15/pstl/execution_defs.h \
  /home/kdy/home-assistant-core/include/IDeviceDriver.hpp \
+ /home/kdy/home-assistant-core/include/DriverType.hpp \
  /home/kdy/home-assistant-core/include/ProtocolDriver.hpp \
  /home/kdy/home-assistant-core/include/DatabaseManager.hpp \
  /usr/include/c++/15/algorithm /usr/include/c++/15/bits/stl_algo.h \
@@ -207,7 +208,6 @@ CMakeFiles/HomeAssistantCore.dir/src/main.cpp.o: \
  /usr/include/c++/15/bits/stl_heap.h \
  /usr/include/c++/15/bits/uniform_int_dist.h \
  /usr/include/c++/15/pstl/glue_algorithm_defs.h \
- /home/kdy/home-assistant-core/include/DriverType.hpp \
  /home/kdy/home-assistant-core/include/IMessageSender.hpp \
  /home/kdy/home-assistant-core/include/TCPDriver.hpp \
  /home/kdy/home-assistant-core/include/../src/json.hpp \
@@ -354,4 +354,6 @@ CMakeFiles/HomeAssistantCore.dir/src/main.cpp.o: \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/Optional.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/lib/core/InPlace.h \
  /home/kdy/home-assistant-core/third_party/connectedhomeip/src/setup_payload/ManualSetupPayloadParser.h \
- /home/kdy/home-assistant-core/include/HTTPServer.hpp
+ /home/kdy/home-assistant-core/include/HTTPServer.hpp \
+ /home/kdy/home-assistant-core/include/DriverManager.hpp \
+ /home/kdy/home-assistant-core/include/PCDriver.hpp
