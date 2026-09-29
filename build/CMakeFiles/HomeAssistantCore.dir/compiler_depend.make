@@ -2762,6 +2762,7 @@ HomeAssistantCore: /home/kdy/home-assistant-core/third_party/connectedhomeip/out
   CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o \
   CMakeFiles/HomeAssistantCore.dir/src/HTTPServer.cpp.o \
   CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o \
+  CMakeFiles/HomeAssistantCore.dir/src/PCDriver.cpp.o \
   CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o \
   CMakeFiles/HomeAssistantCore.dir/src/main.cpp.o
 
@@ -4105,6 +4106,8 @@ CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o:
 /usr/include/arpa/nameser.h:
 
 /usr/include/asm-generic/param.h:
+
+CMakeFiles/HomeAssistantCore.dir/src/PCDriver.cpp.o:
 
 /usr/lib/x86_64-linux-gnu/libglib-2.0.so:
 

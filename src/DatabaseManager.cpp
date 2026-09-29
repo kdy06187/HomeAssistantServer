@@ -14,7 +14,7 @@ bool DatabaseManager::init(const std::string& dbPath) {
                       "display_name TEXT, "
                       "protocol_type INTEGER, "
                       "is_active INTEGER, "
-                      "driverType TEXT);";
+                      "driverTypes TEXT);";
     char* errMsg = nullptr;
     rc = sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &errMsg);
     if (rc != SQLITE_OK) {
@@ -36,7 +36,7 @@ void DatabaseManager::close() {
 bool DatabaseManager::insertDevice(const Device& device) {
     const char* sql = "INSERT OR REPLACE INTO devices (device_id, display_name, protocol_type, is_active, driverTypes) VALUES (?, ?, ?, ?, ?);";
     sqlite3_stmt* stmt;
-
+    std::cout << "[DB] 기기 저장: " << device.id << std::endl;
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
 
     // Device 객체의 데이터를 SQL 문장에 바인딩
@@ -56,9 +56,12 @@ bool DatabaseManager::insertDevice(const Device& device) {
         }
     }
     sqlite3_bind_text(stmt, 5, driverStr.c_str(), -1, SQLITE_TRANSIENT);
-    
     bool success = (sqlite3_step(stmt) == SQLITE_DONE);
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+        std::cerr << "[DB 에러] 기기 저장 실패: " << sqlite3_errmsg(db_) << "\n";
+    }
     sqlite3_finalize(stmt);
+    
     return success;
 }
 
@@ -68,7 +71,10 @@ std::vector<Device> DatabaseManager::loadAllDevices() {
     const char* sql = "SELECT device_id, display_name, protocol_type, is_active, driverTypes FROM devices;";
     sqlite3_stmt* stmt;
 
-    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) return devices;
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "[DB 로드 에러] 쿼리 준비 실패: " << sqlite3_errmsg(db_) << '\n';
+        return devices;
+    }
 
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         Device dev;

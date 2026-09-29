@@ -312,3 +312,12 @@ json TCPDriver::sendAndReceive(const std::string& deviceId, const json& requestJ
     return lastValidJson;
       
 }
+void TCPDriver::SendCommandTo(const std::string& target_id, const std::string& payload) {
+    if (target_id == "ALL") {
+        for (const auto& pair : client_sockets_) {
+            this->sendCommand(pair.first, payload);
+        }
+        return;
+    }
+    this->sendCommand(target_id, payload);
+}

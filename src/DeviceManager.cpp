@@ -17,8 +17,9 @@ void DeviceManager::initFromDatabase(){
         
         // 1. 이 기기가 사용하는 통신 프로토콜 드라이버(메신저) 찾기
         auto driverIt = drivers_.find(dev.protocol_type);
-        
+        std::cout << "[DeviceManager] DB에서 기기 로드 중: " << dev.name << " (" << dev.id << ") - 프로토콜: " << getProtocolString(dev.protocol_type) << std::endl;
         if (driverIt != drivers_.end()) {
+            std::cout << "[DeviceManager] 기기 로드 중: " << dev.name << " (" << dev.id << ") - 프로토콜: " << getProtocolString(dev.protocol_type) << std::endl;
             IMessageSender* sender = dynamic_cast<IMessageSender*>(driverIt->second);
             
             // 2. 조립할 부품(driver_types)이 있고, 발송기(sender)가 정상적으로 찾아졌다면 조립!

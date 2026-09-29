@@ -20,21 +20,16 @@ int main() {
         return 1;
     }
     std::cout << "✅ 데이터베이스 로드 완료!" << std::endl;
-    DriverManager::getInstance().registerDriver(DriverType::PC_DRIVER, [](IMessageSender* sender) {
-        return std::make_shared<PCDriver>(sender);
-    });
     // 1. 시스템 두뇌(DeviceManager) 가져오기
     DeviceManager& manager = DeviceManager::getInstance();
-    manager.initFromDatabase();
-    manager.startHealthCheck();
     // manager.startEnergyTimer(); // 전력량 수집 타이머 시작
     // 2. TCP 드라이버 생성 및 포트 8080으로 서버 시작
     TCPDriver* tcpDriver = new TCPDriver(manager);
     tcpDriver->startServer(8080);
-
+    
     // 3. DeviceManager에 드라이버 등록
     manager.registerDriver(ProtocolType::TCP_DIY, tcpDriver);
-
+    
     // MatterController 생성 및 초기화
     MatterController* matterController = new MatterController(manager);
     if (matterController->Initialize()) {
@@ -43,8 +38,13 @@ int main() {
         std::cerr << "[Main] MatterController 초기화 실패!" << std::endl;
     }
     std::this_thread::sleep_for(std::chrono::seconds(3));
+    DriverManager::getInstance().registerDriver(DriverType::PC_DRIVER, [&tcpDriver](IMessageSender* sender) {
+        return std::make_shared<PCDriver>(tcpDriver);
+    });
     manager.registerDriver(ProtocolType::MATTER, matterController);
-
+    
+    manager.startHealthCheck();
+    manager.initFromDatabase();
     HTTPServer httpServer(manager, 8000);
     httpServer.start();
 

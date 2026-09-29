@@ -2770,6 +2770,7 @@ HomeAssistantCore
  /home/kdy/home-assistant-core/build/CMakeFiles/HomeAssistantCore.dir/src/DeviceManager.cpp.o
  /home/kdy/home-assistant-core/build/CMakeFiles/HomeAssistantCore.dir/src/HTTPServer.cpp.o
  /home/kdy/home-assistant-core/build/CMakeFiles/HomeAssistantCore.dir/src/MatterController.cpp.o
+ /home/kdy/home-assistant-core/build/CMakeFiles/HomeAssistantCore.dir/src/PCDriver.cpp.o
  /home/kdy/home-assistant-core/build/CMakeFiles/HomeAssistantCore.dir/src/TCPDriver.cpp.o
  /home/kdy/home-assistant-core/build/CMakeFiles/HomeAssistantCore.dir/src/main.cpp.o
 

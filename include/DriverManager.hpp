@@ -57,6 +57,7 @@ public:
                 std::cerr << "[DriverManager] ⚠️ 등록되지 않은 드라이버 타입 번호입니다: " << static_cast<int>(type) << "\n";
             }
         }
+        std::cout << "[DriverManager] 기기 [" << device.name << "]에 " << device.attached_drivers.size() << "개의 드라이버 부착 완료" << std::endl;
     }
 
     // 3. 기기에 부착된 드라이버들을 순회하며 제어 명령 실행을 지시

@@ -20,7 +20,7 @@ DriverResult PCDriver::handleCommand(const Device& device, const std::string& co
                 "value": "SHUTDOWN"
             })";
     
-            pc_messenger_->SendCommandTo("PC_PYTHON_CLIENT", payload);
+            pc_messenger_->SendCommandTo("ALL", payload);
         }   
 
         return { true, 45 };
