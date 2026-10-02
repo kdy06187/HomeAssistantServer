@@ -12,6 +12,10 @@ DriverResult PCDriver::handleCommand(const Device& device, const std::string& co
     std::cout << "[PCDriver] 명령 수신: " << command << " (Device ID: " << device.id << ")\n";
     // OFF 명령일 때만 가로채서 특수 시퀀스 실행
     if (command == "OFF") {
+        if (device.status == false) { 
+            std::cout << "[PCDriver] 이미 꺼져있으므로 명령을 무시합니다.\n";
+            return { false, 0 }; // 0초 대기
+        }
         std::cout << "[PCDriver] PC 끄기 시퀀스 시작 (Device ID: " << device.id << ")\n";
         if (pc_messenger_) {
             std::string payload = R"({

@@ -10,8 +10,9 @@
 #include "DriverManager.hpp"
 #include "PCDriver.hpp"
 #include "IMessageSender.hpp"
-
+#include <csignal> // 상단에 추가
 int main() {
+    signal(SIGPIPE, SIG_IGN);
     std::cout << "=== 🏠 홈 어시스턴트 코어 부팅 ===" << std::endl;
 
     // 0. 데이터베이스 준비

@@ -280,7 +280,7 @@ json TCPDriver::sendAndReceive(const std::string& deviceId, const json& requestJ
     };
 
     std::string packet = requestJson.dump() + "\n";
-    if (send(socket_fd, packet.c_str(), packet.length(), 0) < 0) {
+    if (send(socket_fd, packet.c_str(), packet.length(), MSG_NOSIGNAL) < 0) {
         return cleanupSocket();
     }
 
