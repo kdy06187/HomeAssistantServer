@@ -42,7 +42,9 @@ public:
     bool unpairDevice(std::string deviceId) override;
     std::string readDeviceState(std::string deviceId, bool isManualRequest) override;
 
-    bool removeDeviceRegistration(uint64_t nodeId);
+    bool removeDeviceRegistration(const std::string& serialNumber);
+
+    
 
     std::string getPowerUsage(std::string deviceId, bool isManualRequest = false);
     std::string getCumulativeEnergy(std::string deviceId, bool isManualRequest = false);
@@ -59,12 +61,15 @@ private:
     std::string executeCommandWithErrorResponse(const std::string& cmd, const std::string& deviceId);
     void onDevicePairingComplete(uint64_t nodeId, const std::string& deviceName);
     bool checkDeviceRegistered(uint64_t nodeId);
-    void saveDeviceRegistration(uint64_t nodeId);
+    void saveDeviceRegistration(const std::string& serialNumber,uint64_t nodeId);
     std::string mConfigFilePath;
 
     // 페어링 중인 기기의 NodeId를 저장
     std::unordered_set<uint64_t> mPairingNodes;
-    
+
+    std::unordered_map<std::string, uint64_t> mSerialToNodeId;
+    std::string getDeviceSerialNumber(uint64_t nodeId);
+    std::uint64_t getNodeId(const std::string& serialNumber);
     // 오프라인 상태인 기기의 NodeId(문자열)와 타임아웃 발생 시간을 기록
     std::unordered_map<std::string, std::chrono::steady_clock::time_point> mOfflineNodes;
 };

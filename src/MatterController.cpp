@@ -19,6 +19,20 @@ MatterController::~MatterController() {
 
 // 초기화
 bool MatterController::Initialize(){
+    std::ifstream file(mConfigFilePath);
+    std::string line;
+    
+    while (std::getline(file, line)) {
+        size_t commaPos = line.find(',');
+        if (commaPos != std::string::npos) {
+            std::string serial = line.substr(0, commaPos);
+            std::string nodeStr = line.substr(commaPos + 1);
+            uint64_t nodeId = std::stoull(nodeStr);
+            
+            mSerialToNodeId[serial] = nodeId;
+            
+        }
+    }
     std::cout << "[MatterController] 초기화 완료" << std::endl;
     return true;
 }
@@ -93,7 +107,8 @@ std::string MatterController::executeCommandWithErrorResponse(const std::string&
 
     return output; 
 }
-bool MatterController::removeDeviceRegistration(uint64_t deviceId) {
+bool MatterController::removeDeviceRegistration(const std::string& serialNumber) {
+    uint64_t deviceId = getNodeId(serialNumber);
     std::string deviceIdStr = std::to_string(deviceId);
 
     // 방어막(캐시) 명부에서 기기 정보 즉시 완전 삭제
@@ -107,9 +122,13 @@ bool MatterController::removeDeviceRegistration(uint64_t deviceId) {
     
     if (fileIn.is_open()) {
         while (std::getline(fileIn, line)) {
-            // 삭제하려는 nodeId가 아닌 줄만 백업해 둠
-            if (line != std::to_string(deviceId)) {
-                lines.push_back(line);
+            size_t commaPos = line.find(',');
+            if (commaPos != std::string::npos) {
+                std::string savedSerial = line.substr(0, commaPos);
+                // 삭제하려는 시리얼 넘버와 다를 때만 백업
+                if (savedSerial != serialNumber) {
+                    lines.push_back(line);
+                }
             }
         }
         fileIn.close();
@@ -136,23 +155,27 @@ bool MatterController::removeDeviceRegistration(uint64_t deviceId) {
             std::cout << "[MatterController] 기기(" << deviceIdStr << ") 정상 페어링 해제 완료" << std::endl;
         }
     }).detach();
-
+    mSerialToNodeId.erase(serialNumber); // 시리얼 넘버 매핑도 제거
     return true;
 }
 bool MatterController::checkDeviceRegistered(uint64_t nodeId) {
     std::ifstream file(mConfigFilePath);
     std::string line;
     while (std::getline(file, line)) {
-        if (line == std::to_string(nodeId)) {
-            return true; // 파일에 Node ID가 존재하면 true
+        size_t commaPos = line.find(',');
+        if (commaPos != std::string::npos) {
+            std::string savedNodeId = line.substr(commaPos + 1);
+            if (savedNodeId == std::to_string(nodeId)) {
+                return true; // 파일에 해당 Node ID가 존재하면 true
+            }
         }
     }
     return false;
 }
 
-void MatterController::saveDeviceRegistration(uint64_t nodeId) {
+void MatterController::saveDeviceRegistration(const std::string& serialNumber, uint64_t nodeId) {
     std::ofstream file(mConfigFilePath, std::ios::app); // 파일 끝에 추가 모드
-    file << nodeId << "\n";
+    file << serialNumber << "," << nodeId << "\n";
 }
 //기기 등록
 bool MatterController::commissionDevice(uint64_t nodeId, std::string name,const std::string& manualPincode,
@@ -206,6 +229,32 @@ bool MatterController::commissionDevice(uint64_t nodeId, std::string name,const 
     return isSuccess;
 }
 
+std::string MatterController::getDeviceSerialNumber(uint64_t nodeId) {
+    std::cout << "[MatterController] 기기 시리얼 넘버 조회 중... (NodeID: " << nodeId << ")" << std::endl;
+    
+    // chip-tool basic 클러스터 사용
+    std::string cmd = mChipToolPath + " basicinformation read serial-number " + std::to_string(nodeId) + " 0 2>&1";
+    std::string output = executeCommandWithOutput(cmd);
+
+    // 출력 로그에서 Data: 문자열 추출
+    size_t pos = output.find("Data:");
+    if (pos != std::string::npos) {
+        std::string serial = output.substr(pos + 5);
+        // 불필요한 공백, 따옴표, 줄바꿈 완전 제거
+        serial.erase(std::remove(serial.begin(), serial.end(), '\"'), serial.end());
+        serial.erase(std::remove(serial.begin(), serial.end(), ' '), serial.end());
+        serial.erase(std::remove(serial.begin(), serial.end(), '\n'), serial.end());
+        serial.erase(std::remove(serial.begin(), serial.end(), '\r'), serial.end());
+        
+        if (!serial.empty()) {
+            return serial; // 예: "PLUG-1234ABCD"
+        }
+    }
+    
+    // 시리얼 넘버를 지원하지 않는 기기일 경우, 안전장치로 NodeId 기반의 문자열 반환
+    return "UNKNOWN_SERIAL_" + std::to_string(nodeId);
+}
+
 // 기기 제어 Turn on
 bool MatterController::turnOn(uint64_t nodeId,uint16_t endpointId){
     if (mPairingNodes.count(nodeId) > 0) {
@@ -242,7 +291,9 @@ bool MatterController::turnOff(uint64_t nodeId,uint16_t endpointId){
 
 // 인터페이스 구현
 bool MatterController::sendCommand(std::string deviceId, std::string command){
-    uint64_t nodeId = std::stoull(deviceId);
+    
+    uint64_t nodeId = getNodeId(deviceId);
+
     if(command == "ON"|| command == "TURN_ON"){
         return turnOn(nodeId,1);
     } else if(command == "OFF"|| command == "TURN_OFF"){
@@ -256,13 +307,15 @@ bool MatterController::commissionDevice(std::string name, std::string payload, c
 }
 void MatterController::onDevicePairingComplete(uint64_t nodeId, const std::string& deviceName) {
     std::cout << "[MatterController] 기기 페어링 완료: NodeId=" << nodeId << ", DeviceName=" << deviceName << std::endl;
-    saveDeviceRegistration(nodeId);
-    std::string newId = std::to_string(nodeId);
-    mDeviceManager.addDevice(newId, deviceName, ProtocolType::MATTER,this);
+    std::string serialNumber = getDeviceSerialNumber(nodeId);
+    mSerialToNodeId[serialNumber] = nodeId; // 시리얼 넘버와 NodeId 매핑 저장
+    
+    saveDeviceRegistration(serialNumber, nodeId);
+    mDeviceManager.addDevice(serialNumber, deviceName, ProtocolType::MATTER,this);
 }
 bool MatterController::unpairDevice(std::string deviceId){
     std::cout << "[MatterController] Matter 기기 페어링 해제 : NodeId = " << deviceId << std::endl;
-    bool success = this->removeDeviceRegistration(std::stoull(deviceId));
+    bool success = this->removeDeviceRegistration(deviceId);
     return success;
 }
 std::string MatterController::readDeviceState(std::string deviceId, bool isManualRequest){
@@ -271,7 +324,7 @@ std::string MatterController::readDeviceState(std::string deviceId, bool isManua
     deviceId.erase(std::remove(deviceId.begin(), deviceId.end(), '\"'), deviceId.end());
     deviceId.erase(std::remove(deviceId.begin(), deviceId.end(), ' '), deviceId.end());
 
-    uint64_t nodeId = std::stoull(deviceId);
+    uint64_t nodeId = getNodeId(deviceId);
 
     // 기기가 현재 페어링 중이면 즉시 스킵
     if (mPairingNodes.count(nodeId) > 0) {
@@ -307,7 +360,7 @@ std::string MatterController::readDeviceState(std::string deviceId, bool isManua
     return "UNKNOWN";
 }
 std::string MatterController::getPowerUsage(std::string deviceId, bool isManualRequest){
-    uint64_t nodeId = std::stoull(deviceId);
+    uint64_t nodeId = getNodeId(deviceId);
 
     // 기기가 현재 페어링 중이면 스킵
     if (mPairingNodes.count(nodeId) > 0) return "PAIRING";
@@ -346,10 +399,11 @@ std::string MatterController::getPowerUsage(std::string deviceId, bool isManualR
     return result;
 }
 std::string MatterController::getCumulativeEnergy(std::string deviceId, bool isManualRequest){
-    std::cout << "[MatterController] 기기 전력량(누적) 조회 요청 : NodeId = " << deviceId << std::endl;
-    std::string cmd = mChipToolPath + " electricalenergymeasurement read cumulative-energy-imported " + deviceId + " 1";
+    std::string nodeId = std::stoull(getNodeId(deviceId));
+    std::cout << "[MatterController] 기기 전력량(누적) 조회 요청 : NodeId = " << nodeId << std::endl;
+    std::string cmd = mChipToolPath + " electricalenergymeasurement read cumulative-energy-imported " + nodeId + " 1";
     
-    std::string output = this->executeCommandWithErrorResponse(cmd, deviceId);
+    std::string output = this->executeCommandWithErrorResponse(cmd, nodeId);
 
     if (output == "OFFLINE" || output == "UNKNOWN") return output;
 
@@ -374,4 +428,11 @@ std::string MatterController::getCumulativeEnergy(std::string deviceId, bool isM
         std::cout << "[MatterController] 누적 전력 : " << result << " mWh" << std::endl;
     }
     return result;
+}
+std::uint64_t MatterController::getNodeId(const std::string& serialNumber) {
+    auto it = mSerialToNodeId.find(serialNumber);
+    if (it != mSerialToNodeId.end()) {
+        return std::to_string(it->second);
+    }
+    return "UNKNOWN";
 }
