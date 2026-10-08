@@ -236,19 +236,35 @@ std::string MatterController::getDeviceSerialNumber(uint64_t nodeId) {
     std::string cmd = mChipToolPath + " basicinformation read serial-number " + std::to_string(nodeId) + " 0 2>&1";
     std::string output = executeCommandWithOutput(cmd);
 
-    // 출력 로그에서 Data: 문자열 추출
-    size_t pos = output.find("Data:");
-    if (pos != std::string::npos) {
-        std::string serial = output.substr(pos + 5);
-        // 불필요한 공백, 따옴표, 줄바꿈 완전 제거
-        serial.erase(std::remove(serial.begin(), serial.end(), '\"'), serial.end());
-        serial.erase(std::remove(serial.begin(), serial.end(), ' '), serial.end());
-        serial.erase(std::remove(serial.begin(), serial.end(), '\n'), serial.end());
-        serial.erase(std::remove(serial.begin(), serial.end(), '\r'), serial.end());
+    auto extractCleanString = [](const std::string& raw) {
+        std::string clean = "";
+        size_t start = raw.find_first_not_of(" \t\"\'"); // 앞쪽 공백/따옴표 무시
         
-        if (!serial.empty()) {
-            return serial; // 예: "PLUG-1234ABCD"
+        if (start != std::string::npos) {
+            for (size_t i = start; i < raw.length(); ++i) {
+                char c = raw[i];
+                // 공백, 줄바꿈, 따옴표, 또는 제어문자(ESC: \033 등)를 만나면 파싱 종료
+                if (std::isspace(c) || c == '\"' || c == '\'' || c == '\033' || c < 32) {
+                    break;
+                }
+                clean += c;
+            }
         }
+        return clean;
+    };
+
+    // 1. "SerialNumber:" 키워드 검색
+    size_t pos = output.find("SerialNumber:");
+    if (pos != std::string::npos) {
+        std::string serial = extractCleanString(output.substr(pos + 13));
+        if (!serial.empty()) return serial;
+    }
+
+    // 2. 폴백: "Data =" 형식 검색
+    pos = output.find("Data =");
+    if (pos != std::string::npos) {
+        std::string serial = extractCleanString(output.substr(pos + 6));
+        if (!serial.empty()) return serial;
     }
     
     // 시리얼 넘버를 지원하지 않는 기기일 경우, 안전장치로 NodeId 기반의 문자열 반환
@@ -328,20 +344,20 @@ std::string MatterController::readDeviceState(std::string deviceId, bool isManua
 
     // 기기가 현재 페어링 중이면 즉시 스킵
     if (mPairingNodes.count(nodeId) > 0) {
-        std::cout << "[MatterController] 기기(" << deviceId << ") 페어링 중. 헬스체크 스킵." << std::endl;
+        std::cout << "[MatterController] 기기(" << nodeId << ") 페어링 중. 헬스체크 스킵." << std::endl;
         return "PAIRING";
     }
 
     // 자동 헬스체크인데 기기가 오프라인 명부에 있다면 쉘 명령 실행 스킵
-    if (!isManualRequest && mOfflineNodes.count(deviceId) > 0) {
-        std::cout << "[MatterController] 기기(" << deviceId << ") 오프라인 상태. 헬스체크 스킵." << std::endl;
+    if (!isManualRequest && mOfflineNodes.count(std::to_string(nodeId)) > 0) {
+        std::cout << "[MatterController] 기기(" << nodeId << ") 오프라인 상태. 헬스체크 스킵." << std::endl;
         return "OFFLINE";
     }
 
-    std::cout << "[MatterController] 기기 상태 읽기 요청 : NodeId = " << deviceId << std::endl;
-    std::string cmd = mChipToolPath + " onoff read on-off " + deviceId + " 1 2>&1";
+    std::cout << "[MatterController] 기기 상태 읽기 요청 : NodeId = " << nodeId << std::endl;
+    std::string cmd = mChipToolPath + " onoff read on-off " + std::to_string(nodeId) + " 1 2>&1";
     try{
-        std::string output = this->executeCommandWithErrorResponse(cmd, deviceId);
+        std::string output = this->executeCommandWithErrorResponse(cmd, std::to_string(nodeId));
         
         if (output == "OFFLINE" || output == "UNKNOWN") return output;
 
@@ -366,12 +382,12 @@ std::string MatterController::getPowerUsage(std::string deviceId, bool isManualR
     if (mPairingNodes.count(nodeId) > 0) return "PAIRING";
 
     // 오프라인 기기의 자동 조회 스킵
-    if (!isManualRequest && mOfflineNodes.count(deviceId) > 0) return "OFFLINE";
+    if (!isManualRequest && mOfflineNodes.count(std::to_string(nodeId)) > 0) return "OFFLINE";
 
-    std::cout << "[MatterController] 기기 전력량(실시간) 조회 요청 : NodeId = " << deviceId << std::endl;
-    std::string cmd = mChipToolPath + " electricalpowermeasurement read active-power " + deviceId + " 1 2>&1";
+    std::cout << "[MatterController] 기기 전력량(실시간) 조회 요청 : NodeId = " << nodeId << std::endl;
+    std::string cmd = mChipToolPath + " electricalpowermeasurement read active-power " + std::to_string(nodeId) + " 1 2>&1";
     
-    std::string output = this->executeCommandWithErrorResponse(cmd, deviceId);
+    std::string output = this->executeCommandWithErrorResponse(cmd, std::to_string(nodeId));
 
     if (output == "OFFLINE" || output == "UNKNOWN") return output;
 
@@ -399,7 +415,7 @@ std::string MatterController::getPowerUsage(std::string deviceId, bool isManualR
     return result;
 }
 std::string MatterController::getCumulativeEnergy(std::string deviceId, bool isManualRequest){
-    std::string nodeId = std::stoull(getNodeId(deviceId));
+    std::string nodeId = std::to_string(getNodeId(deviceId));
     std::cout << "[MatterController] 기기 전력량(누적) 조회 요청 : NodeId = " << nodeId << std::endl;
     std::string cmd = mChipToolPath + " electricalenergymeasurement read cumulative-energy-imported " + nodeId + " 1";
     
@@ -432,7 +448,7 @@ std::string MatterController::getCumulativeEnergy(std::string deviceId, bool isM
 std::uint64_t MatterController::getNodeId(const std::string& serialNumber) {
     auto it = mSerialToNodeId.find(serialNumber);
     if (it != mSerialToNodeId.end()) {
-        return std::to_string(it->second);
+        return it->second;
     }
-    return "UNKNOWN";
+    return 0;
 }
