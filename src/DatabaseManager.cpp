@@ -153,6 +153,7 @@ bool DatabaseManager::initEnergyTable() {
     }
     return true;
 }
+
 bool DatabaseManager::updateEnergyStat(const std::string& deviceId, long current_mwh, long& out_real_total) {
     long db_real_total = 0;
     long db_last_plug = 0;

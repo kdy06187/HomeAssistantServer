@@ -45,7 +45,7 @@ public:
     }
     void startHealthCheck();
     void stopHealthCheck();
-
+    
     std::string getDeviceActivePower(std::string deviceId);
     std::string getDeviceTotalEnergy(std::string deviceId);
     bool getDeviceEnergyInfo(const std::string& deviceId, int& out_activePower_mW,long& out_real_total_mWh);

@@ -257,6 +257,7 @@ void DeviceManager::healthCheckRoutine() {
         std::cout << "[DeviceManager] 점검 완료.\n" << std::endl;
     }
 }
+
 std::string DeviceManager::getDeviceActivePower(std::string deviceId) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (devices_.find(deviceId) == devices_.end()) {
