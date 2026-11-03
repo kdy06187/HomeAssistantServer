@@ -59,7 +59,7 @@ bool TCPDriver::sendCommand(std::string device_id, std::string command){
     return false;
 }
 bool TCPDriver::commissionDevice(std::string name, std::string payload, const std::string& ssid, const std::string& password){
-    std::string server_ip = "192.168.219.108"; 
+    std::string server_ip = payload.empty() ? "192.168.219.109" : payload;
     int server_port = 8080;
 
     std::cout << "[TCPDriver] BLE 스캔 시작... " << std::endl;
