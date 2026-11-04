@@ -1,13 +1,15 @@
 #include "HTTPServer.hpp"
+#include "ApiAuth.hpp"
 #include "DeviceManager.hpp"
 #include "httplib.h"
 #include "json.hpp"
 #include <iostream>
+#include <utility>
 
 using json = nlohmann::json;
 
-HTTPServer::HTTPServer(DeviceManager& deviceManager, int port)
-    : mDeviceManager(deviceManager), mPort(port), mIsRunning(false) {
+HTTPServer::HTTPServer(DeviceManager& deviceManager, std::string apiToken, int port)
+    : mDeviceManager(deviceManager), mApiToken(std::move(apiToken)), mPort(port), mIsRunning(false) {
 }
 HTTPServer::~HTTPServer() {
     stop();
@@ -33,6 +35,19 @@ void HTTPServer::stop(){
 
 void HTTPServer::run(){
     httplib::Server svr;
+
+    // 모든 라우트보다 먼저 실행되므로, 새 라우트를 추가해도 인증이 자동 적용된다.
+    svr.set_pre_routing_handler([this](const httplib::Request& req, httplib::Response& res) {
+        if (ApiAuth::isAuthorized(req.get_header_value("Authorization"), mApiToken)) {
+            return httplib::Server::HandlerResponse::Unhandled; // 기존 라우트로 진행
+        }
+        // 제시된 토큰은 일부라도 로그에 남기지 않는다.
+        std::cerr << "[HTTPServer] 인증 실패: " << req.remote_addr << " " << req.method << " " << req.path << std::endl;
+        res.status = 401;
+        res.set_header("WWW-Authenticate", "Bearer");
+        res.set_content(R"({"error": "인증이 필요합니다."})", "application/json");
+        return httplib::Server::HandlerResponse::Handled;
+    });
     
     svr.Get("/api/devices", [this](const httplib::Request&, httplib::Response& res) {
         std::string jsonResponse = this->handleGetDevices();

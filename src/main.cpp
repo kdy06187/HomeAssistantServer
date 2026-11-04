@@ -10,10 +10,18 @@
 #include "DriverManager.hpp"
 #include "PCDriver.hpp"
 #include "IMessageSender.hpp"
+#include "ApiAuth.hpp"
 #include <csignal> // 상단에 추가
 int main() {
     signal(SIGPIPE, SIG_IGN);
     std::cout << "=== 🏠 홈 어시스턴트 코어 부팅 ===" << std::endl;
+
+    // 기기 드라이버를 띄우기 전에 확인해, 토큰이 없으면 아무것도 시작하지 않는다.
+    const auto apiToken = ApiAuth::loadToken("../config/api_token");
+    if (!apiToken) {
+        std::cerr << "❌ API 토큰 로드 실패! 서버를 시작하지 않습니다." << std::endl;
+        return 1;
+    }
 
     // 0. 데이터베이스 준비
     if (!DatabaseManager::getInstance().init("../db/home_assistant.db")) {
@@ -46,7 +54,7 @@ int main() {
     
     manager.startHealthCheck();
     manager.initFromDatabase();
-    HTTPServer httpServer(manager, 8000);
+    HTTPServer httpServer(manager, *apiToken, 8000);
     httpServer.start();
 
 
