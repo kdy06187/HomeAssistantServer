@@ -12,6 +12,23 @@
 #include <sys/wait.h>
 #include <fcntl.h>
 #include <unistd.h>
+
+namespace {
+    // 외부 프로그램 출력은 내용을 보장할 수 없으므로, 로그에 남기기 전에 비밀값을 가린다.
+    std::string redactSecrets(std::string text, const std::vector<std::string>& secrets) {
+        const std::string mask = "***";
+        for (const auto& secret : secrets) {
+            if (secret.empty()) continue; // 빈 문자열은 무한 반복을 일으키므로 건너뛴다.
+            size_t position = 0;
+            while ((position = text.find(secret, position)) != std::string::npos) {
+                text.replace(position, secret.size(), mask);
+                position += mask.size();
+            }
+        }
+        return text;
+    }
+}
+
 MatterController::MatterController(DeviceManager& deviceManager)
     : ProtocolDriver(deviceManager),
       mChipToolPath("../third_party/connectedhomeip/out/host/chip-tool"),
@@ -245,7 +262,7 @@ bool MatterController::commissionDevice(uint64_t nodeId, std::string name,const 
         }
         return true; 
     }
-    std::cout << "[MatterController] 기기 등록 시도: NodeId=" << nodeId << ", PinCode=" << manualPincode << std::endl;
+    std::cout << "[MatterController] 기기 등록 시도: NodeId=" << nodeId << std::endl;
     chip::SetupPayload payload;
     CHIP_ERROR err = chip::ManualSetupPayloadParser(manualPincode).populatePayload(payload);
     if (err != CHIP_NO_ERROR) {
@@ -275,7 +292,10 @@ bool MatterController::commissionDevice(uint64_t nodeId, std::string name,const 
         std::cout << "[MatterController] 커미셔닝 성공. 기기 정보를 내부 스토리지에 저장" << std::endl;
         isSuccess = true;
     } else {
-        std::cerr << "[MatterController] 커미셔닝 실패 (타임아웃 또는 에러): \n" << output << std::endl;
+        const std::string safeOutput = redactSecrets(output, {
+            wifiPassword, manualPincode, std::to_string(payload.setUpPINCode)
+        });
+        std::cerr << "[MatterController] 커미셔닝 실패 (타임아웃 또는 에러): \n" << safeOutput << std::endl;
         isSuccess = false;
     }
 

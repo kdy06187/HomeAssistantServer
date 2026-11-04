@@ -183,7 +183,8 @@ std::string HTTPServer::handleControlDevice(const std::string& requestBody){
 }
 
 std::string HTTPServer::handleCommissionDevice(const std::string& requestBody){
-    std::cout << "[HTTPServer] 기기 등록(POST) 요청 수신! Body: " << requestBody << std::endl;
+    // Body에 Wi-Fi 비밀번호와 페어링 코드가 있으므로 내용을 출력하지 않는다.
+    std::cout << "[HTTPServer] 기기 등록(POST) 요청 수신" << std::endl;
         
        try {
             // 들어온 문자열(req.body)을 JSON 객체로 파싱
@@ -221,7 +222,8 @@ std::string HTTPServer::handleCommissionDevice(const std::string& requestBody){
             }
         } catch (const json::exception& e) {
             // JSON 형식이 잘못되었을 때 (앱 개발자의 실수 방어)
-            std::cerr << "[HTTPServer] ❌ JSON 파싱 에러: " << e.what() << std::endl;
+            // e.what()에는 입력 일부가 포함될 수 있어 오류 번호만 출력한다.
+            std::cerr << "[HTTPServer] ❌ JSON 파싱 에러 (id: " << e.id << ")" << std::endl;
             return R"({"result": "error", "message": "잘못된 JSON 형식입니다."})";
         }
 }

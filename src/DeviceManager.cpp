@@ -142,7 +142,7 @@ bool DeviceManager::executeCommand(std::string id, std::string command){
 }
 bool DeviceManager::startCommissioning(ProtocolType type, std::string name, std::string payload
         , const std::string& ssid, const std::string& password, const std::vector<DriverType>& driverTypes){
-    std::cout << "[DeviceManager] 커미셔닝 시작: " << getProtocolString(type) << ", " << name << ", " << payload << std::endl;
+    std::cout << "[DeviceManager] 커미셔닝 시작: " << getProtocolString(type) << ", " << name << std::endl;
     auto driverIt = drivers_.find(type);
     if(driverIt != drivers_.end()){
         DriverManager::getInstance().reserveDrivers(name, driverTypes);
