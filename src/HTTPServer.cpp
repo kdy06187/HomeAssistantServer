@@ -8,6 +8,13 @@
 
 using json = nlohmann::json;
 
+namespace {
+    // REST로 받을 수 있는 명령. PCDriver의 종료 메시지는 이 경로를 거치지 않아 영향이 없다.
+    bool isAllowedControlCommand(const std::string& command) {
+        return command == "ON" || command == "OFF";
+    }
+}
+
 HTTPServer::HTTPServer(DeviceManager& deviceManager, std::string apiToken, int port)
     : mDeviceManager(deviceManager), mApiToken(std::move(apiToken)), mPort(port), mIsRunning(false) {
 }
@@ -146,6 +153,11 @@ std::string HTTPServer::handleControlDevice(const std::string& requestBody){
             // JSON에서 값을 추출
             std::string targetDeviceId = j["deviceId"];
             std::string command = j["command"];
+
+            if (!isAllowedControlCommand(command)) {
+                std::cerr << "[HTTPServer] 허용되지 않은 명령 거부: " << targetDeviceId << std::endl;
+                return R"({"result": "error", "message": "허용되지 않은 명령입니다."})";
+            }
             
             std::cout << "  ➔ 대상 기기: " << targetDeviceId << ", 명령: " << command << std::endl;
 
