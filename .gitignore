@@ -1,0 +1,10 @@
+gitignore
+# 빌드 산출물
+build/
+
+# 실행 데이터 (기기 정보, 전력량 기록)
+db/home_assistant.db
+config/registered_devices.txt
+
+# 로컬 도구 데이터
+.ua/
