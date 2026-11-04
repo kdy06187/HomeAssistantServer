@@ -7,6 +7,28 @@
 #include <ctime>
 #include <memory>
 #include <array>
+#include <cerrno>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+namespace {
+    // 외부 프로그램 출력은 내용을 보장할 수 없으므로, 로그에 남기기 전에 비밀값을 가린다.
+    std::string redactSecrets(std::string text, const std::vector<std::string>& secrets) {
+        const std::string mask = "***";
+        for (const auto& secret : secrets) {
+            if (secret.empty()) continue; // 빈 문자열은 무한 반복을 일으키므로 건너뛴다.
+            size_t position = 0;
+            while ((position = text.find(secret, position)) != std::string::npos) {
+                text.replace(position, secret.size(), mask);
+                position += mask.size();
+            }
+        }
+        return text;
+    }
+}
+
 MatterController::MatterController(DeviceManager& deviceManager)
     : ProtocolDriver(deviceManager),
       mChipToolPath("../third_party/connectedhomeip/out/host/chip-tool"),
@@ -68,6 +90,53 @@ std::string MatterController::executeCommandWithOutput(std::string cmd){
         result += buffer.data();
     }
     return result;
+}
+std::string MatterController::executeArgsWithOutput(const std::vector<std::string>& args){
+    // 멀티스레드 프로세스에서 fork한 자식은 malloc을 쓰면 교착될 수 있으므로, argv를 fork 전에 준비한다.
+    std::vector<char*> argv;
+    argv.reserve(args.size() + 1);
+    for (const auto& arg : args) {
+        argv.push_back(const_cast<char*>(arg.c_str()));
+    }
+    argv.push_back(nullptr);
+
+    int pipeFds[2];
+    if (pipe2(pipeFds, O_CLOEXEC) != 0) {
+        std::cerr << "[MatterController] 파이프 생성 실패" << std::endl;
+        return "";
+    }
+
+    pid_t childPid = fork();
+    if (childPid < 0) {
+        std::cerr << "[MatterController] 프로세스 생성 실패" << std::endl;
+        close(pipeFds[0]);
+        close(pipeFds[1]);
+        return "";
+    }
+    if (childPid == 0) {
+        // 자식: 기존 "2>&1"과 같게 stdout과 stderr를 파이프로 보낸다.
+        dup2(pipeFds[1], STDOUT_FILENO);
+        dup2(pipeFds[1], STDERR_FILENO);
+        execv(argv[0], argv.data());
+        _exit(127); // exec 실패. 부모의 버퍼를 비우지 않도록 _exit를 쓴다.
+    }
+
+    close(pipeFds[1]);
+    std::string output;
+    std::array<char, 128> buffer;
+    while (true) {
+        ssize_t readBytes = read(pipeFds[0], buffer.data(), buffer.size());
+        if (readBytes > 0) {
+            output.append(buffer.data(), static_cast<size_t>(readBytes));
+        } else if (readBytes == 0 || errno != EINTR) {
+            break;
+        }
+    }
+    close(pipeFds[0]);
+
+    int childStatus = 0;
+    while (waitpid(childPid, &childStatus, 0) < 0 && errno == EINTR) {} // 좀비 프로세스 방지
+    return output; // 성공 여부는 기존처럼 호출부에서 출력 문자열로 판단한다.
 }
 std::string MatterController::executeCommandWithErrorResponse(const std::string& cmd, const std::string& deviceId){
     std::string output = executeCommandWithOutput("timeout 5 " + cmd);
@@ -193,7 +262,7 @@ bool MatterController::commissionDevice(uint64_t nodeId, std::string name,const 
         }
         return true; 
     }
-    std::cout << "[MatterController] 기기 등록 시도: NodeId=" << nodeId << ", PinCode=" << manualPincode << std::endl;
+    std::cout << "[MatterController] 기기 등록 시도: NodeId=" << nodeId << std::endl;
     chip::SetupPayload payload;
     CHIP_ERROR err = chip::ManualSetupPayloadParser(manualPincode).populatePayload(payload);
     if (err != CHIP_NO_ERROR) {
@@ -201,16 +270,20 @@ bool MatterController::commissionDevice(uint64_t nodeId, std::string name,const 
         return false;
     }
    
-    std::string cmd = mChipToolPath + " pairing ble-wifi " + std::to_string(nodeId) + " " + wifiSsid + " " + wifiPassword + " " 
-            + std::to_string(payload.setUpPINCode) + " " + "3830"+ 
-            " --paa-trust-store-path ../paa_certs/paa-root-certs";
+    // SSID와 비밀번호는 REST 입력이므로 셸을 거치지 않는다.
+    // str: 접두사는 hex:로 시작하는 값이 16진수로 디코딩되는 것을 막는다.
+    const std::vector<std::string> pairingArgs = {
+        mChipToolPath, "pairing", "ble-wifi", std::to_string(nodeId),
+        "str:" + wifiSsid, "str:" + wifiPassword,
+        std::to_string(payload.setUpPINCode), "3830",
+        "--paa-trust-store-path", "../paa_certs/paa-root-certs"
+    };
 
     mPairingNodes.insert(nodeId);
 
     bool isSuccess = false;
     // 2. 에러 스트림 통합 및 결과 읽기 (executeCommand 대신 사용)
-    std::string cmdWithErr = cmd + " 2>&1";
-    std::string output = executeCommandWithOutput(cmdWithErr);
+    std::string output = executeArgsWithOutput(pairingArgs);
     
     // 3. 성공 키워드 검사 (chip-tool 페어링 성공 로그 기준)
     if (output.find("Device commissioning completed with success") != std::string::npos ||
@@ -219,7 +292,10 @@ bool MatterController::commissionDevice(uint64_t nodeId, std::string name,const 
         std::cout << "[MatterController] 커미셔닝 성공. 기기 정보를 내부 스토리지에 저장" << std::endl;
         isSuccess = true;
     } else {
-        std::cerr << "[MatterController] 커미셔닝 실패 (타임아웃 또는 에러): \n" << output << std::endl;
+        const std::string safeOutput = redactSecrets(output, {
+            wifiPassword, manualPincode, std::to_string(payload.setUpPINCode)
+        });
+        std::cerr << "[MatterController] 커미셔닝 실패 (타임아웃 또는 에러): \n" << safeOutput << std::endl;
         isSuccess = false;
     }
 

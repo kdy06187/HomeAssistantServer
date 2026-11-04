@@ -3,6 +3,7 @@
 #include "IMessageSender.hpp"
 #include <string>
 #include <cstdint>
+#include <vector>
 #include <thread>
 #include <unordered_set>
 #include <unordered_map>
@@ -58,6 +59,8 @@ private:
                           const std::string& wifiSsid, const std::string& wifiPassword);
     bool executeCommand(const std::string& cmd);
     std::string executeCommandWithOutput(std::string cmd);
+    // 셸을 거치지 않고 실행해 stdout과 stderr를 함께 반환한다. 외부 입력이 인자에 포함될 때 사용한다.
+    std::string executeArgsWithOutput(const std::vector<std::string>& args);
     std::string executeCommandWithErrorResponse(const std::string& cmd, const std::string& deviceId);
     void onDevicePairingComplete(uint64_t nodeId, const std::string& deviceName);
     bool checkDeviceRegistered(uint64_t nodeId);

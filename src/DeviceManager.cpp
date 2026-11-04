@@ -142,14 +142,14 @@ bool DeviceManager::executeCommand(std::string id, std::string command){
 }
 bool DeviceManager::startCommissioning(ProtocolType type, std::string name, std::string payload
         , const std::string& ssid, const std::string& password, const std::vector<DriverType>& driverTypes){
-    std::cout << "[DeviceManager] 커미셔닝 시작: " << getProtocolString(type) << ", " << name << ", " << payload << std::endl;
+    std::cout << "[DeviceManager] 커미셔닝 시작: " << getProtocolString(type) << ", " << name << std::endl;
     auto driverIt = drivers_.find(type);
     if(driverIt != drivers_.end()){
         DriverManager::getInstance().reserveDrivers(name, driverTypes);
-        driverIt->second->commissionDevice(name, payload, ssid, password);
-        std::cout << "[DeviceManager] " << getProtocolString(type) << " 커미셔닝 요청 완료" << std::endl;
-
-        return true;
+        const bool isCommissioned = driverIt->second->commissionDevice(name, payload, ssid, password);
+        std::cout << "[DeviceManager] " << getProtocolString(type) << " 커미셔닝 결과: "
+                  << (isCommissioned ? "성공" : "실패") << std::endl;
+        return isCommissioned;
     } else{
         std::cerr << "[DeviceManager] 에러 : " << getProtocolString(type) << " 드라이버를 찾을 수 없습니다 " << std::endl;
         return false;

@@ -6,7 +6,7 @@ class DeviceManager;
 
 class HTTPServer{
 public:
-    HTTPServer(DeviceManager& deviceManager,int port = 8000);
+    HTTPServer(DeviceManager& deviceManager, std::string apiToken, int port = 8000);
     ~HTTPServer();
 
     bool start();
@@ -14,6 +14,7 @@ public:
 
 private:
 DeviceManager& mDeviceManager;
+    std::string mApiToken;
     int mPort;
     std::atomic<bool> mIsRunning;
     std::thread mServerThread;

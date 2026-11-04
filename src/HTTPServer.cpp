@@ -1,13 +1,22 @@
 #include "HTTPServer.hpp"
+#include "ApiAuth.hpp"
 #include "DeviceManager.hpp"
 #include "httplib.h"
 #include "json.hpp"
 #include <iostream>
+#include <utility>
 
 using json = nlohmann::json;
 
-HTTPServer::HTTPServer(DeviceManager& deviceManager, int port)
-    : mDeviceManager(deviceManager), mPort(port), mIsRunning(false) {
+namespace {
+    // REST로 받을 수 있는 명령. PCDriver의 종료 메시지는 이 경로를 거치지 않아 영향이 없다.
+    bool isAllowedControlCommand(const std::string& command) {
+        return command == "ON" || command == "OFF";
+    }
+}
+
+HTTPServer::HTTPServer(DeviceManager& deviceManager, std::string apiToken, int port)
+    : mDeviceManager(deviceManager), mApiToken(std::move(apiToken)), mPort(port), mIsRunning(false) {
 }
 HTTPServer::~HTTPServer() {
     stop();
@@ -33,6 +42,19 @@ void HTTPServer::stop(){
 
 void HTTPServer::run(){
     httplib::Server svr;
+
+    // 모든 라우트보다 먼저 실행되므로, 새 라우트를 추가해도 인증이 자동 적용된다.
+    svr.set_pre_routing_handler([this](const httplib::Request& req, httplib::Response& res) {
+        if (ApiAuth::isAuthorized(req.get_header_value("Authorization"), mApiToken)) {
+            return httplib::Server::HandlerResponse::Unhandled; // 기존 라우트로 진행
+        }
+        // 제시된 토큰은 일부라도 로그에 남기지 않는다.
+        std::cerr << "[HTTPServer] 인증 실패: " << req.remote_addr << " " << req.method << " " << req.path << std::endl;
+        res.status = 401;
+        res.set_header("WWW-Authenticate", "Bearer");
+        res.set_content(R"({"error": "인증이 필요합니다."})", "application/json");
+        return httplib::Server::HandlerResponse::Handled;
+    });
     
     svr.Get("/api/devices", [this](const httplib::Request&, httplib::Response& res) {
         std::string jsonResponse = this->handleGetDevices();
@@ -131,6 +153,11 @@ std::string HTTPServer::handleControlDevice(const std::string& requestBody){
             // JSON에서 값을 추출
             std::string targetDeviceId = j["deviceId"];
             std::string command = j["command"];
+
+            if (!isAllowedControlCommand(command)) {
+                std::cerr << "[HTTPServer] 허용되지 않은 명령 거부: " << targetDeviceId << std::endl;
+                return R"({"result": "error", "message": "허용되지 않은 명령입니다."})";
+            }
             
             std::cout << "  ➔ 대상 기기: " << targetDeviceId << ", 명령: " << command << std::endl;
 
@@ -156,7 +183,8 @@ std::string HTTPServer::handleControlDevice(const std::string& requestBody){
 }
 
 std::string HTTPServer::handleCommissionDevice(const std::string& requestBody){
-    std::cout << "[HTTPServer] 기기 등록(POST) 요청 수신! Body: " << requestBody << std::endl;
+    // Body에 Wi-Fi 비밀번호와 페어링 코드가 있으므로 내용을 출력하지 않는다.
+    std::cout << "[HTTPServer] 기기 등록(POST) 요청 수신" << std::endl;
         
        try {
             // 들어온 문자열(req.body)을 JSON 객체로 파싱
@@ -194,7 +222,8 @@ std::string HTTPServer::handleCommissionDevice(const std::string& requestBody){
             }
         } catch (const json::exception& e) {
             // JSON 형식이 잘못되었을 때 (앱 개발자의 실수 방어)
-            std::cerr << "[HTTPServer] ❌ JSON 파싱 에러: " << e.what() << std::endl;
+            // e.what()에는 입력 일부가 포함될 수 있어 오류 번호만 출력한다.
+            std::cerr << "[HTTPServer] ❌ JSON 파싱 에러 (id: " << e.id << ")" << std::endl;
             return R"({"result": "error", "message": "잘못된 JSON 형식입니다."})";
         }
 }
