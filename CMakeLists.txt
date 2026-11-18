@@ -1,5 +1,15 @@
-cmake_minimum_required(VERSION 3.10)
+# FetchContent_MakeAvailable과 OBJECT 라이브러리 링크(3.12)를 쓰므로 3.14 이상이 필요하다
+cmake_minimum_required(VERSION 3.14)
 project(HomeAssistantCore VERSION 1.0)
+
+option(HAC_BUILD_TESTS  "단위 테스트(hac_tests) 빌드" ON)
+option(HAC_ENABLE_TSAN  "ThreadSanitizer 활성화" OFF)
+option(HAC_BUILD_SERVER "Matter/BLE가 필요한 서버 실행 파일 빌드" ON)
+
+# CHIP 정적 라이브러리는 TSan 계측이 안 되어 있어 섞으면 오탐·누락이 생긴다
+if(HAC_ENABLE_TSAN AND HAC_BUILD_SERVER)
+    message(FATAL_ERROR "HAC_ENABLE_TSAN=ON은 -DHAC_BUILD_SERVER=OFF와 함께 사용하세요.")
+endif()
 
 # C++17 표준 사용
 set(CMAKE_CXX_STANDARD 17)
@@ -7,105 +17,109 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 # 멀티스레드 라이브러리 찾기
 find_package(Threads REQUIRED)
-
 find_package(OpenSSL REQUIRED)
 
-find_package(simpleble REQUIRED)
+# 우리 대상에만 경고·TSan 옵션을 건다 (서드파티에는 적용하지 않는다)
+function(hac_apply_target_options target)
+    target_compile_options(${target} PRIVATE -Wall -Wextra)
+    if(HAC_ENABLE_TSAN)
+        target_compile_options(${target} PRIVATE -fsanitize=thread -g -O1)
+        target_link_options(${target} PRIVATE -fsanitize=thread)
+    endif()
+endfunction()
 
-# Matter SDK 경로 설정 (⚠️ 주의: 실제 학생님의 환경에 맞게 수정해야 합니다)
-set(MATTER_SDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/connectedhomeip") # Matter SDK 최상위 디렉토리
-set(MATTER_OUT_DIR "${MATTER_SDK_DIR}/out/host") # GN/Ninja로 빌드된 결과물(.a 파일들)이 있는 곳
-file(GLOB_RECURSE MATTER_LIBS 
-    "${MATTER_OUT_DIR}/lib/*.a" 
-    "${MATTER_OUT_DIR}/obj/*.a"
-)
-# message(FATAL_ERROR "🔥 찾은 Matter 라이브러리 개수 및 목록: ${MATTER_LIBS}")
-# 헤더 파일들이 있는 include 폴더를 경로에 추가
-include_directories(include)
-
-include_directories(
-    ${MATTER_SDK_DIR}/src/include
-    ${MATTER_SDK_DIR}/src/lib
-    ${MATTER_SDK_DIR}/src/controller
-    ${MATTER_SDK_DIR}/src
-)
-# 소스 파일 및 실행 파일(Target) 생성
-
-set(SOURCES
-    src/main.cpp
-    src/MatterController.cpp
-    src/HTTPServer.cpp 
-    src/TCPServer.cpp 
-    src/DeviceManager.cpp
-    src/TCPDriver.cpp
-    src/DatabaseManager.cpp
-)
-
-# 실행 파일 생성
-add_executable(${PROJECT_NAME} 
-    src/main.cpp
-    src/DeviceManager.cpp
-    src/TCPDriver.cpp
-    src/MatterController.cpp
-    src/HTTPServer.cpp
+# ---- hac_core: CHIP·BLE 없이 빌드되는 모듈 ----
+# OBJECT 라이브러리: 정적 라이브러리면 PCDriver의 정적 DriverRegistrar가 링커에 의해 빠질 수 있다
+add_library(hac_core OBJECT
+    src/ApiAuth.cpp
     src/DatabaseManager.cpp
     src/PCDriver.cpp
-    src/ApiAuth.cpp
 )
-target_include_directories(HomeAssistantCore PRIVATE
-    ${GLIB2_INCLUDE_DIRS}
+target_include_directories(hac_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(hac_core PUBLIC OpenSSL::Crypto sqlite3 Threads::Threads)
+hac_apply_target_options(hac_core)
 
-)
-target_link_libraries(${PROJECT_NAME} PRIVATE
-    -Wl,--start-group
-    ${MATTER_LIBS}
-    ${GLIB2_LIBRARIES}
-    -Wl,--end-group
-    simpleble
-)
-# SQLite DB와 스레드 라이브러리 연결
-target_link_libraries(${PROJECT_NAME} PRIVATE 
-    OpenSSL::SSL
-    OpenSSL::Crypto    
-    event
-    event_pthreads
-    Threads::Threads 
-    sqlite3
-    # Matter SDK에서 뽑아낸 정적 라이브러리들 (.a)
-    # (참고: 빌드 옵션에 따라 라이브러리 이름이 CHIP, CHIPController 등으로 다를 수 있습니다)
-    # ${MATTER_OUT_DIR}/libCHIP.a
+# ---- 서버 (Matter SDK, SimpleBLE 필요) ----
+if(HAC_BUILD_SERVER)
+    find_package(simpleble REQUIRED)
 
-    # 리눅스/BLE 통신에 필요한 시스템 라이브러리들
-    resolv # DNS 해석용
-    avahi-client
-    avahi-common
-    dbus-1
-    
-)
+    # Matter SDK 경로 설정 (환경에 맞게 수정해야 합니다)
+    set(MATTER_SDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/connectedhomeip") # Matter SDK 최상위 디렉토리
+    set(MATTER_OUT_DIR "${MATTER_SDK_DIR}/out/host") # GN/Ninja로 빌드된 결과물(.a 파일들)이 있는 곳
+    file(GLOB_RECURSE MATTER_LIBS
+        "${MATTER_OUT_DIR}/lib/*.a"
+        "${MATTER_OUT_DIR}/obj/*.a"
+    )
 
-# Matter용 리눅스 환경 매크로 스위치 켜기
-target_compile_definitions(HomeAssistantCore PRIVATE
-    CHIP_HAVE_CONFIG_H=1
-    CHIP_SYSTEM_CONFIG_USE_SOCKETS=1
-    CHIP_SYSTEM_CONFIG_USE_POSIX_SOCKETS=1
-)
-# 2. Matter SDK 헤더 파일 탐색 경로 (Include Directories)
-# =======================================================
-target_include_directories(HomeAssistantCore PRIVATE
-    ${MATTER_SDK_DIR}/src
-    ${MATTER_SDK_DIR}/src/include
-    
-    
-    
-    ${MATTER_SDK_DIR}/zzz_generated/app-common
-    ${MATTER_SDK_DIR}/out/host/gen/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    # 임시 묶음: 아직 CHIP에서 분리 전인 모듈. 인터페이스 분리 후 hac_core/hac_drivers로 해체한다
+    add_library(hac_legacy OBJECT
+        src/DeviceManager.cpp
+        src/HTTPServer.cpp
+        src/TCPDriver.cpp
+        src/MatterController.cpp
+    )
+    target_include_directories(hac_legacy PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${MATTER_SDK_DIR}/src/include
+        ${MATTER_SDK_DIR}/src/lib
+        ${MATTER_SDK_DIR}/src/controller
+        ${MATTER_SDK_DIR}/src
+        ${MATTER_SDK_DIR}/zzz_generated/app-common
+        ${MATTER_SDK_DIR}/out/host/gen/include
+        ${MATTER_SDK_DIR}/third_party/nlassert/repo/include
+        ${MATTER_SDK_DIR}/third_party/nlio/repo/include
+        ${MATTER_SDK_DIR}/third_party/nlbyteorder/repo/include
+        ${MATTER_SDK_DIR}/third_party/inipp/repo/inipp
+        ${MATTER_SDK_DIR}/third_party/ot-commissioner/repo/include
+    )
+    # Matter용 리눅스 환경 매크로 스위치 켜기
+    target_compile_definitions(hac_legacy PUBLIC
+        CHIP_HAVE_CONFIG_H=1
+        CHIP_SYSTEM_CONFIG_USE_SOCKETS=1
+        CHIP_SYSTEM_CONFIG_USE_POSIX_SOCKETS=1
+    )
+    target_link_libraries(hac_legacy PUBLIC
+        -Wl,--start-group
+        ${MATTER_LIBS}
+        ${GLIB2_LIBRARIES}
+        -Wl,--end-group
+        simpleble
+        OpenSSL::SSL
+        OpenSSL::Crypto
+        event
+        event_pthreads
+        Threads::Threads
+        sqlite3
+        # 리눅스/BLE 통신에 필요한 시스템 라이브러리들
+        resolv # DNS 해석용
+        avahi-client
+        avahi-common
+        dbus-1
+    )
+    hac_apply_target_options(hac_legacy)
 
-    ${MATTER_SDK_DIR}/third_party/nlassert/repo/include
-    ${MATTER_SDK_DIR}/third_party/nlio/repo/include
-    ${MATTER_SDK_DIR}/third_party/nlbyteorder/repo/include
-    ${MATTER_SDK_DIR}/third_party/inipp/repo/inipp
-    ${MATTER_SDK_DIR}/third_party/ot-commissioner/repo/include
-)
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(GLIB2 REQUIRED glib-2.0 gio-2.0)# Matter Device Layer에서 종종 사용함
+    add_executable(HomeAssistantCore src/main.cpp)
+    target_link_libraries(HomeAssistantCore PRIVATE hac_core hac_legacy)
+    hac_apply_target_options(HomeAssistantCore)
+
+    # 아래 호출은 위 타깃 정의보다 뒤에 있어 GLIB2_* 변수가 위에서는 비어 있다.
+    # 기존 빌드와 동일한 결과를 유지하려고 순서를 그대로 둔다.
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(GLIB2 REQUIRED glib-2.0 gio-2.0) # Matter Device Layer에서 종종 사용함
+endif()
+
+# ---- 테스트 ----
+if(HAC_BUILD_TESTS)
+    include(FetchContent)
+    FetchContent_Declare(googletest
+        GIT_REPOSITORY https://github.com/google/googletest.git
+        GIT_TAG 063de7e9578f82b369302001269680b4b1553359 # v1.18.0
+    )
+    set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(googletest)
+
+    enable_testing()
+    include(GoogleTest)
+    add_subdirectory(tests)
+endif()

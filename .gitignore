@@ -9,3 +9,4 @@ config/api_token
 
 # 로컬 도구 데이터
 .ua/
+build-*/

@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>REQ-17 해설 - 테스트 가능한 빌드 구조</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--fg:#1d2330;--sub:#5b6477;--ac:#2f6fed;--code:#0f1523;--codefg:#e6edf7;--add:#12391f;--del:#4a1620;--bd:#dde1e8}
+@media (prefers-color-scheme:dark){:root{--bg:#10131a;--card:#181d28;--fg:#e6e9ef;--sub:#9aa4b8;--ac:#6b9cff;--code:#0a0d14;--bd:#2a3142}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.65 -apple-system,"Noto Sans KR",sans-serif}
+main{max-width:920px;margin:0 auto;padding:20px 14px 60px}
+h1{font-size:2rem;margin:.4em 0 .1em}
+h2{font-size:1.3rem;margin:0 0 .6em;color:var(--ac)}
+.lead{color:var(--sub);margin-bottom:20px}
+section{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:18px 20px;margin:16px 0}
+table{border-collapse:collapse;width:100%;font-size:.92rem;display:block;overflow-x:auto}
+th,td{border:1px solid var(--bd);padding:6px 10px;text-align:left;vertical-align:top}
+th{background:rgba(127,127,127,.12)}
+pre{background:var(--code);color:var(--codefg);padding:12px 14px;border-radius:8px;overflow-x:auto;font-size:.85rem;line-height:1.5;margin:8px 0}
+code{font-family:ui-monospace,Consolas,monospace}
+p code,li code,td code{background:rgba(127,127,127,.18);padding:1px 5px;border-radius:4px;font-size:.88em}
+.add{background:var(--add);display:block}.del{background:var(--del);display:block}
+.three{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+.three div{border:1px dashed var(--bd);border-radius:8px;padding:8px 10px;font-size:.92rem}
+.three b{display:block;color:var(--ac)}
+details{border:1px solid var(--bd);border-radius:8px;padding:6px 12px;margin:8px 0}
+summary{cursor:pointer;font-weight:600}
+svg{width:100%;height:auto;max-width:860px}
+svg text{fill:var(--fg);font-size:13px}
+svg .b{fill:var(--card);stroke:var(--ac);stroke-width:1.5}
+svg .w{fill:rgba(240,160,40,.15);stroke:#e0a030;stroke-width:1.5}
+svg .l{stroke:var(--sub);stroke-width:1.5;fill:none}
+</style>
+</head>
+<body>
+<main>
+<h1>REQ-17 해설</h1>
+<p class="lead">테스트를 붙일 수 있게 빌드를 쪼갠 변경 (3단계 1번, 학습 강도: 균형)</p>
+
+<section>
+<h2>1. 한눈에 보기</h2>
+<ul>
+<li><b>무엇</b>: 통짜 실행 파일 하나이던 빌드를 <code>hac_core</code> / <code>hac_legacy</code> / <code>HomeAssistantCore</code> / <code>hac_tests</code>로 나눴다.</li>
+<li><b>왜</b>: Matter(CHIP)·BLE 없이도 핵심 로직만 빨리 빌드해 단위 테스트를 돌리기 위해서다(REQ-17, ADR-004).</li>
+<li><b>안전</b>: 서버의 동작은 그대로다. 테스트는 현재 동작을 먼저 고정하는 안전망이다.</li>
+</ul>
+<table>
+<tr><th>파일</th><th>역할</th><th>변경 요약</th></tr>
+<tr><td><code>CMakeLists.txt</code></td><td>전체 빌드</td><td>옵션 3개(TESTS·TSAN·SERVER), 라이브러리 분리, 경고 함수, GoogleTest FetchContent</td></tr>
+<tr><td><code>tests/CMakeLists.txt</code></td><td>테스트 빌드</td><td>신규. <code>hac_tests</code>를 만들고 <code>gtest_discover_tests</code>로 ctest 연결</td></tr>
+<tr><td><code>tests/fakes/MockMessageSender.hpp</code></td><td>가짜 발송기</td><td>신규. GoogleMock으로 <code>IMessageSender</code> 흉내</td></tr>
+<tr><td><code>tests/unit/ApiAuthTest.cpp</code></td><td>토큰 검사 테스트</td><td>신규. 현재 동작 고정</td></tr>
+<tr><td><code>tests/unit/PCDriverTest.cpp</code></td><td>PC 드라이버 테스트</td><td>신규. OFF 시 45초 지연 등 6건</td></tr>
+</table>
+</section>
+
+<section>
+<h2>2. 흐름 그림 (의존 관계)</h2>
+<svg viewBox="0 0 860 300" role="img" aria-label="빌드 대상 의존 그림">
+<rect class="b" x="20" y="20" width="200" height="60" rx="8"/><text x="120" y="45" text-anchor="middle">hac_tests</text><text x="120" y="65" text-anchor="middle">(단위 테스트)</text>
+<rect class="b" x="330" y="20" width="200" height="60" rx="8"/><text x="430" y="45" text-anchor="middle">HomeAssistantCore</text><text x="430" y="65" text-anchor="middle">(main.cpp, 서버)</text>
+<rect class="b" x="300" y="200" width="260" height="75" rx="8"/><text x="430" y="224" text-anchor="middle" font-weight="bold">hac_core (OBJECT)</text><text x="430" y="244" text-anchor="middle">ApiAuth, DatabaseManager, PCDriver</text><text x="430" y="262" text-anchor="middle">CHIP·BLE 없음</text>
+<rect class="w" x="620" y="110" width="220" height="80" rx="8"/><text x="730" y="134" text-anchor="middle" font-weight="bold">hac_legacy (OBJECT)</text><text x="730" y="153" text-anchor="middle">DeviceManager, HTTPServer,</text><text x="730" y="170" text-anchor="middle">TCPDriver, MatterController</text>
+<rect class="b" x="620" y="215" width="220" height="60" rx="8"/><text x="730" y="240" text-anchor="middle">CHIP .a, SimpleBLE</text><text x="730" y="258" text-anchor="middle">(HAC_BUILD_SERVER=ON만)</text>
+<path class="l" d="M120 80 L120 235 L300 235"/>
+<path class="l" d="M430 80 L430 200"/>
+<path class="l" d="M530 60 L730 60 L730 110"/>
+<path class="l" d="M730 190 L730 215"/>
+<text x="140" y="228" font-size="12">링크</text>
+<text x="545" y="52" font-size="12">링크</text>
+</svg>
+<p><b>왜 hac_legacy가 있나?</b> <code>DeviceManager.cpp</code>가 <code>MatterController.hpp</code>를 포함하고 <code>dynamic_cast</code>를 써서 아직 CHIP과 분리되지 않는다. 그래서 임시 묶음으로 두고, 이후 4·6번에서 인터페이스를 분리하며 해체한다. 노란 칸은 "빚"이라는 표시다.</p>
+</section>
+
+<section>
+<h2>3. 코드 해설</h2>
+
+<h3>(a) OBJECT 라이브러리 — 자기 등록 패턴을 지킨다</h3>
+<pre><code><span class="del">- (이전) add_executable(HomeAssistantCore src/main.cpp ... src/PCDriver.cpp ...)</span>
+<span class="add">+ add_library(hac_core OBJECT src/ApiAuth.cpp src/DatabaseManager.cpp src/PCDriver.cpp)</span>
+<span class="add">+ target_link_libraries(HomeAssistantCore PRIVATE hac_core hac_legacy)</span>
+
+// src/PCDriver.cpp
+namespace {
+    const DriverRegistrar registrar(DriverType::PC_DRIVER, ...);  // 정적 객체
+}</code></pre>
+<ul>
+<li><b>무엇</b>: <code>PCDriver.cpp</code> 맨 아래의 정적 <code>DriverRegistrar</code>는 프로그램이 시작될 때 생성자가 돌며 자신을 등록한다(자기 등록 패턴).</li>
+<li><b>왜 OBJECT</b>: STATIC(.a)이면 링커는 "아무도 참조하지 않는 .o"를 통째로 뺀다. <code>PCDriver.o</code>를 아무도 직접 부르지 않으므로 등록 코드가 사라질 수 있다. OBJECT는 .o를 그대로 실행 파일에 넣어 이전 링크와 같다.</li>
+<li><b>빼면(STATIC으로 바꾸면)</b>: 컴파일·링크는 성공하는데 PC 드라이버가 등록되지 않는 조용한 버그가 된다.</li>
+<li><b>검증</b>: <code>nm</code>으로 <code>_GLOBAL__sub_I</code> 심볼이 남았는지 확인하고, <code>link.txt</code>의 입력 227개가 이전과 같은지 비교했다.</li>
+</ul>
+<pre><code>nm -C build/HomeAssistantCore | grep _GLOBAL__sub_I | grep -i PCDriver</code></pre>
+
+<h3>(b) 경고 옵션을 "우리 대상에만" — target 기반 CMake</h3>
+<pre><code><span class="del">- add_compile_options(-Wall -Wextra)   # 전역: googletest 등 모두에 적용됨</span>
+<span class="add">+ function(hac_apply_target_options target)
++     target_compile_options(${target} PRIVATE -Wall -Wextra)
++     if(HAC_ENABLE_TSAN)
++         target_compile_options(${target} PRIVATE -fsanitize=thread -g -O1)
++         target_link_options(${target} PRIVATE -fsanitize=thread)
++     endif()
++ endfunction()</span></code></pre>
+<ul>
+<li><b>무엇</b>: 옵션을 "대상(target)"에 붙인다. 모던 CMake의 핵심은 전역 변수 대신 대상마다 <code>PRIVATE/PUBLIC</code>으로 속성을 거는 것이다.</li>
+<li><b>왜</b>: 전역으로 걸면 FetchContent로 받은 googletest에도 경고·TSan이 걸려 남의 코드 경고가 쏟아진다.</li>
+<li><b>빼면</b>: 경고 옵션이 없어 N-15(경고 없음) 문제가 남는다.</li>
+</ul>
+
+<h3>(c) FetchContent + 커밋 해시 고정, TSan 강제 규칙</h3>
+<pre><code>FetchContent_Declare(googletest
+    GIT_REPOSITORY https://github.com/google/googletest.git
+    GIT_TAG 063de7e9578f82b369302001269680b4b1553359 # v1.18.0
+)
+
+if(HAC_ENABLE_TSAN AND HAC_BUILD_SERVER)
+    message(FATAL_ERROR "HAC_ENABLE_TSAN=ON은 -DHAC_BUILD_SERVER=OFF와 함께 사용하세요.")
+endif()</code></pre>
+<ul>
+<li><b>왜 해시</b>: 태그는 옮겨질 수 있지만 커밋 해시는 불변이다. 누가 언제 빌드해도 같은 코드가 받아져 재현 가능한 빌드가 된다. 라이선스는 BSD-3(상업·학습 모두 사용 가능, 고지 의무).</li>
+<li><b>왜 FATAL_ERROR</b>: CHIP 정적 라이브러리는 TSan으로 계측되지 않았다. 섞으면 데이터 레이스를 놓치거나(누락) 없는 레이스를 보고한다(오탐). 잘못된 조합은 아예 막는 편이 낫다.</li>
+<li><b>빼면</b>: TSan 결과를 믿을 수 없게 된다.</li>
+</ul>
+
+<h3>(d) Test Double — MockMessageSender</h3>
+<pre><code>class MockMessageSender : public IMessageSender {
+public:
+    MOCK_METHOD(void, SendCommandTo, (const std::string&amp; target_id, const std::string&amp; command), (override));
+};
+
+StrictMock&lt;MockMessageSender&gt; sender;
+EXPECT_CALL(sender, SendCommandTo("ALL", HasSubstr("SHUTDOWN"))).Times(1);
+PCDriver driver(&amp;sender);</code></pre>
+<ul>
+<li><b>무엇</b>: 진짜 TCP 대신 "호출이 몇 번, 어떤 인자로 왔는지"만 기록·검증하는 가짜다. <code>StrictMock</code>은 예상 못한 호출이 오면 실패시킨다.</li>
+<li><b>Mock vs Fake</b>: Mock은 호출 검증이 목적이다(이번 사용). Fake(<code>FakeProtocolDriver</code>, <code>FakeClock</code> 등, 이후 단계)는 실제처럼 동작하는 단순 대역으로 상태·결과를 만든다.</li>
+<li><b>특성화 테스트</b>: "옳은 동작"이 아니라 "지금 동작"을 먼저 고정한다. 소문자 <code>off</code>는 가로채지 않는다 같은 현재 동작도 포함한다. 이후 리팩터링 중 동작이 달라지면 테스트가 바로 알려 준다. 그래서 이 테스트가 "동작 불변"의 안전망이다.</li>
+</ul>
+</section>
+
+<section>
+<h2>4. 용어 풀이</h2>
+<ul>
+<li><b>OBJECT 라이브러리</b>: 묶지 않은 .o 파일 모음. 링크할 때 전부 그대로 들어간다.</li>
+<li><b>모던(타깃 기반) CMake</b>: 전역 설정 대신 대상별로 include·옵션·의존을 거는 방식.</li>
+<li><b>FetchContent</b>: 설정 단계에서 외부 저장소를 내려받아 빌드에 포함하는 CMake 기능.</li>
+<li><b>Test Double</b>: 테스트에서 실제 부품을 대신하는 가짜(Mock, Fake, Stub의 총칭).</li>
+<li><b>특성화 테스트</b>: 기존 동작을 그대로 기록하는 테스트. 리팩터링 전 안전망.</li>
+<li><b>ThreadSanitizer(TSan)</b>: 실행 중 스레드 데이터 레이스를 찾는 컴파일러 도구.</li>
+</ul>
+</section>
+
+<section>
+<h2>5. 실행 명령</h2>
+<pre><code># 서버 + 테스트 전체 빌드·실행 (이 서버 PC: CHIP 빌드 결과물 있음)
+cmake -S . -B build-dev
+cmake --build build-dev -j"$(nproc)"
+ctest --test-dir build-dev --output-on-failure
+
+# 테스트만 빌드·실행 (CHIP·BLE 없는 PC)
+cmake -S . -B build-testonly -DHAC_BUILD_SERVER=OFF
+cmake --build build-testonly -j"$(nproc)"
+ctest --test-dir build-testonly --output-on-failure
+
+# TSan 구성 (서버 OFF 필수)
+cmake -S . -B build-tsan -DHAC_ENABLE_TSAN=ON -DHAC_BUILD_SERVER=OFF
+cmake --build build-tsan -j"$(nproc)"
+ctest --test-dir build-tsan --output-on-failure
+
+# 잘못된 조합(FATAL_ERROR 확인용)
+cmake -S . -B build-bad -DHAC_ENABLE_TSAN=ON</code></pre>
+<p>참고: <code>HAC_BUILD_SERVER</code> 기본값은 ON이라 CHIP 빌드 결과물이 필요하다. 없는 PC에서는 OFF로 테스트만 빌드한다.</p>
+</section>
+
+<section>
+<h2>6. 이해도 질문</h2>
+<details><summary>Q1. <code>hac_core</code>를 OBJECT 대신 STATIC으로 바꾸면 왜 위험한가? 어떻게 알아챌까?</summary>
+<p>PCDriver.o를 직접 참조하는 곳이 없어 링커가 .o를 버리고, 정적 DriverRegistrar의 등록 코드가 사라질 수 있다. 빌드는 성공하므로 <code>nm</code>의 <code>_GLOBAL__sub_I</code> 확인이나 PC 드라이버 부착 동작 확인으로 알아챈다.</p></details>
+<details><summary>Q2. 전역 <code>add_compile_options(-Wall -Wextra)</code> 대신 <code>hac_apply_target_options</code>를 쓴 이유는?</summary>
+<p>FetchContent로 받은 googletest 등 서드파티에도 경고·TSan이 적용되는 것을 막고, 우리 코드의 경고만 보기 위해서다.</p></details>
+<details><summary>Q3. 특성화 테스트가 "소문자 off는 가로채지 않는다"까지 고정하는 이유는? 그 동작이 버그라면?</summary>
+<p>리팩터링이 동작을 바꾸지 않았음을 보장하려면 현재 동작 전체를 기록해야 한다. 버그라면 리팩터링이 끝난 뒤 별도 변경으로 테스트와 코드를 함께 고친다(리팩터링과 동작 변경을 섞지 않는다).</p></details>
+</section>
+
+<section>
+<h2>7. 응용 실습</h2>
+<p><b>주의</b>: 원본을 망가뜨리지 않게 새 브랜치(<code>git switch -c practice-req17</code>)나 <code>learning/exercise-req17/</code> 사본에서 한다.</p>
+
+<h3>실습 A. 빈칸 구현 — "ON 명령은 SendCommandTo를 부르지 않는다"</h3>
+<ul>
+<li><b>목표</b>: <code>EXPECT_CALL(...).Times(0)</code> 사용법 익히기</li>
+<li><b>고칠 파일</b>: <code>tests/unit/PCDriverTest.cpp</code> 사본</li>
+<li><b>완료 기준</b>: 새 테스트가 ctest에서 통과하고, <code>handleCommand</code>가 ON에서도 전송하도록 임시로 바꾸면 실패한다.</li>
+</ul>
+<pre><code>TEST(PCDriverHandleCommand, OnCommandNeverSendsMessage) {
+    StrictMock&lt;MockMessageSender&gt; sender;
+    EXPECT_CALL(sender, SendCommandTo(____, ____)).Times(____);
+    PCDriver driver(&amp;sender);
+
+    DriverResult result = driver.handleCommand(makeDeviceWithState("ON"), "____");
+
+    EXPECT_TRUE(result.proceed_hardware);
+}</code></pre>
+<details><summary>힌트</summary><p>인자를 무엇이든 받으려면 <code>_</code>를 쓴다. 횟수는 0번이다. 명령 문자열은 소문자가 아닌 대문자다.</p></details>
+<details><summary>정답</summary>
+<pre><code>EXPECT_CALL(sender, SendCommandTo(_, _)).Times(0);
+...
+driver.handleCommand(makeDeviceWithState("ON"), "ON");</code></pre>
+<p>참고: <code>StrictMock</code>이라 <code>EXPECT_CALL</code>이 없어도 호출 시 실패한다. <code>Times(0)</code>은 의도를 코드로 드러내는 용도다.</p></details>
+
+<h3>실습 B. 응용 과제 — 새 OBJECT 라이브러리 추가</h3>
+<ul>
+<li><b>목표</b>: <code>src/Foo.cpp</code>(CHIP 불필요)를 <code>hac_core</code>와 별도 <code>hac_foo</code> OBJECT 라이브러리로 추가하고, 서버와 테스트가 모두 쓰게 한다.</li>
+<li><b>고칠 파일</b>: <code>CMakeLists.txt</code>(루트), <code>tests/CMakeLists.txt</code></li>
+<li><b>완료 기준</b>: 서버 OFF 구성에서 <code>hac_tests</code>가 빌드되고, 서버 ON 구성에서 <code>HomeAssistantCore</code> 링크 입력에 <code>Foo.cpp.o</code>가 있다.</li>
+</ul>
+<details><summary>힌트</summary><p>hac_core 선언 3줄(add_library, include, link, 옵션 함수)을 본뜬다. 소비하는 쪽 <code>target_link_libraries</code>에 이름을 추가해야 한다. 서버 쪽은 <code>if(HAC_BUILD_SERVER)</code> 안의 링크 줄도 잊지 말 것.</p></details>
+<details><summary>정답</summary>
+<pre><code>add_library(hac_foo OBJECT src/Foo.cpp)
+target_include_directories(hac_foo PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+hac_apply_target_options(hac_foo)
+
+# 서버: target_link_libraries(HomeAssistantCore PRIVATE hac_core hac_legacy hac_foo)
+# 테스트: target_link_libraries(hac_tests PRIVATE hac_core hac_foo GTest::gmock_main)</code></pre>
+<p>Foo에 자기 등록 패턴이 없다면 STATIC도 가능하지만, 일관성과 기존 링크 보존을 위해 OBJECT를 쓴다.</p></details>
+</section>
+</main>
+</body>
+</html>
