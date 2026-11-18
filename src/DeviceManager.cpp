@@ -100,7 +100,7 @@ bool DeviceManager::updateDeviceState(std::string id, std::string newState){
 }
 
 // 기기 제어
-bool DeviceManager::executeCommand(std::string id, std::string command){
+CommandResult DeviceManager::executeCommand(std::string id, std::string command){
     ProtocolType deviceType;
     Device targetDevice;
     // 기기 존재 여부 확인 및 프로토콜 타입 조회
@@ -109,7 +109,7 @@ bool DeviceManager::executeCommand(std::string id, std::string command){
         auto it = devices_.find(id);
         if(it == devices_.end()){
             std::cerr << "[DeviceManager] 에러 : 기기를 찾을 수 없습니다 (" << id << ")" << std::endl;
-            return false;
+            return CommandResult{CommandOutcome::Failed, Error{ErrorCode::DeviceNotFound, "device not found"}, "", 0};
         } 
         deviceType = it -> second.protocol_type;
         targetDevice = it->second;
@@ -117,20 +117,21 @@ bool DeviceManager::executeCommand(std::string id, std::string command){
     DriverResult action = deviceDrivers_.executeDriversForDevice(targetDevice, command);
 
     if (!action.proceed_hardware) {
-        return true; 
+        return CommandResult{CommandOutcome::Failed, Error{ErrorCode::CommandBlocked, "blocked by device driver"}, "", 0};
     }
     auto execute_hardware = [this, id, command, deviceType]() {
         auto driverIt = drivers_.find(deviceType);
-        if (driverIt != drivers_.end()) {
-            if (driverIt->second->sendCommand(id, command)) {
-                std::string newState = (command == "ON") ? "ON" : "OFF";
-                this->updateDeviceState(id, newState); // DB 및 서버 상태 변경
-            } else {
-                this->updateDeviceState(id, "OFFLINE");
-            }
-        } else {
+        if (driverIt == drivers_.end()) {
             std::cerr << "[DeviceManager] 에러 : 프로토콜 드라이버를 찾을 수 없습니다\n";
+            return CommandResult{CommandOutcome::Failed, Error{ErrorCode::Internal, "protocol driver not found"}, "", 0};
         }
+        if (driverIt->second->sendCommand(id, command)) {
+            std::string newState = (command == "ON") ? "ON" : "OFF";
+            this->updateDeviceState(id, newState); // DB 및 서버 상태 변경
+            return CommandResult{CommandOutcome::Succeeded, Error{}, newState, 0};
+        }
+        this->updateDeviceState(id, "OFFLINE");
+        return CommandResult{CommandOutcome::Failed, Error{ErrorCode::DeviceUnreachable, "device did not respond"}, "OFFLINE", 0};
     };
 
     if (action.delay_seconds > 0) {
@@ -140,12 +141,10 @@ bool DeviceManager::executeCommand(std::string id, std::string command){
             std::this_thread::sleep_for(std::chrono::seconds(delay));
             execute_hardware();
         }).detach();
-    } else {
-        // 대기 시간이 없다면 즉시 실행
-        execute_hardware();
+        return CommandResult{CommandOutcome::Accepted, Error{}, "", delay};
     }
-    
-    return true;
+    // 대기 시간이 없다면 즉시 실행
+    return execute_hardware();
 }
 bool DeviceManager::startCommissioning(ProtocolType type, std::string name, std::string payload
         , const std::string& ssid, const std::string& password, const std::vector<DriverType>& driverTypes){

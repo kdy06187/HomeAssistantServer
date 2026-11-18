@@ -13,7 +13,8 @@
 #include "ApiAuth.hpp"
 #include "PeriodicTasks.hpp"
 #include "Clock.hpp"
-#include <csignal> // 상단에 추가
+#include <csignal>
+#include <unistd.h>
 int main() {
     signal(SIGPIPE, SIG_IGN);
     std::cout << "=== 🏠 홈 어시스턴트 코어 부팅 ===" << std::endl;
@@ -68,15 +69,9 @@ int main() {
     // manager.addDevice("Arduino_1", "거실 전등", ProtocolType::TCP_DIY);
     // manager.addDevice("1", "스마트 플러그", ProtocolType::MATTER);
 
-    // 통신 세션 안정화를 위해 잠시 대기 (약 5초)
-    std::cout << "⏳ 기기 네트워크 안정화 대기 중 (5초)..." << std::endl;
-    std::this_thread::sleep_for(std::chrono::seconds(5));
+    // 프로세스는 kill로 종료한다. 아래 종료 코드는 도달하지 않는다.
+    for (;;) pause();
 
-    //서버 메인 루프 (프로그램이 꺼지지 않게 무한 대기하며 10초마다 명령 테스트)
-    bool isTurnedOn = false;
-    int consecutiveFailures = 0;      // 연속 실패 횟수 추적
-    const int MAX_FAILURES = 3;       // 치명적 장애로 판단할 임계치
-    
     httpServer.stop();
     periodicTasks.stop();
     matterController.shutdown();

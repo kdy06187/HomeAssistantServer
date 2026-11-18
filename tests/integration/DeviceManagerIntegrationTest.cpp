@@ -87,7 +87,7 @@ TEST_F(DeviceManagerIntegrationTest, CommissioningWithEmptyDeviceIdRegistersNoth
 TEST_F(DeviceManagerIntegrationTest, ControlSuccessSetsStateOn) {
     manager.startCommissioning(ProtocolType::TCP_DIY, "lamp", "");
 
-    EXPECT_TRUE(manager.executeCommand("FAKE_1", "ON"));
+    EXPECT_EQ(manager.executeCommand("FAKE_1", "ON").outcome, CommandOutcome::Succeeded);
 
     ASSERT_EQ(tcpFake.sentCommands.size(), 1u);
     EXPECT_EQ(tcpFake.sentCommands[0].second, "ON");
@@ -97,20 +97,25 @@ TEST_F(DeviceManagerIntegrationTest, ControlSuccessSetsStateOn) {
     EXPECT_EQ(findInDatabase("FAKE_1").state, "ON");
 }
 
-// 현재 동작 그대로: 하드웨어 실패여도 반환값은 true이고 상태만 OFFLINE이 된다
-TEST_F(DeviceManagerIntegrationTest, ControlFailureReturnsTrueAndMarksOffline) {
+TEST_F(DeviceManagerIntegrationTest, ControlFailureReturnsUnreachableAndMarksOffline) {
     manager.startCommissioning(ProtocolType::TCP_DIY, "lamp", "");
     tcpFake.sendCommandResult = false;
 
-    EXPECT_TRUE(manager.executeCommand("FAKE_1", "ON"));
+    const CommandResult result = manager.executeCommand("FAKE_1", "ON");
+
+    EXPECT_EQ(result.outcome, CommandOutcome::Failed);
+    EXPECT_EQ(result.error.code, ErrorCode::DeviceUnreachable);
 
     Device device;
     ASSERT_TRUE(manager.getDevice("FAKE_1", device));
     EXPECT_EQ(device.state, "OFFLINE");
 }
 
-TEST_F(DeviceManagerIntegrationTest, ControlUnknownDeviceReturnsFalse) {
-    EXPECT_FALSE(manager.executeCommand("NOPE", "ON"));
+TEST_F(DeviceManagerIntegrationTest, ControlUnknownDeviceReturnsDeviceNotFound) {
+    const CommandResult result = manager.executeCommand("NOPE", "ON");
+
+    EXPECT_EQ(result.outcome, CommandOutcome::Failed);
+    EXPECT_EQ(result.error.code, ErrorCode::DeviceNotFound);
 }
 
 // 45초 지연 스레드가 테스트 객체보다 오래 살 수 있어, 이 테스트의 객체는 일부러 해제하지 않는다
@@ -128,7 +133,10 @@ TEST(DeviceManagerPcDriverTest, OffOnRunningPcSendsShutdownMessageAndDefersHardw
     manager->startCommissioning(ProtocolType::TCP_DIY, "pc", "", "", "", {DriverType::PC_DRIVER});
     manager->updateDeviceState("FAKE_1", "ON");
 
-    EXPECT_TRUE(manager->executeCommand("FAKE_1", "OFF"));
+    const CommandResult result = manager->executeCommand("FAKE_1", "OFF");
+
+    EXPECT_EQ(result.outcome, CommandOutcome::Accepted);
+    EXPECT_EQ(result.delaySeconds, 45);
 
     ASSERT_EQ(tcpFake->sentMessages.size(), 1u);
     EXPECT_EQ(tcpFake->sentMessages[0].first, "ALL");

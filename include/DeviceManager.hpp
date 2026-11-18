@@ -13,6 +13,7 @@
 #include "IMessageSender.hpp"
 #include "Clock.hpp"
 #include "DriverManager.hpp"
+#include "Command.hpp"
 #include <unordered_set>
 
 class DeviceManager {
@@ -35,7 +36,7 @@ public:
     bool updateDeviceState(std::string id, std::string newState);
     bool startCommissioning(ProtocolType type, std::string name, std::string payload, const std::string& ssid = "", const std::string& password = "",const std::vector<DriverType>& driverTypes ={});
     // 디바이스 제어 API - 디바이스 ID와 명령을 받아 해당 디바이스를 제어
-    bool executeCommand(std::string id, std::string command);
+    CommandResult executeCommand(std::string id, std::string command);
     bool removeDevice(std::string id);
     std::unordered_set<std::string> activeDeviceIds();
 

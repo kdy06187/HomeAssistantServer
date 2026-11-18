@@ -3,10 +3,16 @@
 #include "DeviceManager.hpp"
 #include "httplib.h"
 #include "json.hpp"
+#include <chrono>
 #include <iostream>
 #include <utility>
 
 using json = nlohmann::json;
+
+std::string controlMessageFor(const CommandResult& result) {
+    if (result.outcome != CommandOutcome::Failed) return "명령 성공!";
+    return result.error.code == ErrorCode::CommandBlocked ? "명령 성공!" : "명령 실패!";
+}
 
 namespace {
     // REST로 받을 수 있는 명령. PCDriver의 종료 메시지는 이 경로를 거치지 않아 영향이 없다.
@@ -16,7 +22,8 @@ namespace {
 }
 
 HTTPServer::HTTPServer(DeviceManager& deviceManager, std::string apiToken, int port)
-    : mDeviceManager(deviceManager), mApiToken(std::move(apiToken)), mPort(port), mIsRunning(false) {
+    : mDeviceManager(deviceManager), mApiToken(std::move(apiToken)), mPort(port), mIsRunning(false),
+      mServer(std::make_unique<httplib::Server>()) {
 }
 HTTPServer::~HTTPServer() {
     stop();
@@ -34,41 +41,44 @@ void HTTPServer::stop(){
     if (!mIsRunning) return;
 
     mIsRunning = false;
+    // listen 진입 전에 stop()이 불리면 무시되므로, run()이 끝날 때까지 반복 호출한다.
+    while (!mHasRunFinished) {
+        mServer->stop();
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
     if(mServerThread.joinable()){
         mServerThread.join();
     }
     std::cout << "[HTTPServer] HTTP 서버 종료" << std::endl;
 }
 
-void HTTPServer::run(){
-    httplib::Server svr;
+bool HTTPServer::waitUntilReady(std::chrono::milliseconds timeout){
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (!mServer->is_running()) {
+        if (mHasRunFinished || std::chrono::steady_clock::now() >= deadline) return false;
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    return true;
+}
 
-    // 모든 라우트보다 먼저 실행되므로, 새 라우트를 추가해도 인증이 자동 적용된다.
-    svr.set_pre_routing_handler([this](const httplib::Request& req, httplib::Response& res) {
-        if (ApiAuth::isAuthorized(req.get_header_value("Authorization"), mApiToken)) {
-            return httplib::Server::HandlerResponse::Unhandled; // 기존 라우트로 진행
-        }
-        // 제시된 토큰은 일부라도 로그에 남기지 않는다.
-        std::cerr << "[HTTPServer] 인증 실패: " << req.remote_addr << " " << req.method << " " << req.path << std::endl;
-        res.status = 401;
-        res.set_header("WWW-Authenticate", "Bearer");
-        res.set_content(R"({"error": "인증이 필요합니다."})", "application/json");
-        return httplib::Server::HandlerResponse::Handled;
-    });
-    
-    svr.Get("/api/devices", [this](const httplib::Request&, httplib::Response& res) {
+void HTTPServer::run(){
+    httplib::Server& svr = *mServer;
+
+    svr.set_payload_max_length(16 * 1024);
+
+    addRoute(HttpMethod::Get, "/api/devices", [this](const httplib::Request&, httplib::Response& res) {
         std::string jsonResponse = this->handleGetDevices();
         res.set_content(jsonResponse, "application/json");
     });
 
-    svr.Post("/api/control", [this](const httplib::Request& req, httplib::Response& res) {
+    addRoute(HttpMethod::Post, "/api/control", [this](const httplib::Request& req, httplib::Response& res) {
         std::string jsonResponse = this->handleControlDevice(req.body);
         if (jsonResponse.find("\"error\"") != std::string::npos) {
             res.status = 400; 
         }
         res.set_content(jsonResponse, "application/json");
     });
-    svr.Post("/api/commission",[this](const httplib::Request& req, httplib::Response& res){
+    addRoute(HttpMethod::Post, "/api/commission", [this](const httplib::Request& req, httplib::Response& res){
         std::string jsonResponse = this->handleCommissionDevice(req.body);
         if (jsonResponse.find("\"error\"") != std::string::npos) {
             res.status = 400; 
@@ -76,7 +86,7 @@ void HTTPServer::run(){
         res.set_content(jsonResponse, "application/json");
     });
 
-    svr.Post("/api/devices/delete", [this](const httplib::Request& req, httplib::Response& res) {
+    addRoute(HttpMethod::Post, "/api/devices/delete", [this](const httplib::Request& req, httplib::Response& res) {
         std::string jsonResponse = this->handleDeleteDevice(req.body);
         if (jsonResponse.find("\"error\"") != std::string::npos) {
             res.status = 400; 
@@ -84,7 +94,7 @@ void HTTPServer::run(){
         res.set_content(jsonResponse, "application/json");
     });
 
-    svr.Get(R"(/api/devices/([^/]+)/state)", [this](const httplib::Request& req, httplib::Response& res) {
+    addRoute(HttpMethod::Get, R"(/api/devices/([^/]+)/state)", [this](const httplib::Request& req, httplib::Response& res) {
         std::string deviceId = req.matches[1];
         bool isManualRefresh = false; // 기본값은 false
         if (req.has_param("isManualRefresh")) {
@@ -102,8 +112,8 @@ void HTTPServer::run(){
         
         res.set_content(response.dump(), "application/json");
     });
-    svr.Get(R"(/api/devices/([^/]+)/energy)", [this](const httplib::Request& req, httplib::Response& res) {
-        std::string deviceId = req.matches[1];;
+    addRoute(HttpMethod::Get, R"(/api/devices/([^/]+)/energy)", [this](const httplib::Request& req, httplib::Response& res) {
+        std::string deviceId = req.matches[1];
         std::string jsonResponse = this->handleGetDeviceEnergy(deviceId);
         if (jsonResponse.find("\"error\"") != std::string::npos) {
             res.status = 400;
@@ -111,13 +121,44 @@ void HTTPServer::run(){
         res.set_content(jsonResponse, "application/json");
     });
 
-    svr.Get(R"(/api/devices/([^/]+)/energy/history)", [this](const httplib::Request& req, httplib::Response& res) {
-    std::string deviceId = req.matches[1];
-    std::string result = this->handleGetDeviceEnergyHistory(deviceId);
-    res.set_content(result, "application/json");
+    addRoute(HttpMethod::Get, R"(/api/devices/([^/]+)/energy/history)", [this](const httplib::Request& req, httplib::Response& res) {
+        std::string deviceId = req.matches[1];
+        std::string result = this->handleGetDeviceEnergyHistory(deviceId);
+        res.set_content(result, "application/json");
     });
+
+    // 없는 경로도 토큰이 틀리면 401이어야 하므로, 마지막에 전체 매칭 라우트를 둔다(앞선 라우트가 먼저 매칭된다).
+    const auto notFound = [](const httplib::Request&, httplib::Response& res) { res.status = 404; };
+    for (HttpMethod method : {HttpMethod::Get, HttpMethod::Post, HttpMethod::Put,
+                              HttpMethod::Delete, HttpMethod::Patch, HttpMethod::Options}) {
+        addRoute(method, ".*", notFound);
+    }
     std::cout << "[HTTPServer]네트워크 소켓 개방 완료" << std::endl;
     svr.listen("0.0.0.0", mPort);
+    mHasRunFinished = true;
+}
+
+void HTTPServer::addRoute(HttpMethod method, const std::string& pattern, RouteHandler handler) {
+    auto guarded = [this, handler = std::move(handler)](const httplib::Request& req, httplib::Response& res) {
+        if (!ApiAuth::isAuthorized(req.get_header_value("Authorization"), mApiToken)) {
+            // 제시된 토큰은 일부라도 로그에 남기지 않는다.
+            std::cerr << "[HTTPServer] 인증 실패: " << req.remote_addr << " " << req.method << " " << req.path << std::endl;
+            res.status = 401;
+            res.set_header("WWW-Authenticate", "Bearer");
+            res.set_content(R"({"error": "인증이 필요합니다."})", "application/json");
+            return;
+        }
+        handler(req, res);
+    };
+    httplib::Server& svr = *mServer;
+    switch (method) {
+        case HttpMethod::Get:     svr.Get(pattern, guarded); break;
+        case HttpMethod::Post:    svr.Post(pattern, guarded); break;
+        case HttpMethod::Put:     svr.Put(pattern, guarded); break;
+        case HttpMethod::Delete:  svr.Delete(pattern, guarded); break;
+        case HttpMethod::Patch:   svr.Patch(pattern, guarded); break;
+        case HttpMethod::Options: svr.Options(pattern, guarded); break;
+    }
 }
 
 std::string HTTPServer::handleGetDevices(){
@@ -162,18 +203,13 @@ std::string HTTPServer::handleControlDevice(const std::string& requestBody){
             std::cout << "  ➔ 대상 기기: " << targetDeviceId << ", 명령: " << command << std::endl;
 
             // DeviceManager로 동적 명령 하달
-            bool success = mDeviceManager.executeCommand(targetDeviceId, command);
+            const CommandResult result = mDeviceManager.executeCommand(targetDeviceId, command);
             Device device;
             std::string status = mDeviceManager.getDevice(targetDeviceId, device) ? device.state : "UNKNOWN";
             json response;
             response["status"] = status;
-            if (success) {
-                response["message"] = "명령 성공!";
-                return response.dump();
-            } else {
-                response["message"] = "명령 실패!";
-                return response.dump();
-            }
+            response["message"] = controlMessageFor(result);
+            return response.dump();
             
         } catch (const json::exception& e) {
             // JSON 형식이 잘못되었을 때 (앱 개발자의 실수 방어)
