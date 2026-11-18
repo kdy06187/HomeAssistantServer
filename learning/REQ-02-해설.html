@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>REQ-02 해설 - 예외 대신 결과값, 파서 분리, Clock</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--fg:#1d2330;--sub:#5b6477;--ac:#2f6fed;--code:#0f1523;--codefg:#e6edf7;--add:#12391f;--del:#4a1620;--bd:#dde1e8}
+@media (prefers-color-scheme:dark){:root{--bg:#10131a;--card:#181d28;--fg:#e6e9ef;--sub:#9aa4b8;--ac:#6b9cff;--code:#0a0d14;--bd:#2a3142}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.65 -apple-system,"Noto Sans KR",sans-serif}
+main{max-width:920px;margin:0 auto;padding:20px 14px 60px}
+h1{font-size:2rem;margin:.4em 0 .1em}
+h2{font-size:1.3rem;margin:0 0 .6em;color:var(--ac)}
+.lead{color:var(--sub);margin-bottom:20px}
+section{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:18px 20px;margin:16px 0}
+table{border-collapse:collapse;width:100%;font-size:.92rem;display:block;overflow-x:auto}
+th,td{border:1px solid var(--bd);padding:6px 10px;text-align:left;vertical-align:top}
+th{background:rgba(127,127,127,.12)}
+pre{background:var(--code);color:var(--codefg);padding:12px 14px;border-radius:8px;overflow-x:auto;font-size:.85rem;line-height:1.5;margin:8px 0}
+code{font-family:ui-monospace,Consolas,monospace}
+p code,li code,td code{background:rgba(127,127,127,.18);padding:1px 5px;border-radius:4px;font-size:.88em}
+.add{background:var(--add);display:block}.del{background:var(--del);display:block}
+.three{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+.three div{border:1px dashed var(--bd);border-radius:8px;padding:8px 10px;font-size:.92rem}
+.three b{display:block;color:var(--ac)}
+details{border:1px solid var(--bd);border-radius:8px;padding:6px 12px;margin:8px 0}
+summary{cursor:pointer;font-weight:600}
+svg{width:100%;height:auto;max-width:860px}
+svg text{fill:var(--fg);font-size:13px}
+svg .b{fill:var(--card);stroke:var(--ac);stroke-width:1.5}
+svg .w{fill:rgba(240,160,40,.15);stroke:#e0a030;stroke-width:1.5}
+svg .g{fill:rgba(40,180,90,.15);stroke:#28b45a;stroke-width:1.5}
+svg .l{stroke:var(--sub);stroke-width:1.5;fill:none}
+</style>
+</head>
+<body>
+<main>
+<h1>REQ-02 해설</h1>
+<p class="lead">잘못된 숫자 하나가 서버 전체를 죽이지 않게 만든 변경 (3단계 2번, 학습 강도: 균형)</p>
+
+<section>
+<h2>1. 한눈에 보기</h2>
+<ul>
+<li><b>문제</b>: 헬스체크 스레드에서 <code>std::stoi("OFFLINE")</code>이 예외를 던지는데 잡는 곳이 없어 <code>std::terminate</code>로 서버 전체가 종료됐다. 부팅 때 등록 파일이 깨져 있어도 <code>stoull</code> 예외로 같은 일이 생긴다.</li>
+<li><b>해결</b>: 숫자 해석을 예외 없는 순수 함수(<code>ChipToolOutputParser</code>)로 빼고, 실패는 <code>Result</code> 값으로 돌려준다. 헬스체크는 기기별 <code>try/catch</code>를 덧댄다.</li>
+<li><b>덤</b>: 시간을 주입할 <code>Clock</code>/<code>FakeClock</code>을 미리 만들었다(사용처는 4번에서 연결).</li>
+</ul>
+<table>
+<tr><th>파일</th><th>역할</th><th>변경 요약</th></tr>
+<tr><td><code>include/Result.hpp</code></td><td>오류 규약(ADR-003)</td><td>신규. <code>Status</code>, <code>Result&lt;T&gt;</code>, <code>ErrorCode</code></td></tr>
+<tr><td><code>include/ChipToolOutputParser.hpp</code>, <code>src/ChipToolOutputParser.cpp</code></td><td>chip-tool 출력 해석</td><td>신규. 파싱 로직을 MatterController에서 옮김</td></tr>
+<tr><td><code>include/Clock.hpp</code>, <code>tests/fakes/FakeClock.hpp</code></td><td>시간 주입</td><td>신규. 사용처 아직 없음</td></tr>
+<tr><td><code>src/DeviceManager.cpp</code></td><td>헬스체크, 에너지 조회</td><td><code>stoi/stoll</code> 제거, 기기별 <code>try/catch</code></td></tr>
+<tr><td><code>src/HTTPServer.cpp</code></td><td>에너지 API</td><td><code>getDeviceEnergyInfo</code>의 false 반환을 오류 응답으로 처리</td></tr>
+<tr><td><code>src/MatterController.cpp</code></td><td>chip-tool 호출</td><td>인라인 파싱을 파서 호출로 교체, 등록 파일은 줄 단위로 건너뜀</td></tr>
+<tr><td><code>tests/unit/ChipToolOutputParserTest.cpp</code></td><td>특성화 테스트</td><td>신규</td></tr>
+</table>
+</section>
+
+<section>
+<h2>2. 흐름 그림</h2>
+<svg viewBox="0 0 860 330" role="img" aria-label="동작 변화 흐름">
+<text x="10" y="18" style="font-weight:bold">이전</text>
+<rect class="b" x="10" y="28" width="120" height="40" rx="6"/><text x="22" y="52">E6 요청</text>
+<rect class="b" x="170" y="28" width="150" height="40" rx="6"/><text x="180" y="52">getDeviceEnergyInfo</text>
+<rect class="w" x="360" y="28" width="130" height="40" rx="6"/><text x="372" y="52">stoi 예외</text>
+<rect class="w" x="530" y="28" width="130" height="40" rx="6"/><text x="542" y="52">httplib 500</text>
+<path class="l" d="M130 48H170M320 48H360M490 48H530"/>
+<text x="10" y="92">헬스체크 스레드: stoi 예외 → 잡는 곳 없음 → std::terminate → 서버 종료</text>
+<text x="10" y="135" style="font-weight:bold">이후</text>
+<rect class="b" x="10" y="145" width="120" height="40" rx="6"/><text x="22" y="169">E6 요청</text>
+<rect class="b" x="170" y="145" width="150" height="40" rx="6"/><text x="180" y="169">getDeviceEnergyInfo</text>
+<rect class="g" x="360" y="145" width="130" height="40" rx="6"/><text x="368" y="169">parseInteger 실패</text>
+<rect class="g" x="530" y="145" width="130" height="40" rx="6"/><text x="548" y="169">return false</text>
+<rect class="g" x="700" y="145" width="150" height="40" rx="6"/><text x="710" y="169">v1.0 오류 400</text>
+<path class="l" d="M130 165H170M320 165H360M490 165H530M660 165H700"/>
+<text x="10" y="215">헬스체크 스레드 (기기마다)</text>
+<rect class="b" x="10" y="225" width="150" height="40" rx="6"/><text x="22" y="249">기기 A 점검</text>
+<rect class="g" x="200" y="225" width="150" height="40" rx="6"/><text x="212" y="249">try { ... }</text>
+<rect class="g" x="390" y="225" width="190" height="40" rx="6"/><text x="400" y="249">catch → 로그, 다음 기기</text>
+<rect class="b" x="620" y="225" width="150" height="40" rx="6"/><text x="632" y="249">기기 B 점검</text>
+<path class="l" d="M160 245H200M350 245H390M580 245H620"/>
+<text x="10" y="300" style="fill:var(--sub)">1단: 예상 가능한 실패는 값(Result)으로. 2단: 예상 못 한 예외는 기기 단위로 가둔다.</text>
+</svg>
+</section>
+
+<section>
+<h2>3. 코드 해설</h2>
+
+<h3>3-1. 실패를 값으로: <code>Result&lt;T&gt;</code></h3>
+<pre><code>template &lt;typename T&gt;
+struct Result {
+    std::optional&lt;T&gt; value;   // 성공이면 값이 들어 있음
+    Error error;              // 실패면 코드 + 로그용 메시지
+    bool ok() const { return value.has_value(); }
+    static Result success(T v);
+    static Result failure(ErrorCode c, std::string m);
+};</code></pre>
+<ul>
+<li><b>무엇</b>: "값 또는 오류"를 한 객체로 돌려준다. <code>std::optional</code>은 "값이 있을 수도, 없을 수도 있다"를 나타내는 표준 타입이다. <code>Status</code>는 같은 구조에서 값이 없는 버전이다.</li>
+<li><b>왜</b>: "OFFLINE"이 숫자 자리에 오는 것은 흔한 일이라 예상 가능한 실패다. 호출자가 <code>ok()</code>를 확인하게 강제하면 처리 누락이 눈에 보인다.</li>
+<li><b>빼면</b>: 예외로 돌아가고, 누가 잡을지 호출 경로를 전부 추적해야 한다.</li>
+</ul>
+<table>
+<tr><th></th><th>예외</th><th>Result 값</th></tr>
+<tr><td>적합한 경우</td><td>예상 못 한 것(메모리 부족, 버그)</td><td>예상 가능한 실패(잘못된 입력, 오프라인)</td></tr>
+<tr><td>호출자 처리</td><td>안 잡으면 위로 전파, 스레드 끝이면 종료</td><td>반환 타입에 드러남, 확인 안 하면 코드에서 보임</td></tr>
+<tr><td>제어 흐름</td><td>코드에 안 보이는 점프</td><td>평범한 <code>if</code></td></tr>
+<tr><td>비용</td><td>던질 때 느림</td><td>항상 약간의 객체 크기</td></tr>
+</table>
+<p>스레드 규칙: 스레드 함수 밖으로 빠져나간 예외는 받는 곳이 없어 <code>std::terminate</code>가 호출된다. 부모 스레드의 <code>try</code>가 대신 잡아 주지 않는다.</p>
+
+<h3>3-2. 파서를 순수 함수로 분리하고 일부러 같은 의미로 유지</h3>
+<pre><code><span class="del">out_activePower_mW = std::stoi(activePowerStr);   // "OFFLINE"이면 예외</span>
+<span class="add">auto parsedPower = ChipToolOutputParser::parseInteger(activePowerStr);
+<span class="add">if (!parsedPower.ok() || 범위 밖) { 로그; return false; }</span></span></code></pre>
+<ul>
+<li><b>무엇</b>: 문자열을 받아 문자열/값만 돌려주는 순수 함수다. 파일·프로세스·시간을 쓰지 않으니 chip-tool 없이 문자열만 넣어 테스트한다.</li>
+<li><b>왜 앞부분 규칙을 유지했나</b>: <code>stoll</code>은 <code>"12abc"</code>를 12로 읽는다. 실기 출력에 숫자 뒤 문자가 붙을 수 있어 호환성을 위해 <code>std::from_chars</code> 위에 같은 규칙(앞 공백 무시, 부호, 뒤 문자 무시)을 일부러 재현했다. 테스트가 <code>"12abc"</code>→12를 고정한다. 이런 테스트를 특성화 테스트라 한다("옮겨도 같은 의미"를 증명).</li>
+<li><b>등록 파일 줄은 엄격</b>: <code>parseRegisteredDeviceLine</code>은 노드 ID에 숫자만 허용한다. 손상된 파일을 느슨하게 읽으면 엉뚱한 노드로 명령이 나갈 수 있어서, 잘못된 줄은 번호만 로그에 남기고 건너뛴다.</li>
+<li><b>빼면</b>: 파싱이 <code>MatterController</code> 안에 묶여 있어 단위 테스트가 불가능하다.</li>
+</ul>
+
+<h3>3-3. 방어 2단: 값 + 기기별 catch</h3>
+<pre><code>for (const auto&amp; device : devices) {
+<span class="add">    try {</span>
+        ... getDeviceState, getDeviceEnergyInfo, DB 기록 ...
+<span class="add">    } catch (const std::exception&amp; e) { 로그 }
+    catch (...) { 로그 }</span>
+}</code></pre>
+<ul>
+<li><b>왜 둘 다</b>: 파싱 실패 값은 "예상한 실패"만 막는다. DB 오류, 메모리 부족처럼 예상 못 한 예외는 값으로 안 돌아온다. 반대로 catch만 있으면 정상적인 실패마다 예외 비용과 모호한 로그가 생긴다.</li>
+<li><b>왜 기기별</b>: 루프 전체를 감싸면 기기 한 대의 예외로 나머지 기기 점검이 건너뛰어진다.</li>
+</ul>
+
+<h3>3-4. Clock과 FakeClock</h3>
+<pre><code>class Clock {
+  virtual steady_clock::time_point steadyNow() const = 0;  // 경과 시간
+  virtual system_clock::time_point utcNow() const = 0;     // 실제 시각
+};
+// 테스트: FakeClock clock; clock.advance(std::chrono::seconds(45));</code></pre>
+<ul>
+<li><b>무엇/왜</b>: 시간을 직접 읽지 않고 주입받으면 45초 쿨다운·90일 보관 같은 로직을 기다리지 않고 즉시 테스트한다.</li>
+<li><b>steady vs system</b>: steady는 시계 조정에 영향받지 않고 계속 증가해 간격 측정에 맞다. system은 사람이 읽는 실제 시각이며 NTP 등으로 뒤로 갈 수 있다.</li>
+<li><b>상태</b>: 아직 사용처 없음. 4번 변경에서 주입한다.</li>
+</ul>
+</section>
+
+<section>
+<h2>4. 용어 풀이</h2>
+<ul>
+<li><b>std::terminate</b>: 처리되지 않은 예외가 있을 때 프로그램을 즉시 끝내는 함수.</li>
+<li><b>순수 함수</b>: 같은 입력이면 같은 출력, 파일·네트워크·시간 같은 바깥 상태를 건드리지 않는 함수.</li>
+<li><b>특성화 테스트</b>: 새 동작을 정하는 대신 기존 동작을 그대로 고정해 리팩터링 안전망으로 쓰는 테스트.</li>
+<li><b>std::from_chars</b>: 문자열을 숫자로 바꾸는 예외 없는 표준 함수. 실패는 반환 코드로 알린다.</li>
+<li><b>std::optional</b>: 값이 있을 수도 없을 수도 있는 타입.</li>
+<li><b>주입(DI)</b>: 객체가 필요한 것을 직접 만들지 않고 바깥에서 넘겨받는 방식.</li>
+</ul>
+</section>
+
+<section>
+<h2>5. 이해도 질문</h2>
+<p>1) <code>parseInteger("")</code>이 실패인 것과 <code>parseInteger("12abc")</code>가 12인 것을 보고, 두 규칙이 왜 함께 있는지 설명해 보자.</p>
+<details><summary>정답</summary>숫자로 시작하지 않으면 값이 없으니 실패(<code>stoll</code>과 같음). 숫자로 시작하면 뒤는 무시해 기존 실기 출력과 같은 결과를 낸다. 옮겨도 의미가 같아야 해서다.</details>
+<p>2) 기기별 <code>try/catch</code>를 지우고 파싱 실패 처리만 남기면 어떤 위험이 남는가?</p>
+<details><summary>정답</summary>파싱 외의 예상 못 한 예외(DB 오류, <code>bad_alloc</code> 등)가 나면 스레드 밖으로 전파되어 다시 <code>std::terminate</code>로 서버가 종료된다.</details>
+<p>3) 등록 파일의 한 줄이 <code>ABC,12x</code>일 때 어떻게 되고, 왜 느슨하게 읽지 않는가?</p>
+<details><summary>정답</summary>노드 ID가 숫자만이 아니므로 실패, 그 줄은 번호만 로그에 남기고 건너뛴다. 12로 읽어 버리면 다른 기기 노드로 명령이 갈 수 있다.</details>
+</section>
+
+<section>
+<h2>6. 응용 실습</h2>
+<p>원본이 아니라 새 브랜치나 <code>learning/exercise-parse/</code> 사본에서 한다.</p>
+<pre><code>cmake --build build-dev -j"$(nproc)"
+ctest --test-dir build-dev -R Parse --output-on-failure</code></pre>
+
+<h3>실습 A. 빈칸 구현: from_chars 결과 검사</h3>
+<p><b>목표</b>: <code>parseInteger</code> 끝부분을 채운다. <b>고칠 파일</b>: 사본의 <code>ChipToolOutputParser.cpp</code>. <b>완료 기준</b>: <code>ParseIntegerTest</code> 통과(특히 <code>"9223372036854775808"</code> 실패).</p>
+<pre><code>int64_t parsed = 0;
+auto converted = std::from_chars(begin, end, parsed);
+if (/* ① 무엇을 검사? */) {
+    return Result&lt;int64_t&gt;::failure(/* ② 코드, 메시지 */);
+}
+return Result&lt;int64_t&gt;::success(/* ③ */);</code></pre>
+<details><summary>힌트</summary><code>from_chars</code>는 <code>ec</code> 필드(<code>std::errc</code>)로 결과를 알려 준다. 정상이면 기본값 <code>std::errc()</code>.</details>
+<details><summary>정답</summary><pre><code>if (converted.ec != std::errc()) {
+    return Result&lt;int64_t&gt;::failure(ErrorCode::Internal, "정수 범위 초과");
+}
+return Result&lt;int64_t&gt;::success(parsed);</code></pre></details>
+
+<h3>실습 B. 응용: Voltage 추출 함수 설계</h3>
+<p><b>목표</b>: chip-tool 출력에서 <code>Voltage:</code> 뒤의 값을 뽑는 <code>extractVoltageText</code>를 같은 패턴으로 추가한다. <b>고칠 파일</b>: 파서 헤더·cpp, 테스트 파일(사본). <b>완료 기준</b>: 정상, 키 없음, 값 비어 있음, 같은 키 두 줄(첫 줄 사용) 4개 케이스 통과.</p>
+<details><summary>힌트</summary>이미 있는 <code>extractTrimmedValueAfterKey(output, "Voltage:")</code>를 재사용하면 한 줄이다. 숫자로 바꿀 때는 <code>parseInteger</code>를 이어 쓴다.</details>
+<details><summary>정답</summary><pre><code>std::optional&lt;std::string&gt; extractVoltageText(const std::string&amp; output) {
+    return extractTrimmedValueAfterKey(output, "Voltage:");
+}
+TEST(ValueExtractTest, Voltage) {
+    EXPECT_EQ(*extractVoltageText("x\n Voltage: 230000 \n"), "230000");
+    EXPECT_EQ(extractVoltageText("none"), std::nullopt);
+    EXPECT_EQ(*extractVoltageText("Voltage:   \n"), "");
+    EXPECT_EQ(*extractVoltageText("Voltage: 1\nVoltage: 2"), "1");
+}</code></pre></details>
+</section>
+</main>
+</body>
+</html>

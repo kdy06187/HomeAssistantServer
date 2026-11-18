@@ -32,6 +32,7 @@ endfunction()
 # OBJECT 라이브러리: 정적 라이브러리면 PCDriver의 정적 DriverRegistrar가 링커에 의해 빠질 수 있다
 add_library(hac_core OBJECT
     src/ApiAuth.cpp
+    src/ChipToolOutputParser.cpp
     src/DatabaseManager.cpp
     src/PCDriver.cpp
 )

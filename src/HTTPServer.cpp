@@ -255,7 +255,10 @@ std::string HTTPServer::handleGetDeviceEnergy(const std::string& deviceId) {
         int activePower_mW = 0;
         long real_total_mWh = 0;
 
-        mDeviceManager.getDeviceEnergyInfo(deviceId, activePower_mW, real_total_mWh);
+        bool isEnergyReadOk = mDeviceManager.getDeviceEnergyInfo(deviceId, activePower_mW, real_total_mWh);
+        if (!isEnergyReadOk) {
+            return R"({"error": "서버 내부 데이터 처리 오류입니다."})";
+        }
         Device device;
         if (!mDeviceManager.getDevice(deviceId, device)) {
             return R"({"error": "등록되지 않은 기기입니다."})";

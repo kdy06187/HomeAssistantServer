@@ -2,6 +2,8 @@
 #include "DriverManager.hpp"
 #include "DatabaseManager.hpp"
 #include "MatterController.hpp"
+#include "ChipToolOutputParser.hpp"
+#include <limits>
 #include <iostream>
 #include <chrono>
 // ProtocolDriver 등록
@@ -235,23 +237,29 @@ void DeviceManager::healthCheckRoutine() {
         } 
 
         for (const auto& device : devices) {
-            const auto& id = device.id;
-            // 우리가 예전에 최적화해 둔 그 함수! (알아서 통신하고, 알아서 DB 업데이트까지 다 함)
-            std::string state = this->getDeviceState(id);
-            std::cout << "[DeviceManager] 기기 상태 점검 : " << id << " 현재 상태 ➔ [" << state << "]" << std::endl;
-            if (state == "UNKNOWN" || state == "OFFLINE") {
-                std::cerr << "[DeviceManager] 기기 오프라인 : " << id << std::endl;
-                // 필요하다면 여기서 DB를 오프라인 상태로 바꾸는 코드를 추가해도 좋습니다.
-                DatabaseManager::getInstance().updateDeviceState(id, 0); // 오프라인 상태로 DB 업데이트
-            }
-            if (device.protocol_type == ProtocolType::MATTER && state != "UNKNOWN" && state != "OFFLINE") {
-                int activePower_mW = 0;
-                long real_total_mWh = 0;
-                
-                if (getDeviceEnergyInfo(id, activePower_mW, real_total_mWh)) {
-                    DatabaseManager::getInstance().insertEnergyLog(id, real_total_mWh);
-                    std::cout << "[DeviceManager] 📊 기기(" << id << ") 시계열 데이터 기록: " << real_total_mWh << " mWh" << std::endl;
+            try {
+                const auto& id = device.id;
+                // 우리가 예전에 최적화해 둔 그 함수! (알아서 통신하고, 알아서 DB 업데이트까지 다 함)
+                std::string state = this->getDeviceState(id);
+                std::cout << "[DeviceManager] 기기 상태 점검 : " << id << " 현재 상태 ➔ [" << state << "]" << std::endl;
+                if (state == "UNKNOWN" || state == "OFFLINE") {
+                    std::cerr << "[DeviceManager] 기기 오프라인 : " << id << std::endl;
+                    // 필요하다면 여기서 DB를 오프라인 상태로 바꾸는 코드를 추가해도 좋습니다.
+                    DatabaseManager::getInstance().updateDeviceState(id, 0); // 오프라인 상태로 DB 업데이트
                 }
+                if (device.protocol_type == ProtocolType::MATTER && state != "UNKNOWN" && state != "OFFLINE") {
+                    int activePower_mW = 0;
+                    long real_total_mWh = 0;
+                    
+                    if (getDeviceEnergyInfo(id, activePower_mW, real_total_mWh)) {
+                        DatabaseManager::getInstance().insertEnergyLog(id, real_total_mWh);
+                        std::cout << "[DeviceManager] 📊 기기(" << id << ") 시계열 데이터 기록: " << real_total_mWh << " mWh" << std::endl;
+                    }
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "[DeviceManager] 기기 점검 중 예외 : " << device.id << " (" << e.what() << ")" << std::endl;
+            } catch (...) {
+                std::cerr << "[DeviceManager] 기기 점검 중 알 수 없는 예외 : " << device.id << std::endl;
             }
         }
         std::cout << "[DeviceManager] 점검 완료.\n" << std::endl;
@@ -301,16 +309,27 @@ bool DeviceManager::getDeviceEnergyInfo(const std::string& deviceId, int& out_ac
     std::string totalEnergyStr = getDeviceTotalEnergy(deviceId);
 
     // 2. 실시간 전력량 처리
+    out_activePower_mW = 0;
     if (activePowerStr != "UNKNOWN" && !activePowerStr.empty()) {
-        out_activePower_mW = std::stoi(activePowerStr);
-    } else {
-        out_activePower_mW = 0;
+        auto parsedPower = ChipToolOutputParser::parseInteger(activePowerStr);
+        if (!parsedPower.ok() ||
+            *parsedPower.value < std::numeric_limits<int>::min() ||
+            *parsedPower.value > std::numeric_limits<int>::max()) {
+            std::cerr << "[DeviceManager] 기기(" << deviceId << ") 실시간 전력 값 해석 실패" << std::endl;
+            return false;
+        }
+        out_activePower_mW = static_cast<int>(*parsedPower.value);
     }
 
     // 3. 누적 전력량 RAW 데이터 파싱
     long hardware_total_mWh = 0;
     if (totalEnergyStr != "UNKNOWN" && !totalEnergyStr.empty()) {
-        hardware_total_mWh = std::stoll(totalEnergyStr);
+        auto parsedEnergy = ChipToolOutputParser::parseInteger(totalEnergyStr);
+        if (!parsedEnergy.ok()) {
+            std::cerr << "[DeviceManager] 기기(" << deviceId << ") 누적 전력 값 해석 실패" << std::endl;
+            return false;
+        }
+        hardware_total_mWh = static_cast<long>(*parsedEnergy.value);
     }
 
     DatabaseManager::getInstance().updateEnergyStat(deviceId, hardware_total_mWh, out_real_total_mWh);

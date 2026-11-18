@@ -1,5 +1,6 @@
 #include "MatterController.hpp"
 #include "DeviceManager.hpp"
+#include "ChipToolOutputParser.hpp"
 #include <iostream>
 #include <cstdlib>
 #include <sstream>
@@ -43,17 +44,19 @@ MatterController::~MatterController() {
 bool MatterController::Initialize(){
     std::ifstream file(mConfigFilePath);
     std::string line;
-    
+    int lineNumber = 0;
+
     while (std::getline(file, line)) {
-        size_t commaPos = line.find(',');
-        if (commaPos != std::string::npos) {
-            std::string serial = line.substr(0, commaPos);
-            std::string nodeStr = line.substr(commaPos + 1);
-            uint64_t nodeId = std::stoull(nodeStr);
-            
-            mSerialToNodeId[serial] = nodeId;
-            
+        ++lineNumber;
+        if (line.find_first_not_of(" \t\r") == std::string::npos) continue; // 빈 줄은 경고 없이 넘긴다.
+
+        auto parsed = ChipToolOutputParser::parseRegisteredDeviceLine(line);
+        if (!parsed.ok()) {
+            // 줄 내용에 기기 정보가 있을 수 있어 번호만 남긴다.
+            std::cerr << "[MatterController] 등록 파일 " << lineNumber << "번째 줄 형식 오류, 건너뜀" << std::endl;
+            continue;
         }
+        mSerialToNodeId[parsed.value->first] = parsed.value->second;
     }
     std::cout << "[MatterController] 초기화 완료" << std::endl;
     return true;
@@ -140,33 +143,18 @@ std::string MatterController::executeArgsWithOutput(const std::vector<std::strin
 }
 std::string MatterController::executeCommandWithErrorResponse(const std::string& cmd, const std::string& deviceId){
     std::string output = executeCommandWithOutput("timeout 5 " + cmd);
-    bool isSuccess = false;
-    if (output.find("CHIP_NO_ERROR") != std::string::npos ||
-        output.find("status 0x00 (SUCCESS)") != std::string::npos ||
-        output.find("status = 0x00") != std::string::npos ||
-        output.find("Success status report") != std::string::npos) {
-        isSuccess = true;
-    }
+    bool isSuccess = ChipToolOutputParser::hasCommandSuccessMarker(output);
     if(output.empty() || !isSuccess){
         std::cerr << "[MatterController] 기기(" << deviceId << ") 통신 에러/오프라인. 사유: 출력 없음" << std::endl;
         mOfflineNodes[deviceId] = std::chrono::steady_clock::now(); // 오프라인 명부에 추가
         return "OFFLINE";
     }
-    std::vector<std::string> errorKeywords = {
-        "Timeout",
-        "Error resolving node",
-        "AccessDenied",
-        "Incorrect state",
-        "CHIP_ERROR_"
-    };
-
-    for (const auto& keyword : errorKeywords) {
-        if (output.find(keyword) != std::string::npos) {
-            std::cerr << "[MatterController] 기기(" << deviceId << ") 통신 에러/오프라인. 사유: " << keyword << std::endl;
-            mOfflineNodes[deviceId] = std::chrono::steady_clock::now(); // 오프라인 명부에 추가
-            // 안드로이드가 쉽게 식별할 수 있도록 OFFLINE을 반환합니다.
-            return "OFFLINE"; 
-        }
+    auto errorKeyword = ChipToolOutputParser::findCommandErrorKeyword(output);
+    if (errorKeyword) {
+        std::cerr << "[MatterController] 기기(" << deviceId << ") 통신 에러/오프라인. 사유: " << *errorKeyword << std::endl;
+        mOfflineNodes[deviceId] = std::chrono::steady_clock::now(); // 오프라인 명부에 추가
+        // 안드로이드가 쉽게 식별할 수 있도록 OFFLINE을 반환합니다.
+        return "OFFLINE";
     }
     // 통신 성공 시 오프라인 명부에서 제거 (온라인 복구)
     if (mOfflineNodes.count(deviceId) > 0) {
@@ -286,8 +274,7 @@ bool MatterController::commissionDevice(uint64_t nodeId, std::string name,const 
     std::string output = executeArgsWithOutput(pairingArgs);
     
     // 3. 성공 키워드 검사 (chip-tool 페어링 성공 로그 기준)
-    if (output.find("Device commissioning completed with success") != std::string::npos ||
-        output.find("CHIP_NO_ERROR") != std::string::npos) {
+    if (ChipToolOutputParser::isCommissioningSuccessful(output)) {
         this->onDevicePairingComplete(nodeId, name);
         std::cout << "[MatterController] 커미셔닝 성공. 기기 정보를 내부 스토리지에 저장" << std::endl;
         isSuccess = true;
@@ -312,37 +299,9 @@ std::string MatterController::getDeviceSerialNumber(uint64_t nodeId) {
     std::string cmd = mChipToolPath + " basicinformation read serial-number " + std::to_string(nodeId) + " 0 2>&1";
     std::string output = executeCommandWithOutput(cmd);
 
-    auto extractCleanString = [](const std::string& raw) {
-        std::string clean = "";
-        size_t start = raw.find_first_not_of(" \t\"\'"); // 앞쪽 공백/따옴표 무시
-        
-        if (start != std::string::npos) {
-            for (size_t i = start; i < raw.length(); ++i) {
-                char c = raw[i];
-                // 공백, 줄바꿈, 따옴표, 또는 제어문자(ESC: \033 등)를 만나면 파싱 종료
-                if (std::isspace(c) || c == '\"' || c == '\'' || c == '\033' || c < 32) {
-                    break;
-                }
-                clean += c;
-            }
-        }
-        return clean;
-    };
+    auto serial = ChipToolOutputParser::extractSerialNumber(output);
+    if (serial) return *serial;
 
-    // 1. "SerialNumber:" 키워드 검색
-    size_t pos = output.find("SerialNumber:");
-    if (pos != std::string::npos) {
-        std::string serial = extractCleanString(output.substr(pos + 13));
-        if (!serial.empty()) return serial;
-    }
-
-    // 2. 폴백: "Data =" 형식 검색
-    pos = output.find("Data =");
-    if (pos != std::string::npos) {
-        std::string serial = extractCleanString(output.substr(pos + 6));
-        if (!serial.empty()) return serial;
-    }
-    
     // 시리얼 넘버를 지원하지 않는 기기일 경우, 안전장치로 NodeId 기반의 문자열 반환
     return "UNKNOWN_SERIAL_" + std::to_string(nodeId);
 }
@@ -437,14 +396,8 @@ std::string MatterController::readDeviceState(std::string deviceId, bool isManua
         
         if (output == "OFFLINE" || output == "UNKNOWN") return output;
 
-        // 출력된 로그 중에 Data = true(또는 1)이 있으면 ON
-        if (output.find("Data = true") != std::string::npos || output.find("Data: 1") != std::string::npos) {
-            return "ON";
-        } 
-        // 출력된 로그 중에 Data = false(또는 0)이 있으면 OFF
-        else if (output.find("Data = false") != std::string::npos || output.find("Data: 0") != std::string::npos) {
-            return "OFF";
-        }
+        auto onOffState = ChipToolOutputParser::parseOnOffState(output);
+        if (onOffState) return *onOffState;
     }catch(const std::exception& e){
         std::cerr << "[MatterController] 상태 읽기 실패: " << e.what() << std::endl;
         return "ERROR";
@@ -469,21 +422,7 @@ std::string MatterController::getPowerUsage(std::string deviceId, bool isManualR
 
     if (output.empty()) return "UNKNOWN";
 
-    std::string result = "UNKNOWN";
-    std::istringstream iss(output);
-    std::string line;
-
-    while (std::getline(iss, line)) {
-        size_t pos = line.find("ActivePower:");
-        if (pos != std::string::npos) {
-            std::string valStr = line.substr(pos + 12);
-            // 앞뒤 공백 청소
-            valStr.erase(0, valStr.find_first_not_of(" \t"));
-            valStr.erase(valStr.find_last_not_of(" \n\r\t") + 1);
-            result = valStr;
-            break;
-        }
-    }
+    std::string result = ChipToolOutputParser::extractActivePowerText(output).value_or("UNKNOWN");
 
     if (result != "UNKNOWN") {
         std::cout << "[MatterController] 실시간 전력 : " << result << " mW" << std::endl;
@@ -501,21 +440,7 @@ std::string MatterController::getCumulativeEnergy(std::string deviceId, bool isM
 
     if (output.empty()) return "UNKNOWN";
 
-    std::string result = "UNKNOWN";
-    std::istringstream iss(output);
-    std::string line;
-    
-    while (std::getline(iss, line)) {
-        size_t pos = line.find("Energy:");
-        if (pos != std::string::npos) {
-            std::string valStr = line.substr(pos + 7);
-            // 앞뒤 공백 청소
-            valStr.erase(0, valStr.find_first_not_of(" \t"));
-            valStr.erase(valStr.find_last_not_of(" \n\r\t") + 1);
-            result = valStr;
-            break;
-        }
-    }
+    std::string result = ChipToolOutputParser::extractEnergyText(output).value_or("UNKNOWN");
     if (result != "UNKNOWN") {
         std::cout << "[MatterController] 누적 전력 : " << result << " mWh" << std::endl;
     }
