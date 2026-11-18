@@ -5,6 +5,8 @@ add_executable(hac_tests
     unit/FakeClockTest.cpp
     unit/ChipToolOutputParserTest.cpp
     unit/DatabaseMigrationTest.cpp
+    integration/DeviceManagerIntegrationTest.cpp
+    integration/DeviceManagerBehaviorTest.cpp
 )
 target_include_directories(hac_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(hac_tests PRIVATE hac_core GTest::gmock_main)

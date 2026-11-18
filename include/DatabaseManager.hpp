@@ -12,14 +12,9 @@ struct EnergyLog{
 };
 class DatabaseManager {
 public:
-    // 테스트·주입용으로 공개한다. 싱글톤은 추후 제거 예정
     DatabaseManager() : db_(nullptr) {}
     ~DatabaseManager() { close(); }
 
-    static DatabaseManager& getInstance() {
-        static DatabaseManager instance;
-        return instance;
-    }
     DatabaseManager(const DatabaseManager&) = delete;
     DatabaseManager& operator=(const DatabaseManager&) = delete;
 

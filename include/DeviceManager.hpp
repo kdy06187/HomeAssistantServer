@@ -4,8 +4,6 @@
 #include <unordered_map>
 #include <mutex>
 #include <vector>
-#include <thread>
-#include <atomic>
 #include "Device.hpp"
 #include "ProtocolDriver.hpp"
 #include "DatabaseManager.hpp"
@@ -13,14 +11,13 @@
 #include <memory>
 #include "DriverType.hpp"
 #include "IMessageSender.hpp"
+#include "Clock.hpp"
+#include "DriverManager.hpp"
+#include <unordered_set>
 
 class DeviceManager {
 public:
-// DeviceManager의 싱글톤 인스턴스를 반환하는 정적 메서드
-    static DeviceManager& getInstance(){
-        static DeviceManager instance;
-        return instance;
-    }
+    DeviceManager(DatabaseManager& db, DriverManager& deviceDrivers, Clock& clock);
     DeviceManager(const DeviceManager&) = delete;
     DeviceManager& operator=(const DeviceManager&) = delete;
 
@@ -29,7 +26,8 @@ public:
 
     void initFromDatabase();
     // 디바이스 등록 API - 디바이스를 등록하고, 프로토콜 타입에 맞는 드라이버를 통해 초기화
-    void addDevice(std::string id, std::string name, ProtocolType protocol_type, IMessageSender* sender);
+    void addDevice(std::string id, std::string name, ProtocolType protocol_type,
+                   const std::vector<DriverType>& driverTypes, IMessageSender* sender);
     bool getDevice(std::string id, Device& outDevice);
     std::string getDeviceState(std::string id, bool isManualRefresh = false);
     std::vector<Device> getAllDevices();
@@ -39,34 +37,20 @@ public:
     // 디바이스 제어 API - 디바이스 ID와 명령을 받아 해당 디바이스를 제어
     bool executeCommand(std::string id, std::string command);
     bool removeDevice(std::string id);
-    bool hasDevice(std::string id) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        return devices_.find(id) != devices_.end();
-    }
-    void startHealthCheck();
-    void stopHealthCheck();
-    
-    std::string getDeviceActivePower(std::string deviceId);
-    std::string getDeviceTotalEnergy(std::string deviceId);
+    std::unordered_set<std::string> activeDeviceIds();
+
+    // 모든 기기를 한 번 점검한다. 주기 호출은 PeriodicTasks가 맡는다
+    void runHealthCheck();
+
     bool getDeviceEnergyInfo(const std::string& deviceId, int& out_activePower_mW,long& out_real_total_mWh);
     std::vector<EnergyLog> getDeviceEnergyHistory(const std::string& deviceId, int limit = 50);
 
-    
-
 private:
-    // 외부 생성 방지
-    DeviceManager(){
-        std::cout << "DeviceManager 인스턴스 생성" << std::endl;
-    }
-    ~DeviceManager() = default;
-
-    std::thread health_thread_;
-    std::atomic<bool> is_running_{false};
-    void healthCheckRoutine();
+    DatabaseManager& db_;
+    DriverManager& deviceDrivers_;
+    [[maybe_unused]] Clock& clock_;
 
     std::unordered_map<std::string,Device> devices_;
     std::unordered_map<ProtocolType, ProtocolDriver*> drivers_;
     std::mutex mutex_;
-    
-
 };

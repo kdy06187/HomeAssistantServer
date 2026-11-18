@@ -1,5 +1,4 @@
 #include "TCPDriver.hpp"
-#include "DeviceManager.hpp"
 #include <iostream>
 #include <vector>
 #include <simpleble/SimpleBLE.h>
@@ -13,9 +12,7 @@
 #include "json.hpp"
 
 using json = nlohmann::json;
-TCPDriver::TCPDriver(DeviceManager& deviceManager) : 
-    ProtocolDriver(deviceManager), 
-    running_(false) {
+TCPDriver::TCPDriver() : running_(false) {
     std::cout << "[TCPDriver] 인스턴스 생성" << std::endl;
 }
 
@@ -24,7 +21,7 @@ TCPDriver::~TCPDriver(){
     std::cout << "[TCPDriver] 인스턴스 소멸" << std::endl;
 }
 
-bool TCPDriver::sendCommand(std::string device_id, std::string command){
+bool TCPDriver::sendCommand(const std::string& device_id, const std::string& command){
     json requestJson;
 
     // 1. 입력값이 JSON 형태 '{' 로 시작하는지 확인하여 유연하게 분기
@@ -58,8 +55,12 @@ bool TCPDriver::sendCommand(std::string device_id, std::string command){
     std::cerr << "[TCPDriver] 기기에서 에러 반환: " << error_msg << std::endl;
     return false;
 }
-bool TCPDriver::commissionDevice(std::string name, std::string payload, const std::string& ssid, const std::string& password){
-    std::string server_ip = payload.empty() ? "192.168.219.109" : payload;
+Result<CommissionOutcome> TCPDriver::commission(const CommissionRequest& request,
+                                                const std::unordered_set<std::string>& activeDeviceIds){
+    const std::string& name = request.name;
+    const std::string& ssid = request.ssid;
+    const std::string& password = request.password;
+    std::string server_ip = request.payload.empty() ? "192.168.219.109" : request.payload;
     int server_port = 8080;
 
     std::cout << "[TCPDriver] BLE 스캔 시작... " << std::endl;
@@ -67,7 +68,7 @@ bool TCPDriver::commissionDevice(std::string name, std::string payload, const st
     auto adapters = SimpleBLE::Adapter::get_adapters();
     if (adapters.empty()) {
         std::cerr << "[TCPDriver] 블루투스 어댑터를 찾을 수 없습니다." << std::endl;
-        return false;
+        return Result<CommissionOutcome>::failure(ErrorCode::CommissionFailed, "블루투스 어댑터 없음");
     }
     auto adapter = adapters[0];
 
@@ -85,7 +86,7 @@ bool TCPDriver::commissionDevice(std::string name, std::string payload, const st
 
     if (!found) {
         std::cerr << "❌ [TCPDriver] TCPDevice_DIY 기기를 찾지 못했습니다." << std::endl;
-        return false;
+        return Result<CommissionOutcome>::failure(ErrorCode::CommissionFailed, "BLE 기기 없음");
     }
 
     std::cout << "[TCPDriver] 기기 발견! 연결 시도 중..." << std::endl;
@@ -111,7 +112,7 @@ bool TCPDriver::commissionDevice(std::string name, std::string payload, const st
         std::lock_guard<std::mutex> lock(sockets_mutex_);
         for (auto it = client_sockets_.begin(); it != client_sockets_.end(); ) {
             // DB(앱 목록)에 없는 ID가 소켓을 차지하고 있다면
-            if (!mDeviceManager.hasDevice(it->first)) {
+            if (activeDeviceIds.count(it->first) == 0) {
                 std::cout << "🧹 [TCPDriver] 미등록 좀비 기기 소켓 강제 종료 및 삭제: " << it->first << std::endl;
                 close(it->second);
                 it = client_sockets_.erase(it); // 소켓 목록에서 지움
@@ -146,14 +147,13 @@ bool TCPDriver::commissionDevice(std::string name, std::string payload, const st
         }
     }
     if (!registered_device_id.empty()) {
-        // acceptLoop에서 이미 "ARD_IP" 형태로 ID와 소켓이 맵핑되었으므로 바로 디바이스 매니저에 등록
-        mDeviceManager.addDevice(registered_device_id, name, ProtocolType::TCP_DIY,this);
+        // acceptLoop에서 이미 "ARD_IP" 형태로 ID와 소켓이 맵핑되었으므로 ID만 돌려주면 된다
         std::cout << "[TCPDriver] 커미셔닝 완료 : " << name << " (" << registered_device_id << ")" << std::endl;
-        return true;
+        return Result<CommissionOutcome>::success(CommissionOutcome{registered_device_id});
     }
     
     std::cerr << "❌ [TCPDriver] 타임아웃: 기기가 와이파이에 접속하지 못했거나 서버에 연결하지 못했습니다." << std::endl;
-    return false;
+    return Result<CommissionOutcome>::failure(ErrorCode::CommissionTimeout, "기기 접속 타임아웃");
 }
 
 void TCPDriver::startServer(int port){
@@ -228,7 +228,7 @@ void TCPDriver::accecptLoop(int port){
     close(server_fd);
 }
 
-bool TCPDriver::unpairDevice(std::string deviceId){
+bool TCPDriver::unpairDevice(const std::string& deviceId){
     std::lock_guard<std::mutex> lock(sockets_mutex_);
     auto it = client_sockets_.find(deviceId);
     if(it != client_sockets_.end()){
@@ -244,7 +244,7 @@ bool TCPDriver::unpairDevice(std::string deviceId){
     }
     return false;
 }
-std::string TCPDriver::readDeviceState(std::string deviceId, bool isManualRequest){
+std::string TCPDriver::readDeviceState(const std::string& deviceId, bool isManualRequest){
     // 상태 요청 패킷 생성
     json req;
     req["action"] = "GET_STATE";

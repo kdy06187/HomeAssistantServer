@@ -1,5 +1,5 @@
+#include <limits>
 #include "MatterController.hpp"
-#include "DeviceManager.hpp"
 #include "ChipToolOutputParser.hpp"
 #include <iostream>
 #include <cstdlib>
@@ -30,9 +30,8 @@ namespace {
     }
 }
 
-MatterController::MatterController(DeviceManager& deviceManager)
-    : ProtocolDriver(deviceManager),
-      mChipToolPath("../third_party/connectedhomeip/out/host/chip-tool"),
+MatterController::MatterController()
+    : mChipToolPath("../third_party/connectedhomeip/out/host/chip-tool"),
       mConfigFilePath("../config/registered_devices.txt") {
 }
 
@@ -235,27 +234,26 @@ void MatterController::saveDeviceRegistration(const std::string& serialNumber, u
     file << serialNumber << "," << nodeId << "\n";
 }
 //기기 등록
-bool MatterController::commissionDevice(uint64_t nodeId, std::string name,const std::string& manualPincode,
-                                const std::string& wifiSsid, const std::string& wifiPassword){
+Result<CommissionOutcome> MatterController::commissionDevice(uint64_t nodeId, const std::string& name,const std::string& manualPincode,
+                                const std::string& wifiSsid, const std::string& wifiPassword,
+                                const std::unordered_set<std::string>& activeDeviceIds){
     if (checkDeviceRegistered(nodeId)) {
         std::cout << "[MatterController]" << name <<  "(" << nodeId << ")는 이미 등록되어 있습니다. 커미셔닝을 건너뜁니다." << std::endl;
         std::string deviceIdStr = std::to_string(nodeId);
 
-        if (!mDeviceManager.hasDevice(deviceIdStr)) {
+        if (activeDeviceIds.count(deviceIdStr) == 0) {
             std::cout << "[MatterController] ⚠️ DB에 기기 정보가 누락되어 복구(Sync)를 수행합니다." << std::endl;
-            
-            mDeviceManager.addDevice(deviceIdStr, name, ProtocolType::MATTER,this);
-        } else {
-            std::cout << "[MatterController] ✅ DB에도 이미 존재합니다. 커미셔닝을 완전히 건너뜁니다." << std::endl;
+            return Result<CommissionOutcome>::success(CommissionOutcome{deviceIdStr});
         }
-        return true; 
+        std::cout << "[MatterController] ✅ DB에도 이미 존재합니다. 커미셔닝을 완전히 건너뜁니다." << std::endl;
+        return Result<CommissionOutcome>::success(CommissionOutcome{});
     }
     std::cout << "[MatterController] 기기 등록 시도: NodeId=" << nodeId << std::endl;
     chip::SetupPayload payload;
     CHIP_ERROR err = chip::ManualSetupPayloadParser(manualPincode).populatePayload(payload);
     if (err != CHIP_NO_ERROR) {
         std::cerr << "[MatterController] ❌ 핀 코드 파싱 실패. Error: " << err.Format() << std::endl;
-        return false;
+        return Result<CommissionOutcome>::failure(ErrorCode::CommissionFailed, "핀 코드 파싱 실패");
     }
    
     // SSID와 비밀번호는 REST 입력이므로 셸을 거치지 않는다.
@@ -269,27 +267,27 @@ bool MatterController::commissionDevice(uint64_t nodeId, std::string name,const 
 
     mPairingNodes.insert(nodeId);
 
-    bool isSuccess = false;
+    Result<CommissionOutcome> outcome =
+        Result<CommissionOutcome>::failure(ErrorCode::CommissionFailed, "chip-tool 페어링 실패");
     // 2. 에러 스트림 통합 및 결과 읽기 (executeCommand 대신 사용)
     std::string output = executeArgsWithOutput(pairingArgs);
     
     // 3. 성공 키워드 검사 (chip-tool 페어링 성공 로그 기준)
     if (ChipToolOutputParser::isCommissioningSuccessful(output)) {
-        this->onDevicePairingComplete(nodeId, name);
+        const std::string serialNumber = this->onDevicePairingComplete(nodeId, name);
         std::cout << "[MatterController] 커미셔닝 성공. 기기 정보를 내부 스토리지에 저장" << std::endl;
-        isSuccess = true;
+        outcome = Result<CommissionOutcome>::success(CommissionOutcome{serialNumber});
     } else {
         const std::string safeOutput = redactSecrets(output, {
             wifiPassword, manualPincode, std::to_string(payload.setUpPINCode)
         });
         std::cerr << "[MatterController] 커미셔닝 실패 (타임아웃 또는 에러): \n" << safeOutput << std::endl;
-        isSuccess = false;
     }
 
     // 4. 작업 완료 후 Lock 해제
     mPairingNodes.erase(nodeId);
     
-    return isSuccess;
+    return outcome;
 }
 
 std::string MatterController::getDeviceSerialNumber(uint64_t nodeId) {
@@ -341,7 +339,7 @@ bool MatterController::turnOff(uint64_t nodeId,uint16_t endpointId){
 }
 
 // 인터페이스 구현
-bool MatterController::sendCommand(std::string deviceId, std::string command){
+bool MatterController::sendCommand(const std::string& deviceId, const std::string& command){
     
     uint64_t nodeId = getNodeId(deviceId);
 
@@ -352,24 +350,26 @@ bool MatterController::sendCommand(std::string deviceId, std::string command){
     }
     return false;
 }
-bool MatterController::commissionDevice(std::string name, std::string payload, const std::string& ssid, const std::string& password){
+Result<CommissionOutcome> MatterController::commission(const CommissionRequest& request,
+                                                       const std::unordered_set<std::string>& activeDeviceIds){
     uint64_t nodeId = static_cast<uint64_t>(std::time(nullptr));
-    return commissionDevice(nodeId,name,payload,ssid,password);
+    return commissionDevice(nodeId, request.name, request.payload, request.ssid, request.password, activeDeviceIds);
 }
-void MatterController::onDevicePairingComplete(uint64_t nodeId, const std::string& deviceName) {
+std::string MatterController::onDevicePairingComplete(uint64_t nodeId, const std::string& deviceName) {
     std::cout << "[MatterController] 기기 페어링 완료: NodeId=" << nodeId << ", DeviceName=" << deviceName << std::endl;
     std::string serialNumber = getDeviceSerialNumber(nodeId);
     mSerialToNodeId[serialNumber] = nodeId; // 시리얼 넘버와 NodeId 매핑 저장
     
     saveDeviceRegistration(serialNumber, nodeId);
-    mDeviceManager.addDevice(serialNumber, deviceName, ProtocolType::MATTER,this);
+    return serialNumber;
 }
-bool MatterController::unpairDevice(std::string deviceId){
+bool MatterController::unpairDevice(const std::string& deviceId){
     std::cout << "[MatterController] Matter 기기 페어링 해제 : NodeId = " << deviceId << std::endl;
     bool success = this->removeDeviceRegistration(deviceId);
     return success;
 }
-std::string MatterController::readDeviceState(std::string deviceId, bool isManualRequest){
+std::string MatterController::readDeviceState(const std::string& rawDeviceId, bool isManualRequest){
+    std::string deviceId = rawDeviceId;
     deviceId.erase(std::remove(deviceId.begin(), deviceId.end(), '\n'), deviceId.end());
     deviceId.erase(std::remove(deviceId.begin(), deviceId.end(), '\r'), deviceId.end());
     deviceId.erase(std::remove(deviceId.begin(), deviceId.end(), '\"'), deviceId.end());
@@ -403,6 +403,30 @@ std::string MatterController::readDeviceState(std::string deviceId, bool isManua
         return "ERROR";
     }
     return "UNKNOWN";
+}
+// 값 해석 규칙: "UNKNOWN"/빈 문자열은 0, 그 외 숫자가 아니면 실패
+Result<EnergyReading> MatterController::readEnergy(const std::string& deviceId){
+    const std::string activePowerText = getPowerUsage(deviceId);
+    const std::string cumulativeText = getCumulativeEnergy(deviceId);
+
+    EnergyReading reading{0, 0};
+    if (activePowerText != "UNKNOWN" && !activePowerText.empty()) {
+        const auto parsedPower = ChipToolOutputParser::parseInteger(activePowerText);
+        if (!parsedPower.ok() ||
+            *parsedPower.value < std::numeric_limits<int>::min() ||
+            *parsedPower.value > std::numeric_limits<int>::max()) {
+            return Result<EnergyReading>::failure(ErrorCode::Internal, "실시간 전력 값 해석 실패");
+        }
+        reading.activePower_mW = *parsedPower.value;
+    }
+    if (cumulativeText != "UNKNOWN" && !cumulativeText.empty()) {
+        const auto parsedEnergy = ChipToolOutputParser::parseInteger(cumulativeText);
+        if (!parsedEnergy.ok()) {
+            return Result<EnergyReading>::failure(ErrorCode::Internal, "누적 전력 값 해석 실패");
+        }
+        reading.cumulative_mWh = *parsedEnergy.value;
+    }
+    return Result<EnergyReading>::success(reading);
 }
 std::string MatterController::getPowerUsage(std::string deviceId, bool isManualRequest){
     uint64_t nodeId = getNodeId(deviceId);

@@ -29,12 +29,14 @@ function(hac_apply_target_options target)
 endfunction()
 
 # ---- hac_core: CHIP·BLE 없이 빌드되는 모듈 ----
-# OBJECT 라이브러리: 정적 라이브러리면 PCDriver의 정적 DriverRegistrar가 링커에 의해 빠질 수 있다
 add_library(hac_core OBJECT
     src/ApiAuth.cpp
     src/ChipToolOutputParser.cpp
     src/DatabaseManager.cpp
+    src/DeviceManager.cpp
+    src/HTTPServer.cpp
     src/PCDriver.cpp
+    src/PeriodicTasks.cpp
 )
 target_include_directories(hac_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(hac_core PUBLIC OpenSSL::Crypto sqlite3 Threads::Threads)
@@ -52,14 +54,12 @@ if(HAC_BUILD_SERVER)
         "${MATTER_OUT_DIR}/obj/*.a"
     )
 
-    # 임시 묶음: 아직 CHIP에서 분리 전인 모듈. 인터페이스 분리 후 hac_core/hac_drivers로 해체한다
-    add_library(hac_legacy OBJECT
-        src/DeviceManager.cpp
-        src/HTTPServer.cpp
+    # CHIP·SimpleBLE에 의존하는 프로토콜 드라이버
+    add_library(hac_drivers OBJECT
         src/TCPDriver.cpp
         src/MatterController.cpp
     )
-    target_include_directories(hac_legacy PUBLIC
+    target_include_directories(hac_drivers PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${MATTER_SDK_DIR}/src/include
         ${MATTER_SDK_DIR}/src/lib
@@ -74,12 +74,12 @@ if(HAC_BUILD_SERVER)
         ${MATTER_SDK_DIR}/third_party/ot-commissioner/repo/include
     )
     # Matter용 리눅스 환경 매크로 스위치 켜기
-    target_compile_definitions(hac_legacy PUBLIC
+    target_compile_definitions(hac_drivers PUBLIC
         CHIP_HAVE_CONFIG_H=1
         CHIP_SYSTEM_CONFIG_USE_SOCKETS=1
         CHIP_SYSTEM_CONFIG_USE_POSIX_SOCKETS=1
     )
-    target_link_libraries(hac_legacy PUBLIC
+    target_link_libraries(hac_drivers PUBLIC
         -Wl,--start-group
         ${MATTER_LIBS}
         ${GLIB2_LIBRARIES}
@@ -97,10 +97,10 @@ if(HAC_BUILD_SERVER)
         avahi-common
         dbus-1
     )
-    hac_apply_target_options(hac_legacy)
+    hac_apply_target_options(hac_drivers)
 
     add_executable(HomeAssistantCore src/main.cpp)
-    target_link_libraries(HomeAssistantCore PRIVATE hac_core hac_legacy)
+    target_link_libraries(HomeAssistantCore PRIVATE hac_core hac_drivers)
     hac_apply_target_options(HomeAssistantCore)
 
     # 아래 호출은 위 타깃 정의보다 뒤에 있어 GLIB2_* 변수가 위에서는 비어 있다.

@@ -14,7 +14,7 @@
 
 class MatterController : public ProtocolDriver, public IMessageSender {
 public:
-    MatterController(DeviceManager& deviceManager);
+    MatterController();
     ~MatterController();
 
     // =========================================================
@@ -38,10 +38,12 @@ public:
     bool turnOff(uint64_t nodeId,uint16_t endpointId);
 
     // 인터페이스 구현
-    bool sendCommand(std::string deviceId, std::string command) override;
-    bool commissionDevice(std::string name, std::string payload, const std::string& ssid = "", const std::string& password = "") override;
-    bool unpairDevice(std::string deviceId) override;
-    std::string readDeviceState(std::string deviceId, bool isManualRequest) override;
+    bool sendCommand(const std::string& deviceId, const std::string& command) override;
+    Result<CommissionOutcome> commission(const CommissionRequest& request,
+                                         const std::unordered_set<std::string>& activeDeviceIds) override;
+    bool unpairDevice(const std::string& deviceId) override;
+    std::string readDeviceState(const std::string& deviceId, bool isManualRequest) override;
+    Result<EnergyReading> readEnergy(const std::string& deviceId) override;
 
     bool removeDeviceRegistration(const std::string& serialNumber);
 
@@ -55,14 +57,15 @@ public:
     }
 private:
     std::string mChipToolPath;
-    bool commissionDevice(uint64_t nodeId, std::string name, const std::string& manualPincode,
-                          const std::string& wifiSsid, const std::string& wifiPassword);
+    Result<CommissionOutcome> commissionDevice(uint64_t nodeId, const std::string& name, const std::string& manualPincode,
+                          const std::string& wifiSsid, const std::string& wifiPassword,
+                          const std::unordered_set<std::string>& activeDeviceIds);
     bool executeCommand(const std::string& cmd);
     std::string executeCommandWithOutput(std::string cmd);
     // 셸을 거치지 않고 실행해 stdout과 stderr를 함께 반환한다. 외부 입력이 인자에 포함될 때 사용한다.
     std::string executeArgsWithOutput(const std::vector<std::string>& args);
     std::string executeCommandWithErrorResponse(const std::string& cmd, const std::string& deviceId);
-    void onDevicePairingComplete(uint64_t nodeId, const std::string& deviceName);
+    std::string onDevicePairingComplete(uint64_t nodeId, const std::string& deviceName);
     bool checkDeviceRegistered(uint64_t nodeId);
     void saveDeviceRegistration(const std::string& serialNumber,uint64_t nodeId);
     std::string mConfigFilePath;

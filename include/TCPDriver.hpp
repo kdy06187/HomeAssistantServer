@@ -10,13 +10,14 @@
 
 class TCPDriver : public ProtocolDriver, public IMessageSender {
 public:
-    TCPDriver(DeviceManager& deviceManager);
+    TCPDriver();
     ~TCPDriver() override;
     // TCPDriver의 sendCommand 메서드 구현
-    bool sendCommand(std::string deviceId, std::string command) override;
-    bool commissionDevice(std::string name, std::string payload, const std::string& ssid = "", const std::string& password = "") override;
-    bool unpairDevice(std::string deviceId) override;
-    std::string readDeviceState(std::string deviceId, bool isManualRequest) override;
+    bool sendCommand(const std::string& deviceId, const std::string& command) override;
+    Result<CommissionOutcome> commission(const CommissionRequest& request,
+                                         const std::unordered_set<std::string>& activeDeviceIds) override;
+    bool unpairDevice(const std::string& deviceId) override;
+    std::string readDeviceState(const std::string& deviceId, bool isManualRequest) override;
     //IMessageSender의 SendCommandTo 메서드 구현
     void SendCommandTo(const std::string& target_id, const std::string& command) override;
     // TCP 서버 시작 및 종료 메서드

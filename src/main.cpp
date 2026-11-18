@@ -11,6 +11,8 @@
 #include "PCDriver.hpp"
 #include "IMessageSender.hpp"
 #include "ApiAuth.hpp"
+#include "PeriodicTasks.hpp"
+#include "Clock.hpp"
 #include <csignal> // 상단에 추가
 int main() {
     signal(SIGPIPE, SIG_IGN);
@@ -24,35 +26,39 @@ int main() {
     }
 
     // 0. 데이터베이스 준비
-    if (!DatabaseManager::getInstance().init("../db/home_assistant.db")) {
+    DatabaseManager database;
+    if (!database.init("../db/home_assistant.db")) {
         std::cerr << "❌ DB 초기화 실패!" << std::endl;
         return 1;
     }
     std::cout << "✅ 데이터베이스 로드 완료!" << std::endl;
-    // 1. 시스템 두뇌(DeviceManager) 가져오기
-    DeviceManager& manager = DeviceManager::getInstance();
-    // manager.startEnergyTimer(); // 전력량 수집 타이머 시작
+    // 1. 시스템 두뇌(DeviceManager) 조립
+    DriverManager deviceDrivers;
+    SystemClock clock;
+    DeviceManager manager(database, deviceDrivers, clock);
     // 2. TCP 드라이버 생성 및 포트 8080으로 서버 시작
-    TCPDriver* tcpDriver = new TCPDriver(manager);
-    tcpDriver->startServer(8080);
+    TCPDriver tcpDriver;
+    tcpDriver.startServer(8080);
     
     // 3. DeviceManager에 드라이버 등록
-    manager.registerDriver(ProtocolType::TCP_DIY, tcpDriver);
+    manager.registerDriver(ProtocolType::TCP_DIY, &tcpDriver);
     
     // MatterController 생성 및 초기화
-    MatterController* matterController = new MatterController(manager);
-    if (matterController->Initialize()) {
+    MatterController matterController;
+    if (matterController.Initialize()) {
         std::cout << "[Main] MatterController 초기화 및 스레드 구동 성공!" << std::endl;
     } else {
         std::cerr << "[Main] MatterController 초기화 실패!" << std::endl;
     }
     std::this_thread::sleep_for(std::chrono::seconds(3));
-    DriverManager::getInstance().registerDriver(DriverType::PC_DRIVER, [&tcpDriver](IMessageSender* sender) {
-        return std::make_shared<PCDriver>(tcpDriver);
+    // 어떤 프로토콜의 기기든 PC 종료 메시지는 TCP 드라이버로 보낸다
+    deviceDrivers.registerDriver(DriverType::PC_DRIVER, [&tcpDriver](IMessageSender*) {
+        return std::make_shared<PCDriver>(&tcpDriver);
     });
-    manager.registerDriver(ProtocolType::MATTER, matterController);
+    manager.registerDriver(ProtocolType::MATTER, &matterController);
     
-    manager.startHealthCheck();
+    PeriodicTasks periodicTasks(manager);
+    periodicTasks.start();
     manager.initFromDatabase();
     HTTPServer httpServer(manager, *apiToken, 8000);
     httpServer.start();
@@ -72,10 +78,8 @@ int main() {
     const int MAX_FAILURES = 3;       // 치명적 장애로 판단할 임계치
     
     httpServer.stop();
-    matterController->shutdown();
-    delete matterController;
-    tcpDriver->stopServer();
-    delete tcpDriver;
-    manager.stopHealthCheck();
+    periodicTasks.stop();
+    matterController.shutdown();
+    tcpDriver.stopServer();
     return 0;
 }
