@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DESIGN 해설 - home-assistant-core 2단계(설계) 학습 페이지</title>
+<style>
+:root{--bg:#f5f6f8;--card:#fff;--fg:#1d2330;--sub:#566074;--line:#d5dae3;--acc:#2563eb;--ok:#15803d;--bad:#c62828;--warn:#b45309;--code:#eef1f6;--box:#e8eefc;--boxl:#dff3e6;--boxr:#fde7e7;--boxy:#fff3d6}
+@media (prefers-color-scheme:dark){:root{--bg:#10141c;--card:#181e2a;--fg:#e6eaf2;--sub:#9aa5ba;--line:#2e3748;--acc:#7aa7ff;--ok:#5fd48a;--bad:#ff8a8a;--warn:#f0b35a;--code:#0e121a;--box:#1f2c4d;--boxl:#18382a;--boxr:#4a2222;--boxy:#4a3a18}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.7 -apple-system,"Noto Sans KR","Malgun Gothic",sans-serif}
+main{max-width:980px;margin:0 auto;padding:16px}
+h1{font-size:2rem;margin:.6em 0 .1em}
+h2{font-size:1.4rem;margin:0 0 .5em;border-left:6px solid var(--acc);padding-left:.5em}
+h3{font-size:1.05rem;margin:1.2em 0 .3em}
+.lead{color:var(--sub);margin-top:0}
+section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin:18px 0}
+table{border-collapse:collapse;width:100%;font-size:.92rem;display:block;overflow-x:auto}
+th,td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top}
+th{background:var(--code)}
+code,pre{font-family:ui-monospace,Consolas,monospace;font-size:.88rem}
+code{background:var(--code);padding:1px 5px;border-radius:5px}
+pre{background:var(--code);border:1px solid var(--line);border-radius:10px;padding:10px 12px;overflow-x:auto;line-height:1.5}
+pre.before{border-left:6px solid var(--bad)}
+pre.after{border-left:6px solid var(--ok)}
+.tag{display:inline-block;font-size:.75rem;border-radius:99px;padding:0 8px;margin-right:4px;color:#fff}
+.t-bad{background:var(--bad)}.t-ok{background:var(--ok)}
+svg{width:100%;height:auto;display:block;margin:8px 0}
+svg text{fill:var(--fg);font-family:-apple-system,"Noto Sans KR","Malgun Gothic",sans-serif}
+svg .b{fill:var(--box);stroke:var(--acc);stroke-width:1.5}
+svg .g{fill:var(--boxl);stroke:var(--ok);stroke-width:1.5}
+svg .r{fill:var(--boxr);stroke:var(--bad);stroke-width:1.5}
+svg .y{fill:var(--boxy);stroke:var(--warn);stroke-width:1.5}
+svg .ln{stroke:var(--sub);stroke-width:1.6;fill:none}
+svg .lr{stroke:var(--bad);stroke-width:2;fill:none}
+svg .lg{stroke:var(--ok);stroke-width:2;fill:none}
+svg .dash{stroke-dasharray:6 4}
+svg .s{font-size:12px}svg .m{font-size:14px}svg .xs{font-size:11px;fill:var(--sub)}
+.note{background:var(--boxy);border-radius:10px;padding:8px 12px;font-size:.93rem}
+details{border:1px solid var(--line);border-radius:10px;padding:6px 12px;margin:8px 0;background:var(--bg)}
+summary{cursor:pointer;font-weight:600}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:700px){.cols{grid-template-columns:1fr}h1{font-size:1.5rem}}
+.steps{counter-reset:s;list-style:none;padding:0}
+.steps li{counter-increment:s;margin:6px 0;padding:6px 10px 6px 40px;position:relative;background:var(--code);border-radius:8px}
+.steps li::before{content:counter(s);position:absolute;left:10px;top:6px;background:var(--acc);color:#fff;border-radius:50%;width:22px;height:22px;text-align:center;font-size:.8rem;line-height:22px}
+</style>
+</head>
+<body>
+<main>
+<h1>2단계 설계 해설</h1>
+<p class="lead">home-assistant-core: 싱글톤·교착 구조를 3계층 + 생성자 주입으로 바꾸는 설계를 읽는 법. 학습 강도 균형(해설 + 질문 + 응용 실습). 기준 문서: <code>docs/02_설계.md</code>, ADR-001~010, <code>docs/api-contract-v2.0-초안.md</code>. 설계는 아직 사용자 승인 전 초안이다.</p>
+
+<!-- ============ 1 ============ -->
+<section>
+<h2>1. 한눈에 보기</h2>
+<ul>
+<li><b>무엇을</b>: 전역 싱글톤과 서로를 부르는 순환 구조를, <code>main</code>이 모두 만들어 넣어 주는 3계층 구조로 바꾼다.</li>
+<li><b>왜</b>: 락 순서가 엇갈려 멈추는 교착, 느린 하드웨어 작업 중 전체가 멈춤, 가짜 드라이버로 시험할 수 없음을 한꺼번에 푼다.</li>
+<li><b>어떻게</b>: 인터페이스 뒤에 바깥 세계를 숨기고, 락은 "한 번에 하나, 안에서는 메모리만"으로 제한하고, 명령 결과는 <code>bool</code> 대신 값(<code>CommandResult</code>)으로 돌려준다.</li>
+</ul>
+<table>
+<tr><th>관점</th><th>As-Is</th><th>To-Be</th><th>결정</th></tr>
+<tr><td>객체 생성</td><td>싱글톤 3개, 드라이버가 <code>DeviceManager&amp;</code> 역호출</td><td><code>main</code>이 만들어 생성자로 주입, 의존은 위에서 아래로만</td><td>ADR-001</td></tr>
+<tr><td>락</td><td>락 쥔 채 chip-tool(최대 10초)·남의 락 호출</td><td>락 하나만, 안은 메모리만, 스냅샷 복사</td><td>ADR-002</td></tr>
+<tr><td>명령 결과</td><td><code>bool</code>(항상 true), 본문 문자열로 상태코드 결정</td><td><code>CommandResult</code> + <code>ErrorCode</code> → HTTP 단일 표</td><td>ADR-003</td></tr>
+<tr><td>테스트</td><td>없음</td><td>GoogleTest/Mock, 가짜 드라이버·가짜 시계</td><td>ADR-004</td></tr>
+<tr><td>외부 접속</td><td><code>0.0.0.0:8000</code> 평문</td><td><code>127.0.0.1</code> + <code>tailscale serve</code> HTTPS</td><td>ADR-005</td></tr>
+<tr><td>TCP 기기 ID</td><td><code>ARD_&lt;IP&gt;</code></td><td><code>TCP_&lt;MAC12&gt;</code> (ARP 표)</td><td>ADR-006</td></tr>
+<tr><td>삭제·이력</td><td>행 삭제, 통계 잔존</td><td>숨김(<code>deleted_at</code>), 90일 복구·정리</td><td>ADR-007</td></tr>
+<tr><td>비밀값</td><td>chip-tool 인자(<code>ps</code>로 보임)</td><td>stdin 전달 (실기 확인 뒤 확정)</td><td>ADR-008</td></tr>
+<tr><td>인증</td><td>본문 읽기 전 401 → POST 끊김</td><td>라우트 래퍼가 본문 뒤 인증</td><td>ADR-009</td></tr>
+<tr><td>지연·종료</td><td><code>detach</code> 스레드, 종료 코드 도달 불가</td><td>스케줄러 1개 + <code>sigwait</code> 종료 순서</td><td>ADR-010</td></tr>
+</table>
+</section>
+
+<!-- ============ 2 ============ -->
+<section>
+<h2>2. As-Is → To-Be 구조 비교</h2>
+<p>왼쪽은 "누구나 전역에서 서로를 부르는" 구조, 오른쪽은 "위에서 아래로만, 조립은 main이 한 곳에서" 하는 구조다.</p>
+<svg viewBox="0 0 900 430" role="img" aria-label="As-Is와 To-Be 구조 비교">
+  <defs>
+    <marker id="a1" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8z" fill="var(--sub)"/></marker>
+    <marker id="a2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8z" fill="var(--bad)"/></marker>
+    <marker id="a3" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8z" fill="var(--ok)"/></marker>
+  </defs>
+  <text x="20" y="22" class="m" font-weight="bold">As-Is (문제)</text>
+  <rect class="b" x="150" y="40" width="140" height="40" rx="8"/><text x="220" y="65" text-anchor="middle" class="s">HTTPServer</text>
+  <rect class="r" x="150" y="130" width="140" height="50" rx="8"/><text x="220" y="152" text-anchor="middle" class="s">DeviceManager</text><text x="220" y="168" text-anchor="middle" class="xs">싱글톤 + 전역 락</text>
+  <rect class="r" x="20" y="230" width="130" height="46" rx="8"/><text x="85" y="250" text-anchor="middle" class="s">DriverManager</text><text x="85" y="266" text-anchor="middle" class="xs">싱글톤</text>
+  <rect class="r" x="300" y="230" width="130" height="46" rx="8"/><text x="365" y="250" text-anchor="middle" class="s">DatabaseManager</text><text x="365" y="266" text-anchor="middle" class="xs">싱글톤</text>
+  <rect class="y" x="150" y="330" width="140" height="50" rx="8"/><text x="220" y="352" text-anchor="middle" class="s">ProtocolDriver</text><text x="220" y="368" text-anchor="middle" class="xs">TCP / Matter</text>
+  <path class="ln" d="M220 80 V128" marker-end="url(#a1)"/>
+  <path class="ln" d="M190 180 L110 228" marker-end="url(#a1)"/>
+  <path class="ln" d="M250 180 L335 228" marker-end="url(#a1)"/>
+  <path class="ln" d="M200 180 V328" marker-end="url(#a1)"/>
+  <path class="lr" d="M245 328 V182" marker-end="url(#a2)"/>
+  <text x="252" y="260" class="xs" fill="var(--bad)" style="fill:var(--bad)">역호출</text>
+  <text x="252" y="274" class="xs" style="fill:var(--bad)">addDevice,</text>
+  <text x="252" y="288" class="xs" style="fill:var(--bad)">hasDevice</text>
+  <text x="20" y="410" class="s" style="fill:var(--bad)">순환 의존 + 역호출 = 락 순서 엇갈림(교착)</text>
+
+  <line x1="450" y1="10" x2="450" y2="420" class="ln dash"/>
+
+  <text x="470" y="22" class="m" font-weight="bold">To-Be (설계)</text>
+  <rect class="g" x="690" y="30" width="190" height="44" rx="8"/><text x="785" y="50" text-anchor="middle" class="s">main (Composition Root)</text><text x="785" y="65" text-anchor="middle" class="xs">모두 생성 후 참조로 주입</text>
+  <rect class="b" x="470" y="40" width="190" height="62" rx="8"/><text x="565" y="60" text-anchor="middle" class="s" font-weight="bold">HTTP 계층</text><text x="565" y="78" text-anchor="middle" class="xs">HTTPServer, Authenticator</text><text x="565" y="92" text-anchor="middle" class="xs">검증·인증·JSON 변환</text>
+  <rect class="b" x="470" y="140" width="190" height="82" rx="8"/><text x="565" y="160" text-anchor="middle" class="s" font-weight="bold">응용 계층</text><text x="565" y="178" text-anchor="middle" class="xs">DeviceManager, Scheduler,</text><text x="565" y="192" text-anchor="middle" class="xs">CommissioningService,</text><text x="565" y="206" text-anchor="middle" class="xs">PeriodicTasks, DriverManager</text>
+  <rect class="b" x="470" y="262" width="190" height="104" rx="8"/><text x="565" y="282" text-anchor="middle" class="s" font-weight="bold">인프라 계층</text><text x="565" y="300" text-anchor="middle" class="xs">{ProtocolDriver} TCP/Matter</text><text x="565" y="314" text-anchor="middle" class="xs">{ChipToolRunner} {MacResolver}</text><text x="565" y="328" text-anchor="middle" class="xs">{Clock} DatabaseManager</text><text x="565" y="346" text-anchor="middle" class="xs">{ } = 인터페이스(가짜로 교체)</text>
+  <path class="lg" d="M565 102 V138" marker-end="url(#a3)"/>
+  <path class="lg" d="M565 222 V260" marker-end="url(#a3)"/>
+  <path class="ln dash" d="M690 52 H662" marker-end="url(#a1)"/>
+  <path class="ln dash" d="M785 74 V180 H662" marker-end="url(#a1)"/>
+  <path class="ln dash" d="M785 180 V314 H662" marker-end="url(#a1)"/>
+  <path class="ln dash" d="M470 314 H455 V182 H470" />
+  <text x="700" y="250" class="xs">점선: main이 만들어 주입</text>
+  <text x="700" y="268" class="xs">아래 -> 위 알림은 콜백 1개</text>
+  <text x="700" y="284" class="xs">(onConnected, Observer)</text>
+  <text x="470" y="410" class="s" style="fill:var(--ok)">의존은 한 방향, 시험 때 인프라를 가짜로 교체</text>
+</svg>
+
+<h3>왜 이렇게 나눴나</h3>
+<ul>
+<li><b>HTTP 계층</b>은 "바깥 요청을 안전하게 번역"만 한다. 기기 규칙은 모른다.</li>
+<li><b>응용 계층</b>은 "기기 등록·제어·삭제 규칙"과 스레드 수명을 가진다. 이 규칙을 가짜 인프라로 시험할 수 있어야 하기 때문에 가운데에 둔다.</li>
+<li><b>인프라 계층</b>은 TCP·chip-tool·SQLite·시계처럼 바뀌거나 느린 것을 인터페이스 뒤에 숨긴다. 새 기기 종류는 여기에 구현체 하나를 더하면 된다(NFR-05).</li>
+</ul>
+<h3>코드 해설: 순환 고리를 끊는 한 줄</h3>
+<pre class="before">// Before: 드라이버가 매니저를 들고 거꾸로 부른다
+class ProtocolDriver { DeviceManager&amp; mgr_;  /* mgr_.addDevice(...) */ };</pre>
+<pre class="after">// After: 드라이버는 결과만 돌려주고, 등록은 위층이 한다
+virtual Result&lt;CommissionOutcome&gt; commission(const CommissionRequest&amp;,
+        const std::unordered_set&lt;std::string&gt;&amp; activeDeviceIds,   // 복사본
+        const std::atomic&lt;bool&gt;&amp; cancelRequested) = 0;</pre>
+<ul>
+<li><b>무엇을</b>: 드라이버가 <code>DeviceManager</code>를 모르게 하고, 필요한 정보(활성 ID 목록)는 복사본으로 받는다.</li>
+<li><b>왜</b>: 아래가 위를 부르지 않으면 "락 쥔 채 남의 락" 경로가 구조적으로 사라진다.</li>
+<li><b>빼면</b>: 역호출이 남아 다시 교착 가능, 그리고 <code>DeviceManager</code> 없이는 드라이버를 시험할 수 없다.</li>
+</ul>
+</section>
+
+<!-- ============ 3 ============ -->
+<section>
+<h2>3. 명령 흐름 (E2: <code>POST /api/control</code>)</h2>
+<p>요청 하나가 지나가는 길과, 각 출구가 어떤 HTTP 코드가 되는지 본다. 코드는 <code>ErrorCode</code>/<code>CommandOutcome</code>을 <code>ErrorMapping</code> 표 한 곳에서만 바꾼다(문자열 검사 없음).</p>
+<svg viewBox="0 0 900 640" role="img" aria-label="명령 흐름 순서도">
+  <defs><marker id="f1" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8z" fill="var(--sub)"/></marker></defs>
+  <!-- 주 흐름 -->
+  <rect class="b" x="40" y="10" width="250" height="44" rx="8"/><text x="165" y="30" text-anchor="middle" class="s">앱 -> HTTPS -> serve -> 127.0.0.1:8000</text><text x="165" y="45" text-anchor="middle" class="xs">본문(16KiB 이하)을 먼저 읽는다</text>
+  <rect class="b" x="40" y="86" width="250" height="44" rx="8"/><text x="165" y="106" text-anchor="middle" class="s">addRoute 래퍼: 인증 (Decorator)</text><text x="165" y="121" text-anchor="middle" class="xs">예외는 여기서 500으로 번역</text>
+  <rect class="b" x="40" y="162" width="250" height="44" rx="8"/><text x="165" y="182" text-anchor="middle" class="s">DeviceManager::executeCommand</text><text x="165" y="197" text-anchor="middle" class="xs">[락] 기기 복사 [해제]</text>
+  <rect class="y" x="40" y="238" width="250" height="52" rx="8"/><text x="165" y="258" text-anchor="middle" class="s">대기 중 지연 명령 확인</text><text x="165" y="274" text-anchor="middle" class="xs">같은 명령이면 재실행 없이 수락, 다른 명령이면 취소</text>
+  <rect class="b" x="40" y="322" width="250" height="52" rx="8"/><text x="165" y="342" text-anchor="middle" class="s">기기 드라이버 (예: PCDriver)</text><text x="165" y="358" text-anchor="middle" class="xs">handleCommand: Proceed / Block / Delay (락 없이)</text>
+  <rect class="b" x="40" y="406" width="250" height="52" rx="8"/><text x="165" y="426" text-anchor="middle" class="s">프로토콜 드라이버 sendCommand</text><text x="165" y="442" text-anchor="middle" class="xs">TCPDriver / MatterController (락 없이)</text>
+  <rect class="b" x="40" y="490" width="250" height="44" rx="8"/><text x="165" y="510" text-anchor="middle" class="s">CommandResult 생성</text><text x="165" y="525" text-anchor="middle" class="xs">Succeeded / Accepted / Failed</text>
+  <rect class="b" x="40" y="566" width="250" height="44" rx="8"/><text x="165" y="586" text-anchor="middle" class="s">ErrorMapping (단일 표)</text><text x="165" y="601" text-anchor="middle" class="xs">결과 -> HTTP 코드 + 오류 본문</text>
+  <g class="ln">
+    <path class="ln" d="M165 54 V84" marker-end="url(#f1)"/><path class="ln" d="M165 130 V160" marker-end="url(#f1)"/><path class="ln" d="M165 206 V236" marker-end="url(#f1)"/>
+    <path class="ln" d="M165 290 V320" marker-end="url(#f1)"/><path class="ln" d="M165 374 V404" marker-end="url(#f1)"/><path class="ln" d="M165 458 V488" marker-end="url(#f1)"/><path class="ln" d="M165 534 V564" marker-end="url(#f1)"/>
+  </g>
+  <!-- 출구 -->
+  <path class="ln dash" d="M290 108 H420" marker-end="url(#f1)"/><rect class="r" x="420" y="90" width="270" height="36" rx="8"/><text x="555" y="113" text-anchor="middle" class="s">인증 실패: 401 UNAUTHORIZED</text>
+  <path class="ln dash" d="M290 184 H420" marker-end="url(#f1)"/><rect class="r" x="420" y="166" width="270" height="36" rx="8"/><text x="555" y="189" text-anchor="middle" class="s">없는 기기·숨김 기기: 404 DEVICE_NOT_FOUND</text>
+  <path class="ln dash" d="M290 264 H420" marker-end="url(#f1)"/><rect class="g" x="420" y="246" width="270" height="36" rx="8"/><text x="555" y="269" text-anchor="middle" class="s">같은 명령 대기 중: 202 (남은 초)</text>
+  <path class="ln dash" d="M290 340 H420" marker-end="url(#f1)"/><rect class="r" x="420" y="322" width="270" height="36" rx="8"/><text x="555" y="345" text-anchor="middle" class="s">Block: 409 COMMAND_BLOCKED</text>
+  <path class="ln dash" d="M290 356 L420 384" marker-end="url(#f1)"/><rect class="g" x="420" y="372" width="270" height="36" rx="8"/><text x="555" y="395" text-anchor="middle" class="s">Delay: 스케줄러 등록 -> 202 Accepted</text>
+  <path class="ln dash" d="M290 424 H420" marker-end="url(#f1)"/><rect class="r" x="420" y="426" width="270" height="36" rx="8"/><text x="555" y="449" text-anchor="middle" class="s">실패: 상태 OFFLINE, 502 DEVICE_UNREACHABLE</text>
+  <path class="ln dash" d="M290 590 H420" marker-end="url(#f1)"/><rect class="g" x="420" y="560" width="270" height="60" rx="8"/><text x="555" y="582" text-anchor="middle" class="s">Succeeded: 200</text><text x="555" y="600" text-anchor="middle" class="xs">예상 못 한 예외는 500 INTERNAL_ERROR</text>
+  <text x="710" y="113" class="xs">본문 16KiB 초과는 413</text>
+</svg>
+<table>
+<tr><th>결과</th><th>HTTP</th><th>뜻</th><th>앱이 할 일</th></tr>
+<tr><td>Succeeded</td><td>200</td><td>하드웨어까지 성공</td><td>상태 표시</td></tr>
+<tr><td>Accepted</td><td>202</td><td>지연 수락 (<code>pendingCommand</code>, <code>delaySeconds</code>)</td><td>그 시간 뒤 E5로 확인</td></tr>
+<tr><td>Failed(CommandBlocked)</td><td>409</td><td>기기 드라이버가 막음</td><td>사유 표시</td></tr>
+<tr><td>Failed(DeviceUnreachable)</td><td>502</td><td>기기·chip-tool 응답 없음</td><td>오프라인 안내</td></tr>
+</table>
+<h3>코드 해설: bool 대신 값으로</h3>
+<pre class="before">// Before: 기기만 있으면 true. 하드웨어 실패·지연도 "명령 성공!"
+bool executeCommand(const std::string&amp; id, const std::string&amp; cmd);</pre>
+<pre class="after">// After: 성공/수락/실패를 타입으로 구분
+CommandResult executeCommand(const std::string&amp; deviceId, Command command);
+enum class CommandOutcome { Succeeded, Accepted, Failed };</pre>
+<ul>
+<li><b>무엇을</b>: 결과를 세 갈래로 나눠 에러코드를 담는다.</li>
+<li><b>왜</b>: HTTP 코드는 "본문에 error 글자가 있나"가 아니라 타입으로 정한다. 예상 가능한 실패(기기 꺼짐)는 값, 예상 못 한 것만 예외로 둔다(Result 패턴).</li>
+<li><b>빼면</b>: 앱이 실패를 성공으로 오해하고, 지연 수락(202)을 표현할 수 없다.</li>
+</ul>
+<div class="note">참고: 이 변경은 REST MAJOR 변경(계약 v2.0 초안 §6의 #3, #6)이다. 그래서 1차 릴리스는 내부 구조만 바꾸고 REST는 v1.0 그대로 두며, 2차에 한 번에 v2.0을 낸다. 앱 반영은 "호환되는 준비를 먼저, 전환은 한 번에, 서버 먼저 앱 나중"(§7)이다.</div>
+</section>
+
+<!-- ============ 4 ============ -->
+<section>
+<h2>4. 락 규칙이 교착을 없애는 이유</h2>
+<p><b>교착(deadlock)</b>: 두 스레드가 서로가 쥔 락을 기다리며 영원히 멈추는 것. 조건은 "락을 쥔 채 다른 락을 기다리기(중첩)"와 "순서가 서로 반대"다.</p>
+<h3>As-Is: 실제로 있던 엇갈림 (N-01)</h3>
+<svg viewBox="0 0 900 250" role="img" aria-label="교착 타임라인">
+  <defs><marker id="d1" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8z" fill="var(--bad)"/></marker></defs>
+  <text x="10" y="40" class="s">스레드 A</text><text x="10" y="42" class="xs" dy="14">기기 삭제</text>
+  <text x="10" y="150" class="s">스레드 B</text><text x="10" y="152" class="xs" dy="14">TCP 커미셔닝</text>
+  <line x1="100" y1="50" x2="880" y2="50" class="ln"/><line x1="100" y1="160" x2="880" y2="160" class="ln"/>
+  <rect class="g" x="120" y="25" width="190" height="40" rx="6"/><text x="215" y="50" text-anchor="middle" class="s">1. DeviceManager 락 획득</text>
+  <rect class="r" x="360" y="25" width="250" height="40" rx="6"/><text x="485" y="50" text-anchor="middle" class="s">3. TCP 소켓 락 요청 -> 대기</text>
+  <rect class="g" x="120" y="135" width="190" height="40" rx="6"/><text x="215" y="160" text-anchor="middle" class="s">2. TCP 소켓 락 획득</text>
+  <rect class="r" x="360" y="135" width="250" height="40" rx="6"/><text x="485" y="160" text-anchor="middle" class="s">4. DeviceManager 락 요청 -> 대기</text>
+  <path class="lr" d="M485 65 L485 133" marker-end="url(#d1)"/><path class="lr dash" d="M520 135 L520 67" marker-end="url(#d1)"/>
+  <text x="640" y="100" class="m" style="fill:var(--bad)" font-weight="bold">서로 기다림 = 영원히 멈춤</text>
+  <text x="100" y="215" class="xs">A: removeDevice가 DeviceManager 락을 쥔 채 소켓 정리. B: 커미셔닝이 소켓 락을 쥔 채 addDevice/hasDevice(역호출)로 DeviceManager 락 요청.</text>
+</svg>
+<h3>To-Be: 세 규칙</h3>
+<table>
+<tr><th>규칙</th><th>내용</th><th>왜 효과가 있나</th></tr>
+<tr><td>L-1 락 하나만</td><td>락을 쥔 채 다른 락을 잡는 함수를 부르지 않는다</td><td>중첩이 없으면 "쥔 채 기다림"이 없어 순환 대기가 생길 수 없다</td></tr>
+<tr><td>L-2 락 안은 메모리만</td><td>DB·소켓·chip-tool·sleep·콜백 금지</td><td>락은 마이크로초 안에 풀린다. chip-tool 10초 동안 모두가 멈추는 일이 없다</td></tr>
+<tr><td>L-4 스냅샷 복사</td><td>필요한 데이터를 락 안에서 복사, 푼 뒤 사용. 연결은 <code>shared_ptr</code>로 복사</td><td>락 밖에서 느린 일을 해도 다른 요청이 안 막힌다. 순회 중 삭제돼도 객체가 살아 있다</td></tr>
+</table>
+<ol class="steps">
+<li>스레드 A(삭제): <code>[락] 기기를 맵에서 꺼내 복사 [해제]</code></li>
+<li>스레드 A: 락 없이 <code>unpair</code>, DB 갱신 (느려도 B를 안 막음)</li>
+<li>스레드 B(커미셔닝): <code>[연결 맵 락] 등록 [해제]</code> 후 락 없이 <code>onConnected</code> 콜백</li>
+<li>두 스레드는 같은 순간에 락 하나씩만 쥐므로 서로 기다릴 일이 없다.</li>
+</ol>
+<pre class="before">// Before: 락을 쥔 채 느리고 위험한 호출
+std::lock_guard lk(mutex_);
+driver-&gt;unpair(id);        // chip-tool 최대 10초 + 다른 컴포넌트 락
+devices_.erase(id);</pre>
+<pre class="after">// After: 복사 -> 락 해제 -> 느린 일
+Device snapshot;
+{ std::lock_guard lk(mutex_); snapshot = devices_.at(id); devices_.erase(id); }  // 메모리만
+db_.markDeleted(id, clock_.utcNow());   // 락 밖
+protocolDriver.unpair(id);              // 락 밖</pre>
+<ul>
+<li><b>빼면</b>: 느린 호출이 락 안에 남아 NFR-02(응답 1초)가 깨지고, 규칙 위반을 사람이 일일이 찾아야 한다.</li>
+<li><b>대가</b>: 메모리와 DB 갱신이 한 덩어리로 원자적이지 않다. 같은 기기의 두 상태 갱신이 DB에 역순으로 쓰일 수 있으나 60초 헬스체크가 바로잡으므로 감수한다(ADR-002). 락 종류는 두 가지: 상태 락(메모리만), 자원 락(한 자원의 입출력만, 예: 소켓 하나의 요청·응답 1쌍).</li>
+</ul>
+</section>
+
+<!-- ============ 5 ============ -->
+<section>
+<h2>5. 고정 ID · 숨김 삭제 · 정리 · 지연 명령 · 종료</h2>
+<h3>5.1 기기 하나의 일생 (TCP_DIY)</h3>
+<svg viewBox="0 0 900 190" role="img" aria-label="기기 상태 흐름">
+  <defs><marker id="s1" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8z" fill="var(--sub)"/></marker></defs>
+  <rect class="b" x="10" y="60" width="150" height="70" rx="10"/><text x="85" y="86" text-anchor="middle" class="s" font-weight="bold">활성</text><text x="85" y="104" text-anchor="middle" class="xs">ID = TCP_&lt;MAC12&gt;</text><text x="85" y="118" text-anchor="middle" class="xs">deleted_at = NULL</text>
+  <rect class="y" x="330" y="60" width="170" height="70" rx="10"/><text x="415" y="86" text-anchor="middle" class="s" font-weight="bold">숨김(삭제됨)</text><text x="415" y="104" text-anchor="middle" class="xs">deleted_at = 시각</text><text x="415" y="118" text-anchor="middle" class="xs">기록·통계 유지</text>
+  <rect class="r" x="730" y="60" width="150" height="70" rx="10"/><text x="805" y="86" text-anchor="middle" class="s" font-weight="bold">완전 삭제</text><text x="805" y="104" text-anchor="middle" class="xs">기기·통계·이력 모두</text>
+  <path class="ln" d="M160 85 H328" marker-end="url(#s1)"/><text x="170" y="78" class="xs">E4 삭제(unpair 시도)</text>
+  <path class="ln" d="M500 95 H728" marker-end="url(#s1)"/><text x="520" y="88" class="xs">90일 경과, 24시간마다 정리</text>
+  <path class="ln" d="M330 120 C250 170 160 170 120 132" marker-end="url(#s1)"/><text x="170" y="172" class="xs">90일 안 같은 ID로 재등록 = 복구(기록 잇기)</text>
+  <text x="10" y="25" class="xs">IP가 바뀌어도 같은 ID: 서버가 접속 IP로 /proc/net/arp에서 MAC을 읽어 결정 (펌웨어 수정 없음)</text>
+</svg>
+<table>
+<tr><th>단계</th><th>동작</th><th>설계 이유</th></tr>
+<tr><td>접속</td><td><code>TCPDriver</code>가 접속 IP로 <code>MacResolver::resolve</code> -> <code>TCP_AABBCCDDEEFF</code></td><td>펌웨어를 못 바꾸니 서버가 아는 정보(ARP)만 쓴다. 인터페이스라 시험은 <code>FakeMacResolver</code></td></tr>
+<tr><td>옛 ID 이전</td><td><code>onTcpConnected</code>에서 <code>ARD_&lt;ip&gt;</code>가 있으면 <code>renameDeviceId</code>(3개 테이블, 한 트랜잭션)</td><td>MAC은 접속해야 알 수 있어 지연 처리. 외래키를 안 둔 이유와도 연결(rename 충돌 방지)</td></tr>
+<tr><td>삭제</td><td>메모리 맵에서 제거 -> <code>markDeleted</code> -> <code>unpair</code> (락 밖)</td><td>DB 실패면 맵에 되돌리고 500. unpair 실패는 숨김 유지</td></tr>
+<tr><td>정리</td><td>시작 시 + 24시간마다 한 트랜잭션: 90일 지난 이력·숨김 기기·통계 삭제</td><td>시각 문자열 형식이 같아 문자열 비교 = 시간 순서</td></tr>
+</table>
+<div class="note"><b>확인 필요</b>: 이 설계는 "같은 기기는 항상 같은 MAC으로 보인다"를 전제한다. 실기 확인 C-1~C-3(공유기 MAC 변환, 펌웨어 MAC 변경 여부)이 통과해야 확정이다. 추측으로 단정하지 않는 것도 설계 태도다. 또 REQ-13 완료 기준("재등록 후 0에서 시작")이 사용자 결정(기록 잇기)과 반대라 R-1로 수정을 요청해 둔 상태다.</div>
+
+<h3>5.2 지연 명령 스케줄러</h3>
+<p>PC 종료 요청(OFF)은 "종료 메시지를 먼저 보내고 45초 뒤 전원 차단"이다. As-Is는 명령마다 <code>detach</code> 스레드가 sleep했다. To-Be는 스케줄러 1개(스레드 1개)가 대기 작업 표를 들고 있다.</p>
+<ul>
+<li>기기당 대기 작업 1개: 같은 OFF를 두 번 보내면 종료 메시지·타이머가 중복되지 않고 202 (남은 초)만 돌려준다.</li>
+<li>다른 명령(ON)이 오면 대기 중인 OFF를 취소하고 진행한다.</li>
+<li><code>tick(now)</code>를 공개 -> 테스트는 <code>FakeClock</code>으로 45초를 즉시 건너뛴다.</li>
+<li>작업은 락 밖에서 실행한다(L-5). 대신 만기 작업이 순차라 한 작업이 5초 걸리면 다음이 밀린다(감수).</li>
+</ul>
+
+<h3>5.3 SIGTERM 종료 순서 (5초 안, 종료 코드 0)</h3>
+<svg viewBox="0 0 900 150" role="img" aria-label="종료 순서">
+  <defs><marker id="e1" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8z" fill="var(--sub)"/></marker></defs>
+  <rect class="y" x="5" y="30" width="135" height="70" rx="8"/><text x="72" y="52" text-anchor="middle" class="s">0. 신호 수신</text><text x="72" y="68" text-anchor="middle" class="xs">chip-tool</text><text x="72" y="82" text-anchor="middle" class="xs">cancelAll</text>
+  <rect class="b" x="155" y="30" width="135" height="70" rx="8"/><text x="222" y="52" text-anchor="middle" class="s">1. HTTP 정지</text><text x="222" y="68" text-anchor="middle" class="xs">새 요청 거부</text><text x="222" y="82" text-anchor="middle" class="xs">진행 중 마무리</text>
+  <rect class="b" x="305" y="30" width="135" height="70" rx="8"/><text x="372" y="52" text-anchor="middle" class="s">2. 커미셔닝</text><text x="372" y="68" text-anchor="middle" class="xs">취소 플래그</text><text x="372" y="82" text-anchor="middle" class="xs">join</text>
+  <rect class="b" x="455" y="30" width="135" height="70" rx="8"/><text x="522" y="52" text-anchor="middle" class="s">3. TCP 정지</text><text x="522" y="68" text-anchor="middle" class="xs">accept 해제</text><text x="522" y="82" text-anchor="middle" class="xs">연결 close</text>
+  <rect class="b" x="605" y="30" width="135" height="70" rx="8"/><text x="672" y="52" text-anchor="middle" class="s">4. 스케줄러·주기</text><text x="672" y="68" text-anchor="middle" class="xs">지연 OFF 취소</text><text x="672" y="82" text-anchor="middle" class="xs">+ 로그</text>
+  <rect class="g" x="755" y="30" width="135" height="70" rx="8"/><text x="822" y="52" text-anchor="middle" class="s">5. DB close</text><text x="822" y="68" text-anchor="middle" class="xs">return 0</text>
+  <path class="ln" d="M140 65 H153" marker-end="url(#e1)"/><path class="ln" d="M290 65 H303" marker-end="url(#e1)"/><path class="ln" d="M440 65 H453" marker-end="url(#e1)"/><path class="ln" d="M590 65 H603" marker-end="url(#e1)"/><path class="ln" d="M740 65 H753" marker-end="url(#e1)"/>
+  <text x="5" y="130" class="xs">바깥(요청 입구) -> 안쪽(데이터) 순서로 닫는다. DB가 마지막인 이유: 위 단계가 끝나기 전에 닫으면 쓰기 중 오류가 난다.</text>
+</svg>
+<ul>
+<li><b>왜 <code>sigwait</code>?</b> 신호 처리기 안에서는 할 수 있는 일이 거의 없다. 모든 스레드에서 신호를 막고 main만 <code>sigwait</code>로 받으면 평범한 코드 흐름으로 종료를 진행한다(As-Is는 <code>svr.stop()</code>을 부르는 곳이 없어 종료 코드에 도달하지 못했다).</li>
+<li><b>Fail-safe</b>: 대기 중 지연 OFF는 <b>실행하지 않고 취소</b>한다. 서버를 껐다고 PC 전원이 갑자기 꺼지면 안 되기 때문이다.</li>
+</ul>
+</section>
+
+<!-- ============ 6 ============ -->
+<section>
+<h2>6. 설계 원칙과 패턴 이름</h2>
+<table>
+<tr><th>결정</th><th>원칙 · 패턴</th><th>한 줄 설명</th></tr>
+<tr><td>ADR-001 생성자 주입</td><td>의존성 주입(DI), Composition Root, 의존성 역전(DIP), 계층형 구조</td><td>필요한 것을 밖에서 받는다. 조립은 <code>main</code> 한 곳. 위는 아래의 인터페이스에만 의존</td></tr>
+<tr><td>ADR-001 TCP 접속 알림</td><td>Observer(콜백)</td><td>아래가 위를 직접 부르지 않고 등록된 콜백으로 알린다</td></tr>
+<tr><td>ADR-001 <code>ProtocolDriver</code>/<code>IDeviceDriver</code></td><td>Strategy, 개방-폐쇄(OCP)</td><td>기기 종류를 구현체 추가로 늘린다</td></tr>
+<tr><td>ADR-002 락 규칙</td><td>락 계층 대신 "중첩 금지", 스냅샷(복사 후 사용), 불변에 가까운 공유</td><td>지키는지 리뷰하기 가장 쉬운 규칙을 택한다</td></tr>
+<tr><td>ADR-003 결과 타입</td><td>Result 패턴, 단일 진실 공급원(매핑 표)</td><td>예상 가능한 실패는 값, 예상 못 한 것만 예외</td></tr>
+<tr><td>ADR-004 테스트</td><td>Test Double(Fake/Mock), 테스트 가능한 설계, 가짜 시계</td><td>시간·하드웨어를 인터페이스로 빼서 결정적으로 시험</td></tr>
+<tr><td>ADR-005 접속</td><td>최소 노출(Defense in depth), 리버스 프록시 위임</td><td>서버는 localhost만, TLS는 <code>tailscale serve</code>가</td></tr>
+<tr><td>ADR-006 고정 ID</td><td>안정적 식별자와 가변 속성 분리</td><td>ID(MAC)와 IP를 다른 칸에</td></tr>
+<tr><td>ADR-007 숨김 삭제</td><td>Soft delete, 보관 정책(retention)</td><td>삭제를 되돌릴 수 있게 표시만 한다</td></tr>
+<tr><td>ADR-008 비밀값</td><td>최소 권한·비밀 노출 최소화, 어댑터(<code>ChipToolRunner</code>)</td><td>비밀은 인자(<code>ps</code>)가 아닌 stdin으로</td></tr>
+<tr><td>ADR-009 인증</td><td>Decorator(라우트 래퍼), Strategy(<code>Authenticator</code>), 등록 함수 하나로 강제</td><td>공통 일을 한 곳에 씌워 빠뜨림을 막는다</td></tr>
+<tr><td>ADR-010 스케줄러·종료</td><td>스레드 소유권(RAII, join), Graceful shutdown, Fail-safe</td><td>만든 쪽이 끝낸다. 위험할 땐 "안 함"이 안전한 쪽</td></tr>
+<tr><td>마이그레이션</td><td>스키마 버전(<code>user_version</code>), 변경 전 백업</td><td>한 방향이라 되돌리기는 백업 복원</td></tr>
+</table>
+<p>설계 비판 한 줄: 규칙은 "사람이 지킨다"에 의존하는 부분(락 안 메모리만, 래퍼 우회 금지)이 있다. 그래서 ThreadSanitizer 빌드와 "래퍼 없는 라우트는 401" 통합 테스트로 기계가 확인하게 했다.</p>
+</section>
+
+<!-- ============ 7 ============ -->
+<section>
+<h2>7. 용어 풀이</h2>
+<ul>
+<li><b>Composition Root</b>: 프로그램 시작점(<code>main</code>)에서 모든 객체를 만들고 연결하는 한 곳.</li>
+<li><b>교착(deadlock)</b>: 둘 이상이 서로가 가진 것을 기다리며 영원히 멈춤.</li>
+<li><b>스냅샷</b>: 락 안에서 떠 둔 복사본. 락을 푼 뒤 안전하게 쓴다.</li>
+<li><b>Fake / Mock</b>: 시험용 가짜. Fake는 손으로 만든 간이 구현, Mock은 "몇 번 불렸나"를 검증하는 가짜(GoogleMock).</li>
+<li><b>Soft delete</b>: 행을 지우지 않고 "삭제됨" 표시만 하는 방식.</li>
+<li><b>ARP 표</b>: 같은 LAN에서 IP와 MAC 주소를 짝지은 커널 표(<code>/proc/net/arp</code>).</li>
+<li><b>Fail-safe</b>: 문제가 생기면 위험이 덜한 쪽으로 멈추는 설계.</li>
+</ul>
+</section>
+
+<!-- ============ 8 ============ -->
+<section>
+<h2>8. 이해도 질문</h2>
+<p>먼저 스스로 답해 본 뒤 펼친다.</p>
+<details><summary>Q1. <code>ProtocolDriver</code>가 <code>DeviceManager&amp;</code>를 들고 있으면 어떤 문제가 생기나? (ADR-001)</summary>
+<p>아래가 위를 거꾸로 부르는 순환 의존이 된다. (1) 락 쥔 채 남의 락을 잡는 경로가 생겨 교착 가능, (2) 드라이버를 시험하려면 진짜 <code>DeviceManager</code>가 필요해 가짜 주입이 어렵다. 해법은 결과만 반환하고 등록은 위층이 하게 하는 것.</p></details>
+<details><summary>Q2. "락 하나만 쓰기"가 락 순서 규칙(D안)보다 교착을 더 확실히 막는 이유는? 대가는?</summary>
+<p>순서 규칙은 중첩을 허용하고 순서를 사람이 지켜야 하지만, 중첩 금지는 "락 범위 안의 함수 호출"만 보면 위반을 찾는다. 중첩이 없으면 순환 대기가 구조적으로 불가능하다. 대가는 메모리와 DB 갱신이 원자적이지 않아 드문 경쟁 상태를 감수하는 것(헬스체크가 바로잡음).</p></details>
+<details><summary>Q3. 같은 OFF 명령을 45초 지연 중에 한 번 더 보내면 무슨 응답이 오고, 기기 드라이버는 몇 번 실행되나?</summary>
+<p>202(남은 초). 기기 드라이버는 다시 실행하지 않는다(종료 메시지·타이머 중복 방지). 반대로 대기 중 OFF에 ON이 오면 지연 명령을 취소하고 진행한다(설계 3.3의 단계 2·3).</p></details>
+<details><summary>Q4. 서버 종료 때 대기 중인 지연 OFF를 "실행"하지 않고 "취소"하는 이유는? 이 원칙의 이름은?</summary>
+<p>서버를 껐다는 이유로 PC 전원이 차단되면 안 되기 때문. Fail-safe(실패·종료 시 덜 위험한 쪽으로). 취소는 기기별 로그로 남긴다.</p></details>
+<details><summary>Q5. TCP 기기 ID를 IP가 아닌 MAC으로 정하면 무엇이 좋아지고, 무엇을 실기로 확인해야 하나?</summary>
+<p>IP가 바뀌어도 같은 기기로 인식해 통계·이력·숨김 복구가 이어진다. 공유기·중계기가 MAC을 바꿔 전달하는지(C-2), 펌웨어가 MAC을 바꾸거나 무작위화하는지(C-3), 접속 직후 ARP 표에 MAC이 있는지(C-1)를 확인해야 한다.</p></details>
+<details><summary>Q6. 모든 라우트를 <code>addRoute</code> 한 함수로만 등록하게 한 이유와 빼면 생기는 일은?</summary>
+<p>인증·예외 변환·오류 매핑을 한 곳에 강제하는 Decorator 구조라서. 래퍼를 거치지 않는 라우트가 생기면 인증이 누락된다. 그래서 마지막에 전체 경로(<code>.*</code>) 라우트도 래퍼로 등록하고 테스트로 확인한다. 또 본문을 먼저 읽은 뒤 인증하므로 POST 401이 끊기는 문제(N-03)가 사라진다.</p></details>
+</section>
+
+<!-- ============ 9 ============ -->
+<section>
+<h2>9. 응용 실습</h2>
+<p class="note">원본 <code>src/</code>·<code>include/</code>는 건드리지 않는다. 새 브랜치나 <code>learning/exercise-&lt;이름&gt;/</code> 사본에서 한다. 아직 설계 단계라 컴파일 가능한 코드가 없을 수 있으니, 종이·문서(또는 스케치 헤더 파일)로 해도 된다.</p>
+
+<h3>실습 A. 가짜 드라이버로 "락 밖 느린 일" 시험 설계</h3>
+<ul>
+<li><b>목표</b>: 새 기기 종류(예: 스마트 전구 <code>BulbDriver</code>)를 <code>ProtocolDriver</code> 구현체로 추가한다고 가정하고, 실제 하드웨어 없이 <code>DeviceManager</code>를 시험하는 구조를 설계한다.</li>
+<li><b>고칠 파일</b>: <code>learning/exercise-fake-driver/FakeProtocolDriver.hpp</code>(새 파일 스케치), 시험 목록 표.</li>
+<li><b>완료 기준</b>: (1) <code>sendCommand</code>가 "5초 지연 / 실패 / 예외"를 선택해 재현하는 Fake 클래스 시그니처, (2) 시험 3개: 실패 시 502·상태 OFFLINE, 지연 중 다른 요청이 막히지 않음(락 밖 호출 검증), 존재하지 않는 기기 404, (3) 각 시험이 어떤 REQ에 대응하는지 한 줄.</li>
+</ul>
+<details><summary>힌트</summary>
+<p>설계 3.8의 "통합" 줄을 보라. <code>DatabaseManager(":memory:")</code>, <code>FakeClock</code>, <code>FakeProtocolDriver</code>를 <code>DeviceManager</code> 생성자에 넣는 모습을 먼저 그려 보라. 지연 시험에서는 한 스레드가 Fake의 sleep에 걸린 사이 다른 스레드가 <code>listDevices()</code>를 부르면 즉시 돌아와야 한다.</p></details>
+<details><summary>정답 예시</summary>
+<pre>struct FakeProtocolDriver : ProtocolDriver {
+  enum class Mode { Ok, Fail, Slow, Throw } mode = Mode::Ok;
+  std::chrono::milliseconds slowFor{0};
+  Status sendCommand(const std::string&amp;, Command) override {
+    if (mode == Mode::Slow)  std::this_thread::sleep_for(slowFor);
+    if (mode == Mode::Throw) throw std::runtime_error("boom");
+    if (mode == Mode::Fail)  return {{ErrorCode::DeviceUnreachable, "fake"}};
+    return {};
+  }
+  // readState / commission / unpair 도 같은 방식으로 스크립트
+};
+// 시험: Fail -> executeCommand == Failed(DeviceUnreachable), 상태 OFFLINE (502)
+//       Slow(2초) 중 다른 스레드의 listDevices()가 100ms 안에 반환 (L-2 검증)
+//       없는 ID -> Failed(DeviceNotFound) (404)</pre></details>
+
+<h3>실습 B. 새 오류 코드를 단일 표에 추가해 보기</h3>
+<ul>
+<li><b>목표</b>: "기기가 점검 중이면 503"처럼 새 실패 종류를 추가할 때 몇 곳을 고치는지 세어 본다(단일 매핑의 장점 체감).</li>
+<li><b>고칠 파일</b>: 문서 사본 <code>learning/exercise-error-code/표.md</code>(설계 3.2·3.5 복사).</li>
+<li><b>완료 기준</b>: <code>ErrorCode</code>, <code>ErrorMapping</code>, 계약 §6/오류 표, 시험 표에서 각각 무엇을 추가하는지 적고, As-Is(본문 문자열 검사)였다면 어디를 더 고쳐야 했는지 비교.</li>
+</ul>
+<details><summary>힌트</summary><p>핸들러는 <code>ErrorCode</code>만 돌려주고 상태코드는 <code>ErrorMapping::toHttp</code>가 정한다. 핸들러 쪽 수정이 필요한지 따져 보라.</p></details>
+<details><summary>정답 예시</summary>
+<p>(1) <code>ErrorCode</code>에 <code>DeviceBusy</code> 추가, (2) <code>ErrorMapping</code> 표에 <code>DEVICE_BUSY</code> / 503 한 줄, (3) 계약 문서 오류 표 한 줄, (4) 표 기반 시험에 한 줄. 핸들러 코드는 코드를 돌려주기만 하면 되어 수정 없음. As-Is는 본문에 "error"가 있는지로 코드를 정해 핸들러마다 응답 문자열과 HTTP 코드 지정을 같이 고쳐야 했다. 앱에는 새 MAJOR가 아닌 MINOR(코드 추가)로 알리되, 앱이 모르는 <code>code</code>를 만나면 <code>message</code>를 표시하도록 처리해야 한다.</p></details>
+</section>
+
+<p class="lead">출처: <code>docs/02_설계.md</code>, <code>docs/03_설계결정/ADR-001~010</code>, <code>docs/api-contract-v2.0-초안.md</code> §6·§7, <code>analysis/as-is-설계.md</code>. 확정되지 않은 사실(C-1~C-11, R-1~R-3)은 설계 문서 10절 참고.</p>
+</main>
+</body>
+</html>
