@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>REQ-03 DB 해설 - 락, 마이그레이션, 백업</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--fg:#1d2330;--sub:#5b6477;--ac:#2f6fed;--code:#0f1523;--codefg:#e6edf7;--add:#12391f;--del:#4a1620;--bd:#dde1e8}
+@media (prefers-color-scheme:dark){:root{--bg:#10131a;--card:#181d28;--fg:#e6e9ef;--sub:#9aa4b8;--ac:#6b9cff;--code:#0a0d14;--bd:#2a3142}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.65 -apple-system,"Noto Sans KR",sans-serif}
+main{max-width:920px;margin:0 auto;padding:20px 14px 60px}
+h1{font-size:2rem;margin:.4em 0 .1em}
+h2{font-size:1.3rem;margin:0 0 .6em;color:var(--ac)}
+h3{font-size:1.05rem;margin:1em 0 .3em}
+.lead{color:var(--sub);margin-bottom:20px}
+section{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:18px 20px;margin:16px 0}
+table{border-collapse:collapse;width:100%;font-size:.92rem;display:block;overflow-x:auto}
+th,td{border:1px solid var(--bd);padding:6px 10px;text-align:left;vertical-align:top}
+th{background:rgba(127,127,127,.12)}
+pre{background:var(--code);color:var(--codefg);padding:12px 14px;border-radius:8px;overflow-x:auto;font-size:.85rem;line-height:1.5;margin:8px 0}
+code{font-family:ui-monospace,Consolas,monospace}
+p code,li code,td code,summary code{background:rgba(127,127,127,.18);padding:1px 5px;border-radius:4px;font-size:.88em}
+.add{background:var(--add);display:block}.del{background:var(--del);display:block}
+details{border:1px solid var(--bd);border-radius:8px;padding:6px 12px;margin:8px 0}
+summary{cursor:pointer;font-weight:600}
+.why{border-left:4px solid var(--ac);padding:2px 12px;margin:8px 0;font-size:.93rem}
+svg{width:100%;height:auto;max-width:860px}
+svg text{fill:var(--fg);font-size:13px}
+svg .b{fill:var(--card);stroke:var(--ac);stroke-width:1.5}
+svg .w{fill:rgba(240,160,40,.15);stroke:#e0a030;stroke-width:1.5}
+svg .r{fill:rgba(220,60,60,.13);stroke:#d04040;stroke-width:1.5}
+svg .g{fill:rgba(40,170,90,.13);stroke:#2a9d5c;stroke-width:1.5}
+svg .l{stroke:var(--sub);stroke-width:1.5;fill:none}
+</style>
+</head>
+<body>
+<main>
+<h1>REQ-03 해설</h1>
+<p class="lead">DB를 스레드에 안전하게, 스키마를 버전으로, 업그레이드 전에는 백업 (3단계 3번, 학습 강도: 균형)</p>
+
+<section>
+<h2>1. 한눈에 보기</h2>
+<ul>
+<li><b>무엇</b>: <code>DatabaseManager</code>에 뮤텍스를 달고, <code>PRAGMA user_version</code> 기반 마이그레이션(v0 → v1)과 안전한 백업을 넣었다. <code>insertDevice</code>가 INSERT를 두 번 실행하던 버그도 고쳤다.</li>
+<li><b>왜</b>: sqlite3 연결 하나를 HTTP 스레드와 헬스체크 스레드가 동시에 쓴다. 또 <code>devices</code>에 <code>ip</code>·<code>deleted_at</code> 열을 추가해야 하는데, 사용자의 실제 DB를 잃으면 안 된다.</li>
+<li><b>안전</b>: 이미 v1이면 아무것도 안 한다. 실패하면 되돌리고 서버 시작을 멈춘다.</li>
+</ul>
+<table>
+<tr><th>파일</th><th>역할</th><th>변경 요약</th></tr>
+<tr><td><code>include/DatabaseManager.hpp</code></td><td>DB 접근 클래스 선언</td><td><code>mutex_</code>, <code>*Locked</code> 비공개 함수들, 생성자 공개(테스트용), <code>init</code>에 시각 주입 인자</td></tr>
+<tr><td><code>src/DatabaseManager.cpp</code></td><td>구현</td><td>모든 공개 함수에 <code>lock_guard</code>, <code>updateEnergyStat</code> 트랜잭션, 마이그레이션·백업·보관 정리, 이중 step 수정</td></tr>
+<tr><td><code>tests/data/v0_schema.sql</code></td><td>옛 DB 샘플</td><td>신규. 변경 전 스키마와 데이터 몇 줄</td></tr>
+<tr><td><code>tests/unit/DatabaseMigrationTest.cpp</code></td><td>테스트</td><td>신규. 마이그레이션·백업·실패·동시성 등</td></tr>
+<tr><td><code>tests/CMakeLists.txt</code></td><td>테스트 빌드</td><td>새 테스트 파일과 픽스처 경로 등록</td></tr>
+</table>
+</section>
+
+<section>
+<h2>2. 흐름 그림 (<code>init</code>)</h2>
+<svg viewBox="0 0 860 560" role="img" aria-label="init 흐름">
+<rect class="b" x="20" y="10" width="190" height="44" rx="8"/><text x="115" y="37" text-anchor="middle">init(dbPath) 시작 + 락</text>
+<rect class="b" x="260" y="10" width="270" height="44" rx="8"/><text x="395" y="30" text-anchor="middle">파일이 원래 있었나?</text><text x="395" y="46" text-anchor="middle">(CREATE 전에 먼저 확인)</text>
+<rect class="b" x="580" y="10" width="260" height="44" rx="8"/><text x="710" y="30" text-anchor="middle">열기 후 devices 테이블이</text><text x="710" y="46" text-anchor="middle">이미 있었나? (hadDevicesTable)</text>
+<rect class="b" x="260" y="100" width="300" height="44" rx="8"/><text x="410" y="120" text-anchor="middle">CREATE TABLE IF NOT EXISTS</text><text x="410" y="136" text-anchor="middle">(devices, 전력량, 이력)</text>
+<rect class="b" x="260" y="190" width="300" height="44" rx="8"/><text x="410" y="217" text-anchor="middle">user_version &lt; 1 ?</text>
+<rect class="g" x="620" y="190" width="220" height="44" rx="8"/><text x="730" y="210" text-anchor="middle">아니오(이미 v1)</text><text x="730" y="226" text-anchor="middle">아무것도 안 함 = 멱등</text>
+<rect class="b" x="40" y="280" width="260" height="60" rx="8"/><text x="170" y="302" text-anchor="middle">hadDevicesTable 이면 백업</text><text x="170" y="320" text-anchor="middle">(새 DB·메모리 DB는 건너뜀)</text>
+<rect class="r" x="40" y="390" width="260" height="44" rx="8"/><text x="170" y="410" text-anchor="middle">백업 실패 → close</text><text x="170" y="426" text-anchor="middle">return false</text>
+<rect class="b" x="360" y="280" width="260" height="60" rx="8"/><text x="490" y="302" text-anchor="middle">마이그레이션 트랜잭션</text><text x="490" y="320" text-anchor="middle">BEGIN IMMEDIATE ... COMMIT</text>
+<rect class="r" x="360" y="390" width="260" height="44" rx="8"/><text x="490" y="410" text-anchor="middle">실패 → ROLLBACK, close</text><text x="490" y="426" text-anchor="middle">return false</text>
+<rect class="g" x="680" y="280" width="160" height="60" rx="8"/><text x="760" y="306" text-anchor="middle">성공</text><text x="760" y="324" text-anchor="middle">return true</text>
+<rect class="w" x="200" y="480" width="460" height="56" rx="8"/><text x="430" y="504" text-anchor="middle">false를 받은 main은 return 1 (fail-fast)</text><text x="430" y="522" text-anchor="middle">반쯤 바뀐 DB로 서버를 돌리지 않는다</text>
+<path class="l" d="M210 32 L260 32"/><path class="l" d="M530 32 L580 32"/>
+<path class="l" d="M710 54 L710 77 L410 77 L410 100"/>
+<path class="l" d="M410 144 L410 190"/>
+<path class="l" d="M560 212 L620 212"/><text x="570" y="204" font-size="12">아니오</text>
+<path class="l" d="M410 234 L410 258 L170 258 L170 280"/><text x="300" y="252" font-size="12">예</text>
+<path class="l" d="M170 340 L170 390"/><text x="176" y="368" font-size="12">실패</text>
+<path class="l" d="M300 310 L360 310"/><text x="304" y="302" font-size="12">성공</text>
+<path class="l" d="M490 340 L490 390"/><text x="496" y="368" font-size="12">실패</text>
+<path class="l" d="M620 310 L680 310"/><text x="624" y="302" font-size="12">성공</text>
+<path class="l" d="M170 434 L170 458 L430 458 L430 480"/>
+<path class="l" d="M490 434 L490 458 L430 458"/>
+</svg>
+<h3>백업(<code>backupLocked</code>) 4단계</h3>
+<table>
+<tr><th>단계</th><th>동작</th><th>왜</th></tr>
+<tr><td>1</td><td><code>open(O_CREAT|O_EXCL, 0600)</code>으로 빈 파일 생성</td><td>같은 이름이 있으면 실패해 덮어쓰기를 막는다. 처음부터 0600이라 남이 읽을 수 있는 순간이 없다</td></tr>
+<tr><td>2</td><td><code>VACUUM INTO</code>로 스냅샷 기록</td><td>단순 파일 복사는 쓰는 중에 복사하면 깨진 파일이 될 수 있다</td></tr>
+<tr><td>3</td><td>백업을 읽기 전용으로 열어 <code>PRAGMA integrity_check</code> = ok 확인</td><td>검증하지 않은 백업은 백업이 아니다</td></tr>
+<tr><td>4</td><td>오래된 백업 정리(3개 보관)</td><td>디스크가 무한히 차지 않게</td></tr>
+</table>
+<p>어느 단계든 실패하면 만든 백업 파일을 지우고 <code>false</code>를 돌려준다(<code>failAndRemove</code>).</p>
+</section>
+
+<section>
+<h2>3. 코드 해설</h2>
+
+<h3>(a) 뮤텍스와 <code>*Locked</code> 패턴</h3>
+<pre><code><span class="del">- bool DatabaseManager::updateDeviceState(...) {
+-     const char* sql = "UPDATE devices SET is_active = ? ...";</span>
+<span class="add">+ bool DatabaseManager::updateDeviceState(...) {
++     const char* sql = "UPDATE devices SET is_active = ? ...";
++     std::lock_guard&lt;std::mutex&gt; lock(mutex_);   // 이 함수가 끝날 때까지 다른 스레드는 DB 접근 대기</span>
+
+// init()은 락을 잡은 채 아래를 부른다 - 락을 또 잡지 않는 버전
+<span class="add">+ bool initEnergyTableLocked();   // 호출자가 mutex_를 이미 잡았다고 가정
++ bool initEnergyTable() { lock_guard lock(mutex_); return initEnergyTableLocked(); }  // 바깥에서 부르는 용</span></code></pre>
+<div class="why"><b>무엇</b>: sqlite3 연결(<code>db_</code>)을 한 번에 한 스레드만 쓰게 한다.<br>
+<b>왜</b>: 연결 하나를 여러 스레드가 동시에 쓰면 데이터 경쟁(data race)이다. <code>std::mutex</code>는 재진입이 안 돼서, <code>init</code>이 락을 잡고 <code>initEnergyTable</code>(자기도 락을 잡음)을 부르면 자기 자신을 기다리며 영원히 멈춘다(자기 교착). 그래서 "락 안 잡는 <code>*Locked</code> 내부 함수 + 락 잡는 공개 함수" 쌍으로 나눴다.<br>
+<b>빼면</b>: 헬스체크가 쓰는 동안 HTTP 요청이 같은 <code>db_</code>를 건드려 드물게 깨지거나 죽는다. 재현이 어려운 버그라 TSan으로 잡는다.</div>
+
+<h3>(b) 락과 트랜잭션은 역할이 다르다 — <code>updateEnergyStat</code></h3>
+<svg viewBox="0 0 860 190" role="img" aria-label="갱신 손실">
+<text x="10" y="18" font-weight="bold">락/트랜잭션이 없으면 (갱신 손실): 누적 100에서 각자 +10</text>
+<rect class="b" x="10" y="30" width="150" height="30" rx="6"/><text x="85" y="50" text-anchor="middle">스레드 A: 읽기(100)</text>
+<rect class="b" x="170" y="64" width="150" height="30" rx="6"/><text x="245" y="84" text-anchor="middle">스레드 B: 읽기(100)</text>
+<rect class="w" x="330" y="30" width="170" height="30" rx="6"/><text x="415" y="50" text-anchor="middle">A: 110 저장</text>
+<rect class="r" x="510" y="64" width="190" height="30" rx="6"/><text x="605" y="84" text-anchor="middle">B: 110 저장 (A의 +10 사라짐)</text>
+<text x="10" y="130">기대값 120, 실제 110. 읽기 → 계산 → 쓰기 사이가 끊기면 누적 전력량이 조용히 틀어진다.</text>
+<text x="10" y="156">뮤텍스 = 같은 프로세스 안의 스레드끼리 막는다. BEGIN IMMEDIATE = 중간 실패 시 되돌리고(원자성),</text>
+<text x="10" y="176">다른 연결(예: 다른 프로세스)이 중간에 쓰지 못하게 쓰기 잠금을 먼저 잡는다.</text>
+</svg>
+<pre><code><span class="add">+ std::lock_guard&lt;std::mutex&gt; lock(mutex_);
++ if (!execLocked("BEGIN IMMEDIATE;", ...)) return false;</span>
+  ... SELECT → delta 계산 → INSERT OR REPLACE ...
+<span class="del">- sqlite3_step(stmt);                      // 결과를 확인하지 않음</span>
+<span class="add">+ saved = (sqlite3_step(stmt) == SQLITE_DONE);
++ if (!saved || !execLocked("COMMIT;", ...)) { sqlite3_exec(db_, "ROLLBACK;", ...); return false; }</span></code></pre>
+<div class="why"><b>왜</b>: 뮤텍스만으로 스레드 경쟁은 막지만, 저장이 실패했을 때 "일부만 바뀐" 상태를 되돌리진 못한다. 트랜잭션만으로는 같은 연결을 쓰는 두 스레드의 호출이 섞이는 걸 막지 못한다. 둘은 서로 보완한다.<br>
+<b>빼면</b>: 락을 빼면 위 그림처럼 갱신 손실, 트랜잭션을 빼면 저장 실패를 모른 채 <code>true</code>를 돌려준다.</div>
+
+<h3>(c) <code>insertDevice</code>의 이중 step 버그</h3>
+<pre><code><span class="del">- bool success = (sqlite3_step(stmt) == SQLITE_DONE);
+- if (sqlite3_step(stmt) != SQLITE_DONE) {   // 한 번 더 실행!</span>
+<span class="add">+ bool success = (sqlite3_step(stmt) == SQLITE_DONE);
++ if (!success) {</span></code></pre>
+<div class="why"><b>무엇</b>: 에러 로그 조건에서 <code>step</code>을 또 불렀다.<br>
+<b>왜 문제</b>: SQLite는 <code>DONE</code> 뒤에 <code>step</code>을 다시 부르면 문장을 자동으로 reset하고 처음부터 다시 실행한다. 그래서 INSERT가 두 번 실행됐다. <code>INSERT OR REPLACE</code>라 결과 데이터는 같아 보여서 안 들켰지만, 트리거나 행 번호에는 영향이 있다. 테스트는 INSERT 횟수를 세는 트리거로 "정확히 1번"을 확인한다.<br>
+<b>교훈</b>: 결과를 변수에 저장하고 그 변수를 쓴다. <code>step</code>은 부수효과가 있는 호출이다.</div>
+
+<h3>(d) 마이그레이션: 한 트랜잭션, 실패하면 시작 중단</h3>
+<pre><code>"BEGIN IMMEDIATE;"
+"ALTER TABLE devices ADD COLUMN ip TEXT;"
+"ALTER TABLE devices ADD COLUMN deleted_at TEXT;"
+"CREATE INDEX IF NOT EXISTS idx_history_device_time ON state_history_logs(device_id, timestamp);"
+"UPDATE devices SET ip = substr(device_id, 5) WHERE protocol_type = 1 AND device_id LIKE 'ARD_%';"
+"PRAGMA user_version = 1;"
+"COMMIT;"
+// 실패 시: sqlite3_exec(db_, "ROLLBACK;", ...) 후 false</code></pre>
+<div class="why"><b>왜 한 트랜잭션</b>: SQLite는 DDL(ALTER, CREATE INDEX)도 롤백된다. 두 번째 ALTER에서 실패하면 첫 번째도 취소돼 v0 상태로 돌아간다(테스트 <code>MidMigrationFailureRollsBackEarlierAlter</code>). <code>user_version</code>을 맨 끝에 올리므로 "버전은 올랐는데 열이 없는" 상태가 생기지 않는다.<br>
+<b>멱등성</b>: <code>user_version &gt;= 1</code>이면 이 코드에 들어가지 않으므로 몇 번을 시작해도 같다. 그래서 <code>ALTER</code>가 중복 실행될 일이 없다.<br>
+<b>롤백 안전</b>: 옛 실행 파일으로 돌아가도 v1 DB를 쓸 수 있다. 옛 코드는 <code>INSERT ... (열 이름 나열)</code>, <code>SELECT 열 이름</code>처럼 열을 이름으로 지정하기 때문에 새 열이 있어도 영향이 없다(<code>LegacySqlStillWorksOnV1Db</code>). 만약 <code>SELECT *</code>나 열 이름 없는 INSERT였다면 깨진다.</div>
+
+<h3>(e) 백업 보관: "방금 만든 것은 항상 유지"</h3>
+<pre><code>void pruneOldBackups(const fs::path&amp; dbPath, const std::string&amp; keepName) {
+    ...
+    if (name != keepName &amp;&amp; name.compare(0, prefix.size(), prefix) == 0) names.push_back(name); // 방금 만든 것은 후보에서 제외
+    ...
+    for (size_t i = 0; i + (kBackupsToKeep - 1) &lt; names.size(); ++i) fs::remove(...); // 나머지에서 2개만 남김
+}</code></pre>
+<div class="why"><b>테스트가 찾은 버그 사례</b>: 처음엔 파일명 시각순으로 정렬해 최신 3개만 남겼다. 그런데 시계가 뒤로 가서(예: 기존 백업이 2030년, 지금은 2026년) 방금 만든 백업이 "가장 오래된 것"이 되면 만들자마자 지워졌다. 마이그레이션 직전의 유일한 안전망이 사라지는 것이다. 그래서 방금 만든 이름을 후보에서 빼고 나머지 중 2개와 합쳐 3개를 유지한다(<code>KeepsFreshBackupEvenIfOlderStampsLookNewer</code>).<br>
+정렬 키도 파일명 끝의 시각(마지막 <code>-</code> 뒤)만 쓴다. <code>v9</code>와 <code>v10</code>처럼 자릿수가 달라도 시간순이 맞게 하려는 것이다.</div>
+</section>
+
+<section>
+<h2>4. 용어 풀이</h2>
+<ul>
+<li><b>데이터 경쟁(data race)</b>: 두 스레드가 같은 데이터를 동시에 쓰는데 순서 장치가 없는 상태. 결과가 실행마다 달라진다.</li>
+<li><b>read-modify-write</b>: 읽고, 계산하고, 다시 쓰는 3단계. 중간에 끼어들면 갱신 손실이 난다.</li>
+<li><b>재진입 불가(non-recursive)</b>: 이미 잡은 락을 같은 스레드가 또 잡으면 영원히 멈춘다는 뜻.</li>
+<li><b><code>PRAGMA user_version</code></b>: SQLite 파일 헤더에 있는 정수 하나. 앱이 스키마 버전 표시용으로 자유롭게 쓴다.</li>
+<li><b>멱등성(idempotent)</b>: 여러 번 실행해도 한 번 실행한 것과 결과가 같은 성질.</li>
+<li><b>fail-fast</b>: 이상이 생기면 숨기지 않고 바로 멈춰서 더 큰 손상을 막는 설계.</li>
+<li><b><code>VACUUM INTO</code></b>: 현재 DB의 일관된 복사본을 새 파일로 만드는 SQLite 명령.</li>
+<li><b>TSan(ThreadSanitizer)</b>: 실행 중 데이터 경쟁을 찾아내는 컴파일러 도구.</li>
+</ul>
+</section>
+
+<section>
+<h2>5. 테스트 기법</h2>
+<ul>
+<li><b>임시 디렉터리</b>: 테스트마다 <code>/tmp/hac_db_test_&lt;pid&gt;_&lt;이름&gt;</code>를 만들고 끝나면 지운다. 실제 <code>db/home_assistant.db</code>는 건드리지 않는다.</li>
+<li><b>v0 픽스처</b>: <code>tests/data/v0_schema.sql</code>로 "변경 전 DB"를 그대로 만들어 업그레이드를 시험한다.</li>
+<li><b>일부러 실패시키기</b>: <code>ip</code> 열을 미리 추가해 둔 DB를 만들면 마이그레이션의 첫 ALTER가 실패한다. 롤백이 되는지 확인한다.</li>
+<li><b>시각 주입</b>: <code>init(path, "20260101T000000Z")</code>로 백업 파일명을 고정해 결정적(매번 같은) 테스트를 만든다.</li>
+<li><b>동시성 테스트 + TSan</b>: 8개 스레드가 <code>updateEnergyStat</code>를 각 100번 부르고 최종값을 비교한다. TSan이 같이 경고를 감시한다.</li>
+</ul>
+<pre><code># 빌드와 DB 테스트
+cmake --build build-dev -j"$(nproc)"
+ctest --test-dir build-dev -R DatabaseMigration --output-on-failure
+
+# TSan 빌드(별도 폴더)로 같은 테스트
+cmake -S . -B build-tsan -DHAC_ENABLE_TSAN=ON -DHAC_BUILD_SERVER=OFF
+cmake --build build-tsan -j"$(nproc)"
+ctest --test-dir build-tsan -R DatabaseMigration --output-on-failure</code></pre>
+</section>
+
+<section>
+<h2>6. 이해도 질문</h2>
+<details><summary>Q1. <code>init</code>에서 "파일이 원래 있었는지"를 CREATE TABLE 전에 확인하는 이유는?</summary>
+<p>정답: <code>sqlite3_open</code>은 파일이 없으면 만들어 버린다. 그 뒤엔 새 DB와 옛 DB를 구분할 수 없어, 새 DB도 백업하거나(불필요) 옛 DB를 새 DB로 오해할 수 있다. 사용자의 실제 데이터가 있는 경우만 백업한다.</p></details>
+<details><summary>Q2. <code>pruneOldBackups</code>에서 방금 만든 백업을 후보에서 빼지 않으면 어떤 상황에서 깨지나?</summary>
+<p>정답: 서버 시계가 뒤로 가서 기존 백업들의 시각이 방금 것보다 클 때. 시각순 정렬에서 방금 백업이 가장 오래된 것이 되어 만들자마자 삭제된다. 마이그레이션 실패 시 돌아갈 곳이 없어진다.</p></details>
+<details><summary>Q3. 헬스체크 스레드가 <code>updateEnergyStat</code>를 쓰는 중에 HTTP 스레드가 <code>loadAllDevices</code>를 부르면 어떻게 되나? 그리고 <code>updateEnergyStat</code> 안에서 <code>insertEnergyLog</code>(공개, 락 잡음)를 부르면?</summary>
+<p>정답: 앞은 같은 뮤텍스를 쓰므로 한쪽이 끝날 때까지 다른 쪽이 기다린다(데이터는 안전). 뒤는 같은 스레드가 이미 잡은 락을 또 잡으려 해서 자기 교착으로 멈춘다. 안에서 불러야 한다면 <code>insertEnergyLogLocked</code> 같은 내부 함수를 만들어 써야 한다.</p></details>
+</section>
+
+<section>
+<h2>7. 응용 실습</h2>
+<p>원본은 건드리지 말고 새 브랜치(<code>git switch -c practice-db</code>)나 <code>learning/exercise-db/</code>에 사본을 만들어 하세요.</p>
+
+<h3>실습 1 (빈칸 구현): 마이그레이션 트랜잭션 흐름</h3>
+<p><b>목표</b>: 한 문자열 대신 단계별로 BEGIN / COMMIT / ROLLBACK을 직접 다룬다. <b>고칠 파일</b>: 사본 <code>migrateToV1Locked</code>. <b>완료 기준</b>: <code>FailedMigrationRollsBackAndReturnsFalse</code>와 <code>MidMigrationFailureRollsBackEarlierAlter</code>가 통과한다.</p>
+<pre><code>bool DatabaseManager::migrateToV1Locked() {
+    // (1) 트랜잭션 시작: ______
+    // (2) 아래 문장들을 차례로 실행. 하나라도 실패하면 어떻게 할까?
+    const char* steps[] = {
+        "ALTER TABLE devices ADD COLUMN ip TEXT;",
+        "ALTER TABLE devices ADD COLUMN deleted_at TEXT;",
+        "CREATE INDEX IF NOT EXISTS idx_history_device_time ON state_history_logs(device_id, timestamp);",
+        "UPDATE devices SET ip = substr(device_id, 5) WHERE protocol_type = 1 AND device_id LIKE 'ARD_%';",
+        "PRAGMA user_version = 1;",
+    };
+    // (3) 모두 성공: ______   실패: ______ 후 false
+}</code></pre>
+<details><summary>힌트</summary>
+<p>이미 만들어 둔 <code>execLocked(sql, 실패로그접두어)</code>가 성공이면 true를 돌려준다. 실패 시에는 ROLLBACK을 보낸 뒤 return false. <code>user_version</code>은 왜 마지막인가?</p></details>
+<details><summary>정답</summary>
+<pre><code>if (!execLocked("BEGIN IMMEDIATE;", "[DB] 마이그레이션 시작 실패: ")) return false;
+for (const char* sql : steps) {
+    if (!execLocked(sql, "[DB] 마이그레이션 실패: ")) {
+        sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
+        return false;
+    }
+}
+if (!execLocked("COMMIT;", "[DB] 마이그레이션 커밋 실패: ")) {
+    sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
+    return false;
+}
+return true;</code></pre>
+<p>원본은 문장들을 하나의 문자열로 <code>sqlite3_exec</code>에 넘긴다. 같은 결과이고 단계별 로그를 남기기 쉬운 것이 사본 방식의 장점이다.</p></details>
+
+<h3>실습 2 (응용 과제): v2 마이그레이션 — <code>state_history_logs</code>에 열 추가</h3>
+<p><b>목표</b>: <code>state_history_logs</code>에 <code>source TEXT</code> 열(기록 출처)을 v2로 추가한다. <b>고칠 곳</b>: 사본의 <code>kSchemaVersion</code>, 새 <code>migrateToV2Locked</code>, <code>init</code>의 버전 분기, 테스트 파일. <b>완료 기준</b>: v0 → v2, v1 → v2, 이미 v2 세 경우가 모두 통과하고, v2 실패 시 v1로 남는다.</p>
+<details><summary>힌트</summary>
+<ul>
+<li><code>init</code>은 지금 <code>currentVersion &lt; 1</code>만 본다. <code>if (currentVersion &lt; 1) migrateToV1; if (currentVersion &lt; 2) migrateToV2;</code> 순서로 이어 붙인다.</li>
+<li>백업은 "업그레이드가 필요할 때 한 번만" 현재 버전 이름(<code>bak-v1</code>)으로 만든다. 단계마다 만들 필요는 없다.</li>
+<li>테스트는 v1 픽스처(<code>v1_schema.sql</code>)를 새로 만들고, v2 실패 유도는 <code>source</code> 열을 미리 추가한 DB로 한다.</li>
+</ul></details>
+<details><summary>정답</summary>
+<pre><code>// DatabaseManager.cpp
+constexpr int kSchemaVersion = 2;
+
+bool DatabaseManager::migrateToV2Locked() {
+    // v1과 같은 틀: BEGIN IMMEDIATE → ALTER → user_version = 2 → COMMIT, 실패 시 ROLLBACK
+    const char* sql =
+        "BEGIN IMMEDIATE;"
+        "ALTER TABLE state_history_logs ADD COLUMN source TEXT;"
+        "PRAGMA user_version = 2;"
+        "COMMIT;";
+    ...
+}
+
+// init 안
+if (currentVersion &lt; kSchemaVersion) {
+    if (hadDevicesTable) { /* 백업 */ }
+    if (currentVersion &lt; 1 &amp;&amp; !migrateToV1Locked()) { closeLocked(); return false; }
+    if (currentVersion &lt; 2 &amp;&amp; !migrateToV2Locked()) { closeLocked(); return false; }
+}</code></pre>
+<p>테스트 3종: (1) v0 픽스처 → <code>user_version</code>=2 이고 <code>source</code> 열 존재 (2) v1 픽스처 → 2, 데이터 유지 (3) <code>source</code> 열이 미리 있는 v1 DB → <code>init</code>이 false, <code>user_version</code>=1. 기존 <code>insertEnergyLog</code>는 열 이름을 지정하므로 수정할 필요가 없다. 이게 롤백 안전의 이유와 같다.</p></details>
+</section>
+</main>
+</body>
+</html>
