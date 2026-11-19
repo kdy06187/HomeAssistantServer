@@ -37,13 +37,12 @@ bool TCPDriver::sendCommand(const std::string& device_id, const std::string& com
         std::cerr << "[TCPDriver] 명령 전송 실패 (기기 오프라인): " << device_id << std::endl;
         return false;
     }
-    // 응답 패킷에 "status" 필드가 "success"인지 확인
-    if (responseJson.contains("status") && responseJson["status"] == "success") {
+    // 응답 패킷의 "status"가 "success"인지 확인(필드 형이 달라도 예외 없이 실패)
+    std::string error_msg;
+    if (TcpProtocol::isCommandSuccess(responseJson, error_msg)) {
         std::cout << "[TCPDriver] 명령 전송 성공: " << device_id << std::endl;
         return true;
     }
-    // 에러 상태이거나 규격에 맞지 않는 응답인 경우
-    std::string error_msg = responseJson.contains("message") ? responseJson["message"].get<std::string>() : "알 수 없는 에러";
     std::cerr << "[TCPDriver] 기기에서 에러 반환: " << error_msg << std::endl;
     return false;
 }
@@ -154,11 +153,13 @@ bool TCPDriver::unpairDevice(const std::string& deviceId){
 std::string TCPDriver::readDeviceState(const std::string& deviceId, bool isManualRequest){
     // 상태 요청 패킷 생성
     json res = server_.sendAndReceive(deviceId, TcpProtocol::buildGetStateRequest());
-    if (res.is_null() || !res.contains("state")) {
+    // state가 없거나 문자열이 아니면(숫자 등) 기존 "응답 오류" 경로와 같게 처리한다
+    const auto parsedState = TcpProtocol::parseStateResponse(res);
+    if (!parsedState) {
         std::cerr << "[TCPDriver] 기기 상태 조회 실패 (오프라인 또는 응답 오류): " << deviceId << std::endl;
         return "OFFLINE";
     }
-    std::string currentState = res["state"].get<std::string>();
+    const std::string& currentState = *parsedState;
     std::cout << "[TCPDriver] 기기 상태 조회 : " << deviceId << " 현재 상태 ➔ [" << currentState << "]" << std::endl;
 
     return currentState;

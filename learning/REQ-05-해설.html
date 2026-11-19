@@ -159,6 +159,40 @@ acceptThread_.join();</code></pre>
 <p><b>Q4.</b> 인터페이스를 바꿨는데 왜 <code>FakeProtocolDriver</code>·<code>MockMessageSender</code>·테스트까지 고쳐야 했나? 이것이 인터페이스 설계에서 주는 교훈은?</p>
 <details><summary>정답</summary>가짜·목은 인터페이스를 구현하므로 시그니처가 바뀌면 함께 바뀐다. 인터페이스는 구현체 수만큼 변경 비용이 커지므로, 처음 설계할 때 의도(한 기기 / 전체)를 메서드로 나눠 두는 편이 낫다. 반대로 기기 드라이버(PCDriver)는 인터페이스에만 의존해 TCPDriver 내부(7a 재작성)가 바뀌어도 영향이 없었다.</details>
 </section>
+
+<h2 style="margin-top:1.6em">7c. 리뷰 반영: 읽기 상한 · CLOEXEC</h2>
+
+<section>
+<h2>1. 왜 읽기에도 상한이 필요한가</h2>
+<p>7a는 "한 줄 4KiB"와 "1초 마감"만 있었다. 그런데 두 곳이 <i>기다리지 않고</i> 읽는 반복이었다: 요청 전에 남은 입력 버리기, 유효 줄 뒤 이미 온 줄 더 읽기. 기기가 쉬지 않고 보내면 <code>recv(MSG_DONTWAIT)</code>가 매번 데이터를 돌려줘 반복이 끝나지 않는다 — 마감 시각을 확인하지 않는 반복은 1초 규칙도 소용없다.</p>
+<table>
+<tr><th>위치</th><th>상한</th><th>넘으면</th></tr>
+<tr><td>요청 전 버리기</td><td>16KiB · 100ms</td><td>연결 닫고 실패</td></tr>
+<tr><td>유효 줄 뒤 더 읽기</td><td>16KiB · 요청 마감 시각</td><td>연결 닫음, 받은 유효 줄로 판단</td></tr>
+<tr><td>한 요청의 줄 수</td><td>64줄</td><td>연결 닫음</td></tr>
+<tr><td>한 줄</td><td>4KiB</td><td>연결 닫음</td></tr>
+</table>
+<p>원칙: <b>외부 입력을 읽는 모든 반복은 "얼마나"와 "언제까지" 둘 다 상한을 둔다.</b> 상한이 없으면 고장 난 기기 하나가 그 요청 스레드(HTTP 스레드 풀의 한 칸)를 계속 붙잡는다. 테스트: 끝없이 보내는 가짜 기기에서도 요청이 곧 실패하고, 다른 기기 요청은 1초 안에 끝난다.</p>
+<p>덤: 응답은 <b>JSON 객체만</b> 인정한다. <code>1</code>이나 <code>null</code>도 유효한 JSON이라 예전엔 "응답"으로 받아들여, 뒤에서 <code>res["state"]</code>를 읽다 형 오류 예외가 날 수 있었다.</p>
+</section>
+
+<section>
+<h2>2. CLOEXEC가 뭔가</h2>
+<p>서버는 chip-tool을 <code>fork</code> → <code>exec</code>로 실행한다. 리눅스에서 자식 프로세스는 부모의 열린 fd를 <b>그대로 물려받는다</b>. 그러면:</p>
+<ul>
+<li>chip-tool이 도는 동안(최대 수 초) 8080 리슨 소켓·기기 소켓이 자식에도 열려 있어, 서버가 <code>close</code>해도 실제 연결이 안 닫힌다(기기가 끊김을 늦게 안다).</li>
+<li>서버를 재시작할 때 자식이 남아 있으면 8080 포트가 "사용 중"이 될 수 있다.</li>
+</ul>
+<p><code>SOCK_CLOEXEC</code>(만들 때)·<code>accept4(…, SOCK_CLOEXEC)</code>(받을 때)는 "exec하면 이 fd를 닫아라" 표시를 원자적으로 붙인다. 만든 뒤 <code>fcntl</code>로 따로 붙이면 그 사이에 다른 스레드가 fork할 수 있어 틈이 생긴다.</p>
+</section>
+
+<section>
+<h2>3. 이해도 질문 (7c)</h2>
+<p><b>Q5.</b> 상한(32)에 닿았을 때 끊긴 연결을 정리하는 확인(<code>poll POLLRDHUP</code>)을 맵 락 안에서 하면 무엇이 문제인가?</p>
+<details><summary>정답</summary>poll은 시스템 호출이라 상태 락 안에서는 금지(L-2)다. 연결 32개를 확인하는 동안 맵 락을 쥐면 그동안 모든 요청이 연결을 찾지 못하고 기다린다. 그래서 맵 사본(shared_ptr)을 떠서 락 밖에서 확인하고, 지울 때는 "아직 같은 객체일 때만"(removeIfSame) 지운다.</details>
+<p><b>Q6.</b> 유효 응답을 받은 뒤 뒤따른 입력이 상한을 넘으면, 왜 실패 대신 "받은 응답은 쓰고 연결만 닫는" 쪽을 택했나?</p>
+<details><summary>정답</summary>요청의 답은 이미 왔다(제어가 실제로 실행됐을 수 있다). 그 뒤의 쓰레기 때문에 실패로 답하면 앱은 "명령 실패"로 보지만 기기는 이미 바뀐 상태가 된다. 연결은 닫아 오동작하는 기기가 다음 요청을 오염시키지 않게 한다.</details>
+</section>
 </main>
 </body>
 </html>

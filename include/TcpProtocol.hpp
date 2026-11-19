@@ -1,4 +1,5 @@
 #pragma once
+#include <optional>
 #include <string>
 #include "../src/json.hpp"
 
@@ -35,6 +36,29 @@ inline std::string toLine(const nlohmann::json& request) { return request.dump()
 inline const std::string& resetLine() {
     static const std::string line = "{\"action\":\"RESET\"}\n";
     return line;
+}
+
+// ---- 응답 해석(예외를 던지지 않는다. 필드 형이 다르면 실패로 본다) ----
+
+// 제어 응답: "status"가 문자열 "success"면 true. 아니면 false이고 outErrorMessage에 사유
+inline bool isCommandSuccess(const nlohmann::json& response, std::string& outErrorMessage) {
+    if (!response.is_object()) {
+        outErrorMessage = "응답 없음";
+        return false;
+    }
+    const auto status = response.find("status");
+    if (status != response.end() && status->is_string() && status->get<std::string>() == "success") return true;
+    const auto message = response.find("message");
+    outErrorMessage = (message != response.end() && message->is_string()) ? message->get<std::string>() : "알 수 없는 에러";
+    return false;
+}
+
+// 상태 응답: "state"가 문자열이면 그 값, 없거나 문자열이 아니면 nullopt(응답 오류)
+inline std::optional<std::string> parseStateResponse(const nlohmann::json& response) {
+    if (!response.is_object()) return std::nullopt;
+    const auto state = response.find("state");
+    if (state == response.end() || !state->is_string()) return std::nullopt;
+    return state->get<std::string>();
 }
 
 } // namespace TcpProtocol

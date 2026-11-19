@@ -4,6 +4,8 @@
 #include "json.hpp"
 #include <arpa/inet.h>
 #include <dirent.h>
+#include <fcntl.h>
+#include <set>
 #include <netinet/in.h>
 #include <poll.h>
 #include <sys/socket.h>
@@ -25,7 +27,7 @@ namespace {
 class FakeDevice {
 public:
     FakeDevice(int serverPort, int lastOctet) : ip_("127.0.0." + std::to_string(lastOctet)) {
-        fd_ = ::socket(AF_INET, SOCK_STREAM, 0);
+        fd_ = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
         // 닫을 때 RST로 끝내 TIME_WAIT를 남기지 않는다. 남기면 127.0.0.N의 임시 포트가 한동안 묶여,
         // 0.0.0.0에 바인드하는 다른 테스트(HTTP 서버)가 같은 포트를 받았을 때 바인드에 실패할 수 있다
         linger noLinger{1, 0};
@@ -343,6 +345,190 @@ TEST_F(TcpServerTest, CloseConnectionsNotInKeepsOnlyListedIds) {
     EXPECT_TRUE(isConnected(keep->id()));
     EXPECT_FALSE(isConnected(drop->id()));
     EXPECT_TRUE(drop->waitClosedByServer());
+}
+
+// ---- 7c: 읽기 상한·객체만·끊긴 연결 정리·CLOEXEC ----
+
+// 요청 전부터 끝없이 보내는 기기: 요청은 곧 실패하고 연결이 닫히며, 다른 기기 요청은 막히지 않는다
+TEST_F(TcpServerTest, EndlessSenderFailsQuicklyWithoutBlockingOthers) {
+    auto noisy = connect(2);
+    auto quiet = connect(3);
+    quiet->serveInBackground([](const std::string&) { return std::string("{\"state\":\"ON\"}\n"); });
+    std::atomic<bool> stopFlooding{false};
+    std::thread flooder([&] {
+        const std::string junk(1024, 'x');
+        while (!stopFlooding) noisy->send(junk);
+    });
+    std::this_thread::sleep_for(50ms);
+
+    auto other = std::async(std::launch::async, [&] {
+        return server.sendAndReceive(quiet->id(), TcpProtocol::buildGetStateRequest());
+    });
+    const auto started = std::chrono::steady_clock::now();
+    const json result = server.sendAndReceive(noisy->id(), TcpProtocol::buildGetStateRequest());
+    const auto elapsed = std::chrono::steady_clock::now() - started;
+    const auto otherStatus = other.wait_for(1s);
+    stopFlooding = true;
+    flooder.join();
+    quiet->stopServing();
+
+    EXPECT_TRUE(result.is_null());
+    EXPECT_LT(elapsed, 1500ms);
+    EXPECT_FALSE(isConnected(noisy->id()));
+    ASSERT_EQ(otherStatus, std::future_status::ready) << "다른 기기 요청이 막혔다";
+    EXPECT_EQ(other.get()["state"], "ON");
+}
+
+// 유효 줄 뒤에 대량 입력이 이어지면 더 읽기를 상한에서 멈추고 연결을 닫는다(받은 유효 줄로 판단)
+TEST_F(TcpServerTest, StreamAfterValidLineStopsAtDrainLimit) {
+    auto device = connect(2);
+    device->serveInBackground([](const std::string&) {
+        return std::string("{\"state\":\"ON\"}\n") + std::string(TcpConnection::kMaxDrainBytes * 2, 'y');
+    });
+    const auto started = std::chrono::steady_clock::now();
+    const json result = server.sendAndReceive(device->id(), TcpProtocol::buildGetStateRequest());
+    const auto elapsed = std::chrono::steady_clock::now() - started;
+    device->stopServing();
+
+    ASSERT_TRUE(result.is_object());
+    EXPECT_EQ(result["state"], "ON");
+    EXPECT_LT(elapsed, 1000ms);
+    EXPECT_FALSE(isConnected(device->id()));
+}
+
+// 너무 많은 줄은 한 요청의 줄 수 상한으로 끊고 연결을 닫는다.
+// 상한이 첫 유효 줄 전에 걸리면 실패, 뒤에 걸리면 받은 유효 줄을 쓴다(도착 조각에 따라 다름) — 둘 다 연결은 닫힌다
+TEST_F(TcpServerTest, TooManyLinesInOneResponseClosesConnection) {
+    auto device = connect(2);
+    device->serveInBackground([](const std::string&) {
+        std::string many;
+        for (std::size_t i = 0; i < TcpConnection::kMaxLinesPerRequest + 10; ++i) many += "{\"state\":\"ON\"}\n";
+        return many;
+    });
+    const auto started = std::chrono::steady_clock::now();
+    const json result = server.sendAndReceive(device->id(), TcpProtocol::buildGetStateRequest());
+    const auto elapsed = std::chrono::steady_clock::now() - started;
+    device->stopServing();
+    EXPECT_TRUE(result.is_null() || result["state"] == "ON");
+    EXPECT_LT(elapsed, 1000ms);
+    EXPECT_FALSE(isConnected(device->id()));
+}
+
+// 숫자·null·배열·문자열 줄은 응답으로 인정하지 않고 객체만 쓴다
+TEST_F(TcpServerTest, OnlyJsonObjectsCountAsResponses) {
+    auto device = connect(2);
+    device->serveInBackground([](const std::string&) {
+        return std::string("42\nnull\n[1,2]\n\"text\"\n{\"state\":\"ON\"}\n7\n");
+    });
+    const json result = server.sendAndReceive(device->id(), TcpProtocol::buildGetStateRequest());
+    device->stopServing();
+    ASSERT_TRUE(result.is_object());
+    EXPECT_EQ(result["state"], "ON");
+}
+
+// 숫자만 오면 유효 응답이 아니다(예전엔 숫자 줄도 JSON으로 받아 형 오류 예외 위험이 있었다)
+TEST_F(TcpServerTest, NumberOnlyResponseIsNotAccepted) {
+    auto device = connect(2);
+    device->serveInBackground([](const std::string&) { return std::string("1\n"); });
+    const json result = server.sendAndReceive(device->id(), TcpProtocol::buildGetStateRequest(), 300ms);
+    device->stopServing();
+    EXPECT_TRUE(result.is_null());
+}
+
+TEST(TcpProtocolTest, WrongFieldTypesFailWithoutThrowing) {
+    std::string error;
+    EXPECT_NO_THROW(EXPECT_FALSE(TcpProtocol::isCommandSuccess(json{{"status", 1}, {"message", 2}}, error)));
+    EXPECT_EQ(error, "알 수 없는 에러");
+    EXPECT_FALSE(TcpProtocol::isCommandSuccess(json{{"status", "error"}, {"message", "busy"}}, error));
+    EXPECT_EQ(error, "busy");
+    EXPECT_FALSE(TcpProtocol::isCommandSuccess(json(nullptr), error));
+    EXPECT_TRUE(TcpProtocol::isCommandSuccess(json{{"status", "success"}}, error));
+
+    EXPECT_NO_THROW(EXPECT_FALSE(TcpProtocol::parseStateResponse(json{{"state", 1}}).has_value()));
+    EXPECT_FALSE(TcpProtocol::parseStateResponse(json{{"other", "ON"}}).has_value());
+    EXPECT_FALSE(TcpProtocol::parseStateResponse(json(nullptr)).has_value());
+    EXPECT_EQ(TcpProtocol::parseStateResponse(json{{"state", "ON"}}).value_or(""), "ON");
+}
+
+// 정상 응답 직후 기기가 끊으면, 응답은 쓰고 연결은 맵에서 뺀다
+TEST_F(TcpServerTest, DisconnectRightAfterResponseUsesItAndDropsConnection) {
+    auto device = connect(2);
+    auto reply = std::async(std::launch::async, [&] {
+        EXPECT_FALSE(device->readLine().empty());
+        device->send("{\"state\":\"ON\"}\n");
+        device->closeSocket();
+    });
+    const json result = server.sendAndReceive(device->id(), TcpProtocol::buildGetStateRequest());
+    reply.get();
+    ASSERT_TRUE(result.is_object());
+    EXPECT_EQ(result["state"], "ON");
+    // 드레인이 끊김을 못 본 경우에도 다음 요청에서 빠지므로, 둘 중 하나로 맵에서 사라져야 한다
+    if (isConnected("ARD_127.0.0.2")) server.sendAndReceive("ARD_127.0.0.2", TcpProtocol::buildGetStateRequest());
+    EXPECT_FALSE(isConnected("ARD_127.0.0.2"));
+}
+
+// 드레인 뒤 개행 없는 마지막 조각도 유효 객체면 마지막 줄로 쓴다
+TEST_F(TcpServerTest, UnterminatedLastFragmentAfterDrainIsLastLine) {
+    auto device = connect(2);
+    device->serveInBackground([](const std::string&) {
+        return std::string("{\"state\":\"OFF\"}\n{\"state\":\"ON\"}");
+    });
+    const json result = server.sendAndReceive(device->id(), TcpProtocol::buildGetStateRequest());
+    device->stopServing();
+    ASSERT_TRUE(result.is_object());
+    EXPECT_EQ(result["state"], "ON");
+}
+
+// 상한(32)에 닿아도 이미 끊긴 연결이 자리를 차지하고 있으면 정리하고 새 연결을 받는다
+TEST_F(TcpServerTest, DeadConnectionsArePrunedWhenLimitIsReached) {
+    std::vector<std::unique_ptr<FakeDevice>> devices;
+    for (std::size_t i = 0; i < TcpServer::kMaxConnections; ++i) devices.push_back(connect(static_cast<int>(10 + i)));
+    const std::string deadId = devices[5]->id();
+    devices[5]->closeSocket();
+    std::this_thread::sleep_for(50ms);
+
+    FakeDevice newcomer(server.boundPort(), 200);
+    EXPECT_TRUE(waitUntilConnected(newcomer.id()));
+    EXPECT_FALSE(newcomer.waitClosedByServer(200ms));
+    EXPECT_FALSE(isConnected(deadId));
+    EXPECT_EQ(server.connectedIds().size(), TcpServer::kMaxConnections);
+}
+
+// 서버가 만든 소켓(리슨·수락)은 CLOEXEC라 chip-tool 같은 자식 프로세스에 넘어가지 않는다
+TEST(TcpServerCloexecTest, ServerSocketsAreCloseOnExec) {
+    auto socketFds = [] {
+        std::set<int> fds;
+        if (DIR* dir = ::opendir("/proc/self/fd")) {
+            while (dirent* entry = ::readdir(dir)) {
+                const std::string name = entry->d_name;
+                if (name == "." || name == "..") continue;
+                char target[256] = {0};
+                const std::string link = "/proc/self/fd/" + name;
+                if (::readlink(link.c_str(), target, sizeof(target) - 1) > 0 && std::string(target).rfind("socket:", 0) == 0) {
+                    fds.insert(std::stoi(name));
+                }
+            }
+            ::closedir(dir);
+        }
+        return fds;
+    };
+    const std::set<int> before = socketFds();
+    TcpServer server;
+    ASSERT_TRUE(server.start(0, "127.0.0.1"));
+    FakeDevice device(server.boundPort(), 2);  // 클라이언트도 CLOEXEC로 만든다
+    const auto deadline = std::chrono::steady_clock::now() + 2s;
+    while (server.connectedIds().empty() && std::chrono::steady_clock::now() < deadline) std::this_thread::sleep_for(5ms);
+    ASSERT_EQ(server.connectedIds().size(), 1u);
+
+    int checked = 0;
+    for (int fd : socketFds()) {
+        if (before.count(fd)) continue;
+        const int flags = ::fcntl(fd, F_GETFD);
+        EXPECT_TRUE(flags >= 0 && (flags & FD_CLOEXEC)) << "fd " << fd << "에 CLOEXEC 없음";
+        ++checked;
+    }
+    EXPECT_GE(checked, 3);  // 리슨 + 수락 + 클라이언트
+    server.stop();
 }
 
 // ---- 정지 ----

@@ -14,6 +14,11 @@
 class TcpConnection {
 public:
     static constexpr std::size_t kMaxLineBytes = 4096;
+    // 한 요청에서 읽는 양의 상한. 끝없이 보내는 기기가 요청 스레드를 붙잡지 못하게 한다
+    static constexpr std::size_t kMaxDiscardBytes = kMaxLineBytes * 4;   // 요청 전 버리는 입력
+    static constexpr std::size_t kMaxDrainBytes = kMaxLineBytes * 4;     // 유효 줄 뒤 더 읽는 입력
+    static constexpr std::size_t kMaxLinesPerRequest = 64;
+    static constexpr std::chrono::milliseconds kMaxDiscardTime{100};
 
     TcpConnection(int fd, std::string peerIp);
     ~TcpConnection();
@@ -33,6 +38,8 @@ public:
     // 이후 요청을 실패시키고 막힌 송수신을 깨운다. 여러 번 불러도 안전하다
     void shutdown();
     bool isClosed() const { return closed_.load(); }
+    // 상대가 연결을 끊었는지 기다리지 않고 확인한다(송수신 중인 다른 스레드와 함께 불러도 안전)
+    bool isPeerGone() const;
     const std::string& peerIp() const { return peerIp_; }
 
 private:
@@ -41,6 +48,8 @@ private:
     bool discardPendingInputLocked();
     // buffer_에서 완성된 줄을 꺼낸다. 상한을 넘으면 false
     bool extractLinesLocked(std::vector<std::string>& outLines);
+    // 이미 도착한 입력을 상한·마감 시각 안에서 더 읽는다. 끊김·오류면 false(받은 것은 buffer_에 남는다)
+    bool drainAvailableLocked(std::chrono::steady_clock::time_point deadline);
 
     const int fd_;
     const std::string peerIp_;

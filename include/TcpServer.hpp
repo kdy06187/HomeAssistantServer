@@ -44,6 +44,11 @@ public:
 
 private:
     void acceptLoop();
+    // 상한 안이면 맵에 넣는다(같은 ID면 교체해 옛 연결을 outReplaced로). 상한이면 false
+    bool tryRegister(const std::string& deviceId, const std::shared_ptr<TcpConnection>& connection,
+                     std::shared_ptr<TcpConnection>& outReplaced);
+    // 상대가 끊은 연결을 맵에서 뺀다. 뺀 개수를 돌려준다
+    std::size_t pruneDeadConnections();
     std::shared_ptr<TcpConnection> find(const std::string& deviceId);
     // 맵의 연결이 아직 같은 객체일 때만 뺀다(그 사이 재접속한 새 연결을 지우지 않는다)
     void removeIfSame(const std::string& deviceId, const std::shared_ptr<TcpConnection>& connection);
