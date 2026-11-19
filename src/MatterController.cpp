@@ -41,11 +41,16 @@ MatterController::~MatterController() {
 
 // 초기화
 bool MatterController::Initialize(){
-    std::ifstream file(mConfigFilePath);
-    std::string line;
+    std::vector<std::string> fileLines;
+    {
+        std::lock_guard<std::mutex> fileLock(fileMutex_);
+        std::ifstream file(mConfigFilePath);
+        std::string fileLine;
+        while (std::getline(file, fileLine)) fileLines.push_back(fileLine);
+    }
     int lineNumber = 0;
 
-    while (std::getline(file, line)) {
+    for (const std::string& line : fileLines) {
         ++lineNumber;
         if (line.find_first_not_of(" \t\r") == std::string::npos) continue; // 빈 줄은 경고 없이 넘긴다.
 
@@ -55,6 +60,7 @@ bool MatterController::Initialize(){
             std::cerr << "[MatterController] 등록 파일 " << lineNumber << "번째 줄 형식 오류, 건너뜀" << std::endl;
             continue;
         }
+        std::lock_guard<std::mutex> stateLock(stateMutex_);
         mSerialToNodeId[parsed.value->first] = parsed.value->second;
     }
     std::cout << "[MatterController] 초기화 완료" << std::endl;
@@ -145,20 +151,19 @@ std::string MatterController::executeCommandWithErrorResponse(const std::string&
     bool isSuccess = ChipToolOutputParser::hasCommandSuccessMarker(output);
     if(output.empty() || !isSuccess){
         std::cerr << "[MatterController] 기기(" << deviceId << ") 통신 에러/오프라인. 사유: 출력 없음" << std::endl;
-        mOfflineNodes[deviceId] = std::chrono::steady_clock::now(); // 오프라인 명부에 추가
+        markOffline(deviceId); // 오프라인 명부에 추가
         return "OFFLINE";
     }
     auto errorKeyword = ChipToolOutputParser::findCommandErrorKeyword(output);
     if (errorKeyword) {
         std::cerr << "[MatterController] 기기(" << deviceId << ") 통신 에러/오프라인. 사유: " << *errorKeyword << std::endl;
-        mOfflineNodes[deviceId] = std::chrono::steady_clock::now(); // 오프라인 명부에 추가
+        markOffline(deviceId); // 오프라인 명부에 추가
         // 안드로이드가 쉽게 식별할 수 있도록 OFFLINE을 반환합니다.
         return "OFFLINE";
     }
     // 통신 성공 시 오프라인 명부에서 제거 (온라인 복구)
-    if (mOfflineNodes.count(deviceId) > 0) {
+    if (clearOffline(deviceId)) {
         std::cout << "[MatterController] 기기(" << deviceId << ") 온라인 복구됨." << std::endl;
-        mOfflineNodes.erase(deviceId);
     }
 
     return output; 
@@ -167,11 +172,16 @@ bool MatterController::removeDeviceRegistration(const std::string& serialNumber)
     uint64_t deviceId = getNodeId(serialNumber);
     std::string deviceIdStr = std::to_string(deviceId);
 
-    // 방어막(캐시) 명부에서 기기 정보 즉시 완전 삭제
-    mPairingNodes.erase(deviceId);
-    mOfflineNodes.erase(deviceIdStr);
+    // 방어막(캐시) 명부와 시리얼 매핑에서 기기 정보 즉시 완전 삭제
+    {
+        std::lock_guard<std::mutex> stateLock(stateMutex_);
+        mPairingNodes.erase(deviceId);
+        mOfflineNodes.erase(deviceIdStr);
+        mSerialToNodeId.erase(serialNumber);
+    }
 
-    // 텍스트 파일에서 해당 기기 번호만 삭제
+    // 텍스트 파일에서 해당 기기 번호만 삭제 (읽기~덮어쓰기를 한 락으로 묶어 다른 쓰기와 섞이지 않게 한다)
+    std::unique_lock<std::mutex> fileLock(fileMutex_);
     std::ifstream fileIn(mConfigFilePath);
     std::vector<std::string> lines;
     std::string line;
@@ -196,7 +206,8 @@ bool MatterController::removeDeviceRegistration(const std::string& serialNumber)
         fileOut << l << "\n";
     }
     fileOut.close();
-    
+    fileLock.unlock();
+
     // 2. chip-tool의 내부 KVS 데이터베이스에서도 이별 통보 (unpair)
     std::string cmd = mChipToolPath + " pairing unpair " + std::to_string(deviceId) + " 2>&1";
     std::cout << "[MatterController] 기기(" << deviceIdStr << ") 페어링 해제 중..." << std::endl;
@@ -211,10 +222,10 @@ bool MatterController::removeDeviceRegistration(const std::string& serialNumber)
             std::cout << "[MatterController] 기기(" << deviceIdStr << ") 정상 페어링 해제 완료" << std::endl;
         }
     }).detach();
-    mSerialToNodeId.erase(serialNumber); // 시리얼 넘버 매핑도 제거
     return true;
 }
 bool MatterController::checkDeviceRegistered(uint64_t nodeId) {
+    std::lock_guard<std::mutex> fileLock(fileMutex_);
     std::ifstream file(mConfigFilePath);
     std::string line;
     while (std::getline(file, line)) {
@@ -230,6 +241,7 @@ bool MatterController::checkDeviceRegistered(uint64_t nodeId) {
 }
 
 void MatterController::saveDeviceRegistration(const std::string& serialNumber, uint64_t nodeId) {
+    std::lock_guard<std::mutex> fileLock(fileMutex_);
     std::ofstream file(mConfigFilePath, std::ios::app); // 파일 끝에 추가 모드
     file << serialNumber << "," << nodeId << "\n";
 }
@@ -265,7 +277,7 @@ Result<CommissionOutcome> MatterController::commissionDevice(uint64_t nodeId, co
         "--paa-trust-store-path", "../paa_certs/paa-root-certs"
     };
 
-    mPairingNodes.insert(nodeId);
+    setPairing(nodeId, true);
 
     Result<CommissionOutcome> outcome =
         Result<CommissionOutcome>::failure(ErrorCode::CommissionFailed, "chip-tool 페어링 실패");
@@ -285,8 +297,8 @@ Result<CommissionOutcome> MatterController::commissionDevice(uint64_t nodeId, co
     }
 
     // 4. 작업 완료 후 Lock 해제
-    mPairingNodes.erase(nodeId);
-    
+    setPairing(nodeId, false);
+
     return outcome;
 }
 
@@ -306,7 +318,7 @@ std::string MatterController::getDeviceSerialNumber(uint64_t nodeId) {
 
 // 기기 제어 Turn on
 bool MatterController::turnOn(uint64_t nodeId,uint16_t endpointId){
-    if (mPairingNodes.count(nodeId) > 0) {
+    if (isPairing(nodeId)) {
         std::cout << "[MatterController] 기기 페어링 중... 켜기 요청 스킵." << std::endl;
         return false;
     }
@@ -323,7 +335,7 @@ bool MatterController::turnOn(uint64_t nodeId,uint16_t endpointId){
 
 // 기기 제어 Turn off
 bool MatterController::turnOff(uint64_t nodeId,uint16_t endpointId){
-    if (mPairingNodes.count(nodeId) > 0) {
+    if (isPairing(nodeId)) {
         std::cout << "[MatterController] ⏳ 기기 페어링 중. 끄기 요청 스킵." << std::endl;
         return false;
     }
@@ -358,7 +370,10 @@ Result<CommissionOutcome> MatterController::commission(const CommissionRequest& 
 std::string MatterController::onDevicePairingComplete(uint64_t nodeId, const std::string& deviceName) {
     std::cout << "[MatterController] 기기 페어링 완료: NodeId=" << nodeId << ", DeviceName=" << deviceName << std::endl;
     std::string serialNumber = getDeviceSerialNumber(nodeId);
-    mSerialToNodeId[serialNumber] = nodeId; // 시리얼 넘버와 NodeId 매핑 저장
+    {
+        std::lock_guard<std::mutex> stateLock(stateMutex_);
+        mSerialToNodeId[serialNumber] = nodeId; // 시리얼 넘버와 NodeId 매핑 저장
+    }
     
     saveDeviceRegistration(serialNumber, nodeId);
     return serialNumber;
@@ -378,13 +393,13 @@ std::string MatterController::readDeviceState(const std::string& rawDeviceId, bo
     uint64_t nodeId = getNodeId(deviceId);
 
     // 기기가 현재 페어링 중이면 즉시 스킵
-    if (mPairingNodes.count(nodeId) > 0) {
+    if (isPairing(nodeId)) {
         std::cout << "[MatterController] 기기(" << nodeId << ") 페어링 중. 헬스체크 스킵." << std::endl;
         return "PAIRING";
     }
 
     // 자동 헬스체크인데 기기가 오프라인 명부에 있다면 쉘 명령 실행 스킵
-    if (!isManualRequest && mOfflineNodes.count(std::to_string(nodeId)) > 0) {
+    if (!isManualRequest && isOffline(std::to_string(nodeId))) {
         std::cout << "[MatterController] 기기(" << nodeId << ") 오프라인 상태. 헬스체크 스킵." << std::endl;
         return "OFFLINE";
     }
@@ -432,10 +447,10 @@ std::string MatterController::getPowerUsage(std::string deviceId, bool isManualR
     uint64_t nodeId = getNodeId(deviceId);
 
     // 기기가 현재 페어링 중이면 스킵
-    if (mPairingNodes.count(nodeId) > 0) return "PAIRING";
+    if (isPairing(nodeId)) return "PAIRING";
 
     // 오프라인 기기의 자동 조회 스킵
-    if (!isManualRequest && mOfflineNodes.count(std::to_string(nodeId)) > 0) return "OFFLINE";
+    if (!isManualRequest && isOffline(std::to_string(nodeId))) return "OFFLINE";
 
     std::cout << "[MatterController] 기기 전력량(실시간) 조회 요청 : NodeId = " << nodeId << std::endl;
     std::string cmd = mChipToolPath + " electricalpowermeasurement read active-power " + std::to_string(nodeId) + " 1 2>&1";
@@ -471,9 +486,33 @@ std::string MatterController::getCumulativeEnergy(std::string deviceId, bool isM
     return result;
 }
 std::uint64_t MatterController::getNodeId(const std::string& serialNumber) {
+    std::lock_guard<std::mutex> stateLock(stateMutex_);
     auto it = mSerialToNodeId.find(serialNumber);
     if (it != mSerialToNodeId.end()) {
         return it->second;
     }
     return 0;
+}
+
+// ---- 상태 명부 접근: 모두 stateMutex_ 안에서 메모리만 다룬다 ----
+bool MatterController::isPairing(uint64_t nodeId) {
+    std::lock_guard<std::mutex> stateLock(stateMutex_);
+    return mPairingNodes.count(nodeId) > 0;
+}
+void MatterController::setPairing(uint64_t nodeId, bool pairing) {
+    std::lock_guard<std::mutex> stateLock(stateMutex_);
+    if (pairing) mPairingNodes.insert(nodeId);
+    else mPairingNodes.erase(nodeId);
+}
+bool MatterController::isOffline(const std::string& nodeIdText) {
+    std::lock_guard<std::mutex> stateLock(stateMutex_);
+    return mOfflineNodes.count(nodeIdText) > 0;
+}
+void MatterController::markOffline(const std::string& nodeIdText) {
+    std::lock_guard<std::mutex> stateLock(stateMutex_);
+    mOfflineNodes[nodeIdText] = std::chrono::steady_clock::now();
+}
+bool MatterController::clearOffline(const std::string& nodeIdText) {
+    std::lock_guard<std::mutex> stateLock(stateMutex_);
+    return mOfflineNodes.erase(nodeIdText) > 0;
 }

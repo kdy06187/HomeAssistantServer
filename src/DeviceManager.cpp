@@ -16,40 +16,49 @@ void DeviceManager::registerDriver(ProtocolType type, ProtocolDriver* driver){
     std::cout << "[DeviceManager] 드라이버 등록 완료" << std::endl;
 }
 void DeviceManager::initFromDatabase(){
-    std::lock_guard<std::mutex> lock(mutex_);
+    // DB 읽기와 드라이버 조립은 락 밖에서 하고, 맵에 넣을 때만 락을 잡는다
     auto loadedDevices = db_.loadAllDevices();
-    for(auto dev : loadedDevices){ 
-        
+    const auto driversSnapshot = protocolDriversSnapshot();
+    for(auto& dev : loadedDevices){
+
         // 1. 이 기기가 사용하는 통신 프로토콜 드라이버(메신저) 찾기
-        auto driverIt = drivers_.find(dev.protocol_type);
+        auto driverIt = driversSnapshot.find(dev.protocol_type);
         std::cout << "[DeviceManager] DB에서 기기 로드 중: " << dev.name << " (" << dev.id << ") - 프로토콜: " << getProtocolString(dev.protocol_type) << std::endl;
-        if (driverIt != drivers_.end()) {
+        if (driverIt != driversSnapshot.end()) {
             std::cout << "[DeviceManager] 기기 로드 중: " << dev.name << " (" << dev.id << ") - 프로토콜: " << getProtocolString(dev.protocol_type) << std::endl;
             IMessageSender* sender = dynamic_cast<IMessageSender*>(driverIt->second);
-            
+
             // 2. 조립할 부품(driver_types)이 있고, 발송기(sender)가 정상적으로 찾아졌다면 조립!
             if (sender && !dev.driver_types.empty()) {
                 deviceDrivers_.attachDriversToDevice(dev, dev.driver_types, sender);
             }
         }
-        
-        // 3. 조립이 완료된 완성품을 맵에 이동(move)시켜서 등록
-        devices_[dev.id] = std::move(dev);
     }
-    std::cout << "[DeviceManager] DB에서 기기 로드 완료 (" << loadedDevices.size() << "개)" << std::endl;
+    const size_t loadedCount = loadedDevices.size();
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        // 3. 조립이 완료된 완성품을 맵에 이동(move)시켜서 등록
+        for (auto& dev : loadedDevices) {
+            std::string id = dev.id;
+            devices_[id] = std::move(dev);
+        }
+    }
+    std::cout << "[DeviceManager] DB에서 기기 로드 완료 (" << loadedCount << "개)" << std::endl;
 }
 // 기기 추가
 void DeviceManager::addDevice(std::string id, std::string name, ProtocolType protocol_type,
                               const std::vector<DriverType>& driverTypes, IMessageSender* sender){
-    std::lock_guard<std::mutex> lock(mutex_);
     Device newDevice(id, name, protocol_type);
     newDevice.state = "UNKNOWN";
     if (sender) {
         newDevice.driver_types = driverTypes;
         deviceDrivers_.attachDriversToDevice(newDevice, driverTypes, sender);
     }
-    devices_[id] = newDevice;
-    db_.insertDevice(newDevice);
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        devices_[id] = newDevice;
+    }
+    db_.insertDevice(newDevice); // DB 연결 락과 겹치지 않도록 맵 락을 푼 뒤 저장
     std::cout << "[DeviceManager] 기기 추가 완료: " << name << "(" << id << ")" << std::endl;
 }
 
@@ -84,48 +93,49 @@ std::string DeviceManager::getProtocolString(ProtocolType type) {
 }
 //기기 상태 업데이트
 bool DeviceManager::updateDeviceState(std::string id, std::string newState){
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = devices_.find(id);
-    if(it != devices_.end()){
-        if (it->second.state == newState) {
-            return true; 
-        }
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto it = devices_.find(id);
+        if(it == devices_.end()) return false;
+        if (it->second.state == newState) return true;
         it -> second.state = newState;
-        int isActive = (newState == "ON" || newState == "TURN_ON") ? 1 : 0;
-        db_.updateDeviceState(id, isActive);
-        std::cout << "[DeviceManager] 기기 상태 업데이트 완료: " << id << " -> " << newState << std::endl;
-        return true;
     }
-    return false;
+    // 같은 기기의 동시 갱신이 DB에 역순으로 쓰일 수 있으나 주기 헬스체크가 바로잡는다
+    int isActive = (newState == "ON" || newState == "TURN_ON") ? 1 : 0;
+    db_.updateDeviceState(id, isActive);
+    std::cout << "[DeviceManager] 기기 상태 업데이트 완료: " << id << " -> " << newState << std::endl;
+    return true;
 }
 
 // 기기 제어
+// 반환하는 state는 응답에 그대로 쓰는 "명령 처리 후 상태"다(미등록은 UNKNOWN, 하드웨어를 안 건드렸으면 현재 상태)
 CommandResult DeviceManager::executeCommand(std::string id, std::string command){
-    ProtocolType deviceType;
     Device targetDevice;
-    // 기기 존재 여부 확인 및 프로토콜 타입 조회
+    ProtocolDriver* protocolDriver = nullptr;
+    // 기기와 프로토콜 드라이버를 락 안에서 복사해 두고, 드라이버 호출은 모두 락 밖에서 한다
     {
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = devices_.find(id);
         if(it == devices_.end()){
             std::cerr << "[DeviceManager] 에러 : 기기를 찾을 수 없습니다 (" << id << ")" << std::endl;
-            return CommandResult{CommandOutcome::Failed, Error{ErrorCode::DeviceNotFound, "device not found"}, "", 0};
-        } 
-        deviceType = it -> second.protocol_type;
+            return CommandResult{CommandOutcome::Failed, Error{ErrorCode::DeviceNotFound, "device not found"}, "UNKNOWN", 0};
+        }
         targetDevice = it->second;
-    }// 자동으로 mutex 해제
+        auto driverIt = drivers_.find(targetDevice.protocol_type);
+        if (driverIt != drivers_.end()) protocolDriver = driverIt->second;
+    }
     DriverResult action = deviceDrivers_.executeDriversForDevice(targetDevice, command);
 
+    const std::string currentState = targetDevice.state;
     if (!action.proceed_hardware) {
-        return CommandResult{CommandOutcome::Failed, Error{ErrorCode::CommandBlocked, "blocked by device driver"}, "", 0};
+        return CommandResult{CommandOutcome::Failed, Error{ErrorCode::CommandBlocked, "blocked by device driver"}, currentState, 0};
     }
-    auto execute_hardware = [this, id, command, deviceType]() {
-        auto driverIt = drivers_.find(deviceType);
-        if (driverIt == drivers_.end()) {
+    auto execute_hardware = [this, id, command, protocolDriver, currentState]() {
+        if (!protocolDriver) {
             std::cerr << "[DeviceManager] 에러 : 프로토콜 드라이버를 찾을 수 없습니다\n";
-            return CommandResult{CommandOutcome::Failed, Error{ErrorCode::Internal, "protocol driver not found"}, "", 0};
+            return CommandResult{CommandOutcome::Failed, Error{ErrorCode::Internal, "protocol driver not found"}, currentState, 0};
         }
-        if (driverIt->second->sendCommand(id, command)) {
+        if (protocolDriver->sendCommand(id, command)) {
             std::string newState = (command == "ON") ? "ON" : "OFF";
             this->updateDeviceState(id, newState); // DB 및 서버 상태 변경
             return CommandResult{CommandOutcome::Succeeded, Error{}, newState, 0};
@@ -141,7 +151,7 @@ CommandResult DeviceManager::executeCommand(std::string id, std::string command)
             std::this_thread::sleep_for(std::chrono::seconds(delay));
             execute_hardware();
         }).detach();
-        return CommandResult{CommandOutcome::Accepted, Error{}, "", delay};
+        return CommandResult{CommandOutcome::Accepted, Error{}, currentState, delay};
     }
     // 대기 시간이 없다면 즉시 실행
     return execute_hardware();
@@ -171,36 +181,41 @@ bool DeviceManager::startCommissioning(ProtocolType type, std::string name, std:
     return isCommissioned;
 }
 bool DeviceManager::removeDevice(std::string id){
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = devices_.find(id);
-    if(it != devices_.end()){
-        ProtocolType type = it->second.protocol_type;
-        auto driverIt = drivers_.find(type);
-        bool success = false;
-        if (driverIt != drivers_.end()) {
-            success = driverIt->second->unpairDevice(id);
+    ProtocolDriver* protocolDriver = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto it = devices_.find(id);
+        if(it == devices_.end()){
+            std::cerr << "[DeviceManager] 에러 : 기기를 찾을 수 없습니다 (" << id << ")" << std::endl;
+            return false;
         }
+        auto driverIt = drivers_.find(it->second.protocol_type);
+        if (driverIt != drivers_.end()) protocolDriver = driverIt->second;
+        // 맵에서 먼저 빼서, 해제가 진행되는 동안 들어온 요청은 "없는 기기"로 처리되게 한다
         devices_.erase(it);
-        db_.removeDevice(id);
-        std::cout << "[DeviceManager] 기기 삭제 완료 : "<< id << std::endl;
-        return success;
     }
-    std::cerr << "[DeviceManager] 에러 : 기기를 찾을 수 없습니다 (" << id << ")" << std::endl;
-    return false;
+    // 드라이버 해제는 자기 락(소켓·파일)을 잡으므로 맵 락을 쥔 채 부르면 교착 위험이 있다
+    bool success = false;
+    if (protocolDriver) {
+        success = protocolDriver->unpairDevice(id);
+    }
+    db_.removeDevice(id);
+    std::cout << "[DeviceManager] 기기 삭제 완료 : "<< id << std::endl;
+    return success;
 }
 std::string DeviceManager::getDeviceState(std::string id, bool isManualRefresh) {
-    ProtocolType type;
+    ProtocolDriver* protocolDriver = nullptr;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = devices_.find(id);
         if (it == devices_.end()) {
             return "UNKNOWN"; // 기기가 없으면 바로 종료
         }
-        type = it->second.protocol_type;
-    } 
-    auto driverIt = drivers_.find(type);
-    if (driverIt != drivers_.end()) {
-        std::string realState = driverIt->second->readDeviceState(id, isManualRefresh);
+        auto driverIt = drivers_.find(it->second.protocol_type);
+        if (driverIt != drivers_.end()) protocolDriver = driverIt->second;
+    }
+    if (protocolDriver) {
+        std::string realState = protocolDriver->readDeviceState(id, isManualRefresh); // 통신은 락 밖
   
         if (realState != "UNKNOWN") {
             this->updateDeviceState(id, realState); 
@@ -288,4 +303,9 @@ bool DeviceManager::getDeviceEnergyInfo(const std::string& deviceId, int& out_ac
 }
 std::vector<EnergyLog> DeviceManager::getDeviceEnergyHistory(const std::string& deviceId, int limit) {
     return db_.getEnergyHistory(deviceId, limit);
+}
+
+std::unordered_map<ProtocolType, ProtocolDriver*> DeviceManager::protocolDriversSnapshot() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return drivers_;
 }

@@ -19,6 +19,11 @@ namespace {
     bool isAllowedControlCommand(const std::string& command) {
         return command == "ON" || command == "OFF";
     }
+
+    void respondInternalError(httplib::Response& res) {
+        res.status = 500;
+        res.set_content(R"({"error": "서버 내부 오류입니다."})", "application/json");
+    }
 }
 
 HTTPServer::HTTPServer(DeviceManager& deviceManager, std::string apiToken, int port)
@@ -148,7 +153,16 @@ void HTTPServer::addRoute(HttpMethod method, const std::string& pattern, RouteHa
             res.set_content(R"({"error": "인증이 필요합니다."})", "application/json");
             return;
         }
-        handler(req, res);
+        // 핸들러가 처리하지 못한 예외는 내부 정보 없이 500으로 바꾼다(로그에도 메시지만 남긴다)
+        try {
+            handler(req, res);
+        } catch (const std::exception& e) {
+            std::cerr << "[HTTPServer] 처리 중 예외: " << req.method << " " << req.path << " (" << e.what() << ")" << std::endl;
+            respondInternalError(res);
+        } catch (...) {
+            std::cerr << "[HTTPServer] 처리 중 알 수 없는 예외: " << req.method << " " << req.path << std::endl;
+            respondInternalError(res);
+        }
     };
     httplib::Server& svr = *mServer;
     switch (method) {
@@ -204,10 +218,8 @@ std::string HTTPServer::handleControlDevice(const std::string& requestBody){
 
             // DeviceManager로 동적 명령 하달
             const CommandResult result = mDeviceManager.executeCommand(targetDeviceId, command);
-            Device device;
-            std::string status = mDeviceManager.getDevice(targetDeviceId, device) ? device.state : "UNKNOWN";
             json response;
-            response["status"] = status;
+            response["status"] = result.state;
             response["message"] = controlMessageFor(result);
             return response.dump();
             

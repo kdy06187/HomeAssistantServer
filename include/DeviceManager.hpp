@@ -47,11 +47,14 @@ public:
     std::vector<EnergyLog> getDeviceEnergyHistory(const std::string& deviceId, int limit = 50);
 
 private:
+    std::unordered_map<ProtocolType, ProtocolDriver*> protocolDriversSnapshot();
+
     DatabaseManager& db_;
     DriverManager& deviceDrivers_;
     [[maybe_unused]] Clock& clock_;
 
     std::unordered_map<std::string,Device> devices_;
     std::unordered_map<ProtocolType, ProtocolDriver*> drivers_;
+    // devices_·drivers_ 보호. 쥔 채로는 메모리만 다룬다(DB·드라이버·다른 락 호출 금지)
     std::mutex mutex_;
 };

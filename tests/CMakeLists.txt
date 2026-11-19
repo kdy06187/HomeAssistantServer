@@ -8,6 +8,7 @@ add_executable(hac_tests
     integration/DeviceManagerIntegrationTest.cpp
     integration/DeviceManagerBehaviorTest.cpp
     integration/HttpServerTest.cpp
+    integration/LockRulesTest.cpp
 )
 # httplib.h(클라이언트)는 src/ 에 있다
 target_include_directories(hac_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/../src)

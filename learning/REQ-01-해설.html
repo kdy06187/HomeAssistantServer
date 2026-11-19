@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>REQ-01 해설 - 락 규칙과 TSan</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--fg:#1d2330;--sub:#5b6477;--ac:#2f6fed;--code:#0f1523;--codefg:#e6edf7;--add:#12391f;--del:#4a1620;--bd:#dde1e8}
+@media (prefers-color-scheme:dark){:root{--bg:#10131a;--card:#181d28;--fg:#e6e9ef;--sub:#9aa4b8;--ac:#6b9cff;--code:#0a0d14;--bd:#2a3142}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.65 -apple-system,"Noto Sans KR",sans-serif}
+main{max-width:920px;margin:0 auto;padding:20px 14px 60px}
+h1{font-size:2rem;margin:.4em 0 .1em}
+h2{font-size:1.3rem;margin:0 0 .6em;color:var(--ac)}
+h3{font-size:1.05rem;margin:1em 0 .3em}
+.lead{color:var(--sub);margin-bottom:20px}
+section{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:18px 20px;margin:16px 0}
+table{border-collapse:collapse;width:100%;font-size:.92rem;display:block;overflow-x:auto}
+th,td{border:1px solid var(--bd);padding:6px 10px;text-align:left;vertical-align:top}
+th{background:rgba(127,127,127,.12)}
+pre{background:var(--code);color:var(--codefg);padding:12px 14px;border-radius:8px;overflow-x:auto;font-size:.85rem;line-height:1.5;margin:8px 0}
+code{font-family:ui-monospace,Consolas,monospace}
+p code,li code,td code{background:rgba(127,127,127,.18);padding:1px 5px;border-radius:4px;font-size:.88em}
+.add{background:var(--add);display:block}.del{background:var(--del);display:block}
+.three{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+.three div{border:1px dashed var(--bd);border-radius:8px;padding:8px 10px;font-size:.92rem}
+.three b{display:block;color:var(--ac)}
+details{border:1px solid var(--bd);border-radius:8px;padding:6px 12px;margin:8px 0}
+summary{cursor:pointer;font-weight:600}
+svg{width:100%;height:auto;max-width:860px}
+svg text{fill:var(--fg);font-size:13px}
+svg .b{fill:var(--card);stroke:var(--ac);stroke-width:1.5}
+svg .w{fill:rgba(240,160,40,.15);stroke:#e0a030;stroke-width:1.5}
+svg .r{fill:rgba(220,60,60,.12);stroke:#d04040;stroke-width:1.5}
+svg .l{stroke:var(--sub);stroke-width:1.5;fill:none}
+svg .rl{stroke:#d04040;stroke-width:1.5;fill:none}
+</style>
+</head>
+<body>
+<main>
+<h1>REQ-07 해설</h1>
+<p class="lead">싱글톤을 없애고 생성자 주입으로 바꾼 변경 (3단계 4a, 학습 강도: 균형). 4b가 끝나면 아래에 "4b" 절을 덧붙인다.</p>
+
+<h1>REQ-01 해설</h1>
+<p class="lead">"한 번에 락 하나, 락 안에서는 메모리만" 규칙을 코드에 적용한 변경 (3단계 5번, REQ-01·06, 학습 강도: 균형).</p>
+
+<section>
+<h2>1. 한눈에 보기</h2>
+<ul>
+<li><b>무엇</b>: <code>DeviceManager</code>가 맵 락을 쥔 채 DB·드라이버를 부르던 곳을 모두 "락 안에서 복사 → 락 풀고 호출"로 바꿨다. 락이 하나도 없던 <code>MatterController</code>의 맵 3개와 등록 파일에 락을 붙였다.</li>
+<li><b>왜</b>: 기기 삭제가 <code>DeviceManager</code> 락 → TCP 소켓 락 순서로, TCP 쪽은 반대 순서로 락을 잡을 수 있었다(교착). 또 느린 작업(DB, 소켓)이 락을 쥐면 다른 모든 요청이 기다린다.</li>
+<li><b>덤</b>: 제어 결과(<code>CommandResult.state</code>)에 응답용 상태를 채워 HTTP가 기기를 다시 조회하지 않는다. 처리 못한 예외는 내부 정보 없이 500으로 답한다.</li>
+</ul>
+<table>
+<tr><th>파일</th><th>역할</th><th>변경 요약</th></tr>
+<tr><td><code>src/DeviceManager.cpp</code>, <code>include/DeviceManager.hpp</code></td><td>기기 맵</td><td><code>removeDevice</code>·<code>addDevice</code>·<code>updateDeviceState</code>·<code>initFromDatabase</code>: DB·드라이버 호출을 락 밖으로. <code>drivers_</code> 조회를 락 안으로. <code>state</code> 채움</td></tr>
+<tr><td><code>src/MatterController.cpp</code>, <code>include/MatterController.hpp</code></td><td>Matter 드라이버</td><td><code>stateMutex_</code>(명부 3개), <code>fileMutex_</code>(등록 파일). 명부 접근 헬퍼 5개</td></tr>
+<tr><td><code>src/HTTPServer.cpp</code></td><td>REST</td><td>래퍼에서 예외 → 500 <code>{"error": "서버 내부 오류입니다."}</code>. 제어 응답은 <code>result.state</code> 사용</td></tr>
+<tr><td><code>tests/integration/LockRulesTest.cpp</code>, <code>tests/fakes/FakeProtocolDriver.hpp</code></td><td>테스트</td><td>교착·동시 반복·state·500 시험 9개. 가짜 드라이버에 기록 락과 멈춤 훅</td></tr>
+</table>
+</section>
+
+<section>
+<h2>2. 흐름 그림: 기기 삭제 전/후</h2>
+<svg viewBox="0 0 860 300" role="img" aria-label="삭제 흐름 전후 비교">
+  <text x="20" y="24" font-weight="700">수정 전: 맵 락을 쥔 채 해제</text>
+  <rect class="r" x="20" y="40" width="390" height="40" rx="6"/><text x="32" y="65">[DM 락] 찾기 → unpair(소켓 락) → 지우기 → DB [해제]</text>
+  <rect class="w" x="20" y="100" width="390" height="40" rx="6"/><text x="32" y="125">다른 요청: DM 락 대기… (해제가 끝날 때까지)</text>
+  <rect class="w" x="20" y="160" width="390" height="40" rx="6"/><text x="32" y="185">TCP 쪽: 소켓 락 → DM 락 요청 = 교착 가능</text>
+  <path class="rl" d="M215 80 V100"/><path class="rl" d="M215 140 V160"/>
+
+  <text x="450" y="24" font-weight="700">수정 후: 복사 후 락 밖에서</text>
+  <rect class="b" x="450" y="40" width="390" height="40" rx="6"/><text x="462" y="65">[DM 락] 찾기 · 드라이버 포인터 복사 · 맵에서 빼기 [해제]</text>
+  <rect class="b" x="450" y="100" width="390" height="40" rx="6"/><text x="462" y="125">unpair(소켓 락만) → DB 삭제(DB 락만)</text>
+  <rect class="b" x="450" y="160" width="390" height="40" rx="6"/><text x="462" y="185">다른 요청: 바로 처리 (삭제 중 기기는 "없음")</text>
+  <path class="l" d="M645 80 V100"/><path class="l" d="M645 140 V160"/>
+  <text x="20" y="240">핵심: 어떤 순간에도 한 스레드가 쥔 락은 최대 1개 → "순환 대기"가 생길 수 없다.</text>
+  <text x="20" y="265">대가: 맵과 DB 갱신 사이에 틈이 생긴다(같은 기기 상태가 DB에 역순 기록 가능 → 60초 점검이 바로잡음, ADR-002).</text>
+</svg>
+</section>
+
+<section>
+<h2>3. 코드 해설</h2>
+<h3>3-1. removeDevice: 맵에서 먼저 빼고, 해제는 락 밖</h3>
+<pre><code><span class="del">-    std::lock_guard&lt;std::mutex&gt; lock(mutex_);   // 함수 끝까지 락
+-    ... success = driverIt-&gt;second-&gt;unpairDevice(id);  // 락 안에서 소켓/파일 작업
+-    devices_.erase(it);
+-    db_.removeDevice(id);</span><span class="add">+    {
++        std::lock_guard&lt;std::mutex&gt; lock(mutex_);
++        ... protocolDriver = driverIt-&gt;second;    // 포인터만 복사
++        devices_.erase(it);                        // 먼저 숨김
++    }
++    success = protocolDriver-&gt;unpairDevice(id);   // 락 밖
++    db_.removeDevice(id);</span></code></pre>
+<p>순서가 "지우고 → 해제"로 바뀐 이유: 해제가 오래 걸리는 동안 들어온 제어 요청이 반쯤 지워진 기기를 건드리지 않고 "없는 기기"로 끝나게 하려고. 드라이버 객체는 <code>main</code>이 끝까지 소유하므로 포인터 복사가 안전하다.</p>
+
+<h3>3-2. updateDeviceState: 메모리만 락 안에</h3>
+<pre><code>{
+    std::lock_guard&lt;std::mutex&gt; lock(mutex_);
+    if (it == devices_.end()) return false;
+    if (it-&gt;second.state == newState) return true;
+    it-&gt;second.state = newState;          // 메모리 변경
+}
+db_.updateDeviceState(id, isActive);      // DB는 락 밖 (DB는 자기 락을 따로 가짐)</code></pre>
+
+<h3>3-3. MatterController: 상태 락과 파일 락을 분리</h3>
+<pre><code>bool MatterController::isPairing(uint64_t nodeId) {
+    std::lock_guard&lt;std::mutex&gt; stateLock(stateMutex_);
+    return mPairingNodes.count(nodeId) &gt; 0;
+}</code></pre>
+<p>chip-tool(최대 수 초)은 어느 락도 쥐지 않고 실행한다. 등록 파일은 "읽기 → 걸러서 덮어쓰기" 전체를 <code>fileMutex_</code> 하나로 묶어, 그 사이에 다른 기기 저장(<code>saveDeviceRegistration</code>)이 끼어 내용이 사라지는 일을 막는다.</p>
+
+<h3>3-4. HTTP 래퍼의 마지막 그물</h3>
+<pre><code>try { handler(req, res); }
+catch (const std::exception&amp; e) { /* 로그: 메서드·경로·메시지 */ respondInternalError(res); }
+catch (...) { respondInternalError(res); }</code></pre>
+<p>응답에는 예외 내용을 넣지 않는다(내부 정보 노출 방지). 테스트가 <code>"fake sendCommand failure"</code> 문자열이 본문에 없음을 확인한다.</p>
+
+<h3>3-5. 교착을 "시험"으로 잡는 법</h3>
+<p>가짜 드라이버의 <code>onUnpair</code> 훅에서 일부러 멈춘 뒤, 다른 스레드의 요청이 1초 안에 끝나는지 본다. 이전 코드(5524d7e)에서는 이 시험이 실패했다. 혹시 진짜 교착이 나도 테스트가 영원히 멈추지 않도록 <code>DeadlockWatchdog</code>가 제한 시간 뒤 프로세스를 끝낸다.</p>
+</section>
+
+<section>
+<h2>4. 용어 풀이</h2>
+<table>
+<tr><th>용어</th><th>뜻</th></tr>
+<tr><td>교착(deadlock)</td><td>두 스레드가 서로 상대가 쥔 락을 기다려 둘 다 영원히 멈춤. 4조건 중 "순환 대기"를 없애면 생기지 않는다.</td></tr>
+<tr><td>상태 락 / 자원 락</td><td>상태 락은 메모리 자료구조 보호(짧게). 자원 락은 DB 연결·소켓·파일처럼 한 번에 하나만 써야 하는 자원의 입출력 직렬화.</td></tr>
+<tr><td>스냅샷(copy-then-release)</td><td>락 안에서 필요한 값만 복사하고 락을 푼 뒤 그 사본으로 일한다.</td></tr>
+<tr><td>데이터 경쟁(data race)</td><td>두 스레드가 같은 메모리를 동시에 접근하고 그중 하나가 쓰기인데 동기화가 없는 상태. C++에서는 미정의 동작.</td></tr>
+<tr><td>TSan(ThreadSanitizer)</td><td>컴파일러(<code>-fsanitize=thread</code>)가 메모리 접근을 기록해 실행 중 데이터 경쟁을 찾아 주는 도구. 실행된 경로만 검사한다.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>5. 이해도 질문</h2>
+<p><b>Q1.</b> <code>removeDevice</code>에서 <code>devices_.erase</code>를 unpair 뒤로 다시 옮기면(락은 여전히 밖) 어떤 문제가 생길 수 있나?</p>
+<details><summary>정답</summary>해제가 진행되는 동안 다른 요청이 그 기기를 여전히 "있음"으로 보고 제어·조회를 시도한다. 이미 끊긴 소켓에 명령을 보내 실패하고 상태를 OFFLINE으로 바꾸는 등, 지워질 기기에 쓸데없는 쓰기가 생긴다. 맵에서 빼고 지운 뒤 erase하려면 다시 락을 잡아야 해 코드도 복잡해진다.</details>
+<p><b>Q2.</b> TSan 테스트가 모두 통과했는데 <code>MatterController</code>에 데이터 경쟁이 없다고 말할 수 없는 이유는?</p>
+<details><summary>정답</summary>TSan은 실행된 코드만 검사한다. MatterController는 CHIP SDK 의존 때문에 TSan 빌드(<code>HAC_BUILD_SERVER=OFF</code>)에 포함되지 않아 한 번도 실행되지 않았다. 그래서 코드 검토와 dev 빌드 컴파일로만 확인했다. 8번(ChipToolRunner 분리) 뒤에 가짜 러너로 테스트할 수 있게 된다.</details>
+<p><b>Q3.</b> <code>updateDeviceState</code>를 두 스레드가 같은 기기에 "ON", "OFF"로 동시에 부르면 메모리와 DB가 달라질 수 있다. 왜 이것을 감수했나?</p>
+<details><summary>정답</summary>메모리와 DB를 한 락으로 묶으면 DB(자원 락)를 상태 락 안에서 부르게 되어 L-2를 어기고, 느린 DB가 모든 요청을 막는다. 어긋나는 값은 <code>is_active</code> 한 칸이고 60초 헬스체크가 실제 기기 상태로 다시 쓰므로 영향이 작다(ADR-002 "감수하는 단점").</details>
+</section>
+
+<section>
+<h2>6. 응용 실습</h2>
+<p><b>과제 1 (빈칸).</b> <code>getDeviceState</code>를 규칙대로 완성하세요. 락 안에서 할 일과 밖에서 할 일을 나누는 것이 핵심입니다.</p>
+<pre><code>std::string DeviceManager::getDeviceState(std::string id, bool isManualRefresh) {
+    ProtocolDriver* protocolDriver = nullptr;
+    {
+        // (1) 락을 잡고 기기를 찾는다. 없으면 "UNKNOWN"
+        // (2) 프로토콜 드라이버 포인터를 복사한다
+    }
+    // (3) 락 밖에서 readDeviceState → "UNKNOWN"이 아니면 updateDeviceState
+}</code></pre>
+<details><summary>힌트</summary><code>drivers_.find(it-&gt;second.protocol_type)</code>. <code>updateDeviceState</code>는 자기가 락을 잡으므로 (3)에서 락을 쥔 채 부르면 같은 스레드가 같은 <code>std::mutex</code>를 두 번 잡게 된다(미정의 동작/멈춤).</details>
+<details><summary>정답</summary>현재 <code>src/DeviceManager.cpp</code>의 <code>getDeviceState</code>를 보세요.</details>
+<p><b>과제 2 (응용).</b> 7번에서 할 TCPDriver의 <code>SendCommandTo("ALL")</code>은 <code>client_sockets_</code>를 락 없이 순회합니다. 같은 스냅샷 기법으로 고친다면 어떻게 쓰겠습니까?</p>
+<details><summary>정답 예시</summary><pre><code>std::vector&lt;std::string&gt; targetIds;
+{
+    std::lock_guard&lt;std::mutex&gt; lock(sockets_mutex_);
+    for (const auto&amp; pair : client_sockets_) targetIds.push_back(pair.first);
+}
+for (const auto&amp; id : targetIds) sendCommand(id, payload);  // 락 밖 송신</code></pre>
+7번에서는 소켓을 <code>shared_ptr&lt;TcpConnection&gt;</code>으로 복사해, 순회 중 다른 스레드가 연결을 닫아도 객체 수명이 보장되게 바꿀 예정입니다.</details>
+</section>
+</main>
+</body>
+</html>

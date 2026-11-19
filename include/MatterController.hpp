@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <vector>
 #include <thread>
+#include <mutex>
+#include <chrono>
 #include <unordered_set>
 #include <unordered_map>
 #include <lib/core/CHIPCore.h>
@@ -78,4 +80,14 @@ private:
     std::uint64_t getNodeId(const std::string& serialNumber);
     // 오프라인 상태인 기기의 NodeId(문자열)와 타임아웃 발생 시간을 기록
     std::unordered_map<std::string, std::chrono::steady_clock::time_point> mOfflineNodes;
+
+    bool isPairing(uint64_t nodeId);
+    void setPairing(uint64_t nodeId, bool pairing);
+    bool isOffline(const std::string& nodeIdText);
+    void markOffline(const std::string& nodeIdText);
+    bool clearOffline(const std::string& nodeIdText); // 명부에 있었으면 true
+
+    // 두 락은 동시에 잡지 않는다. chip-tool 실행은 항상 락 밖에서 한다
+    std::mutex stateMutex_; // mSerialToNodeId, mOfflineNodes, mPairingNodes
+    std::mutex fileMutex_;  // mConfigFilePath 읽기·쓰기
 };
