@@ -12,7 +12,10 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <atomic>
 #include <chrono>
+#include <future>
+#include <thread>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
@@ -189,6 +192,177 @@ TEST_F(EnergyPathTest, E6SuccessReturnsStateAndCorrectedTotal) {
     EXPECT_EQ(response->status, 200);
     EXPECT_EQ(json::parse(response->body),
               json::parse(R"({"device_status":"ON","activePower_mW":15230,"totalEnergy_mWh":1048576})"));
+}
+
+// ---- 6b: 같은 기기 전력 조회는 조회~저장이 직렬화된다 ----
+
+// 먼저 시작한 조회(100)가 늦게 끝나고 나중 조회(120)가 먼저 끝나면, 락이 없을 때는
+// 120 저장 뒤 100이 "카운터 초기화"로 보여 합계가 220이 된다. 정답은 120.
+TEST_F(EnergyPathTest, ConcurrentReadsOfSameDeviceDoNotDoubleCount) {
+    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {}, &matterFake);
+    std::promise<void> firstEntered;
+    std::promise<void> releaseFirst;
+    std::shared_future<void> releaseSignal = releaseFirst.get_future().share();
+    std::atomic<int> calls{0};
+    matterFake.onReadEnergy = [&](const std::string&) {
+        if (calls.fetch_add(1) == 0) {
+            firstEntered.set_value();
+            releaseSignal.wait_for(std::chrono::seconds(5));
+            return Result<EnergyReading>::success(EnergyReading{1, 100});
+        }
+        return Result<EnergyReading>::success(EnergyReading{1, 120});
+    };
+
+    auto first = std::async(std::launch::async, [this] { return manager.readEnergy("PLUG"); });
+    ASSERT_EQ(firstEntered.get_future().wait_for(std::chrono::seconds(3)), std::future_status::ready);
+    auto second = std::async(std::launch::async, [this] { return manager.readEnergy("PLUG"); });
+    std::this_thread::sleep_for(std::chrono::milliseconds(200)); // 락이 없다면 두 번째가 여기서 먼저 끝난다
+    releaseFirst.set_value();
+
+    ASSERT_TRUE(first.get().ok());
+    auto later = second.get();
+    ASSERT_TRUE(later.ok());
+    EXPECT_EQ(later.value->totalEnergy_mWh, 120);
+    RawDb raw(dbPath_);
+    EXPECT_EQ(raw.scalar("SELECT real_total_mwh FROM device_energy_stats WHERE device_id='PLUG'"), "120");
+}
+
+// 조회 도중 기기가 삭제되면 통계 행을 만들지 않는다
+TEST_F(EnergyPathTest, DeviceRemovedDuringReadCreatesNoStatsRow) {
+    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {}, &matterFake);
+    std::promise<void> entered;
+    std::promise<void> release;
+    std::shared_future<void> releaseSignal = release.get_future().share();
+    matterFake.onReadEnergy = [&](const std::string&) {
+        entered.set_value();
+        releaseSignal.wait_for(std::chrono::seconds(5));
+        return Result<EnergyReading>::success(EnergyReading{1, 100});
+    };
+
+    auto reading = std::async(std::launch::async, [this] { return manager.readEnergy("PLUG"); });
+    ASSERT_EQ(entered.get_future().wait_for(std::chrono::seconds(3)), std::future_status::ready);
+    manager.removeDevice("PLUG"); // 전력 락을 기다리지 않고 바로 끝나야 한다
+    release.set_value();
+
+    const auto result = reading.get();
+    ASSERT_FALSE(result.ok());
+    EXPECT_EQ(result.error.code, ErrorCode::DeviceNotFound);
+    EXPECT_EQ(statsRowCount("PLUG"), "0");
+}
+
+// 느린 전력 조회 중에도 목록·다른 기기 제어는 1초 안에 끝난다
+TEST_F(EnergyPathTest, SlowEnergyReadDoesNotBlockOtherRequests) {
+    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {}, &matterFake);
+    manager.addDevice("LAMP", "lamp", ProtocolType::TCP_DIY, {}, &tcpFake);
+    std::promise<void> entered;
+    std::promise<void> release;
+    std::shared_future<void> releaseSignal = release.get_future().share();
+    matterFake.onReadEnergy = [&](const std::string&) {
+        entered.set_value();
+        releaseSignal.wait_for(std::chrono::seconds(5));
+        return Result<EnergyReading>::success(EnergyReading{1, 100});
+    };
+
+    auto reading = std::async(std::launch::async, [this] { return manager.readEnergy("PLUG"); });
+    ASSERT_EQ(entered.get_future().wait_for(std::chrono::seconds(3)), std::future_status::ready);
+    auto others = std::async(std::launch::async, [this] {
+        return manager.getAllDevices().size() == 2 &&
+               manager.executeCommand("LAMP", "ON").outcome == CommandOutcome::Succeeded;
+    });
+    const auto status = others.wait_for(std::chrono::seconds(1));
+    release.set_value();
+
+    EXPECT_EQ(status, std::future_status::ready) << "전력 조회 중 다른 요청이 1초 넘게 막혔다";
+    EXPECT_TRUE(others.get());
+    EXPECT_TRUE(reading.get().ok());
+}
+
+// 드라이버의 "매핑 없음"은 등록된 기기에 대해 내부 오류로 답한다(E6에 "등록되지 않은 기기"로 보이지 않게)
+TEST_F(EnergyPathTest, DriverDeviceNotFoundIsReportedAsInternal) {
+    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {}, &matterFake);
+    matterFake.energyResult = Result<EnergyReading>::failure(ErrorCode::DeviceNotFound, "시리얼 매핑 없음");
+
+    const auto energy = manager.readEnergy("PLUG");
+
+    ASSERT_FALSE(energy.ok());
+    EXPECT_EQ(energy.error.code, ErrorCode::Internal);
+}
+
+// 상태를 확인하지 못한 기기(PAIRING·ERROR 포함)는 헬스체크에서 전력을 조회하지 않는다
+TEST_F(EnergyPathTest, HealthCheckSkipsEnergyForUnconfirmedStates) {
+    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {}, &matterFake);
+    matterFake.energyResult = Result<EnergyReading>::success(EnergyReading{1, 100});
+    for (const char* state : {"PAIRING", "ERROR", "OFFLINE", "UNKNOWN"}) {
+        matterFake.stateToReturn = state;
+        manager.runHealthCheck();
+    }
+    EXPECT_TRUE(matterFake.energyReadIds.empty());
+
+    matterFake.stateToReturn = "ON";
+    manager.runHealthCheck();
+    EXPECT_EQ(matterFake.energyReadIds.size(), 1u);
+}
+
+// E6: 음수 누적값은 저장하지 않는다
+TEST_F(EnergyPathTest, NegativeCumulativeIsRejected) {
+    int64_t total = 0;
+    ASSERT_TRUE(database.updateEnergyStat("PLUG", 100, total));
+    EXPECT_FALSE(database.updateEnergyStat("PLUG", -1, total));
+    RawDb raw(dbPath_);
+    EXPECT_EQ(raw.scalar("SELECT real_total_mwh || '/' || last_plug_mwh FROM device_energy_stats"), "100/100");
+}
+
+// E8: 같은 초에 쌓인 기록도 넣은 순서대로, limit<=0은 거부
+TEST_F(EnergyPathTest, HistoryOrdersSameSecondByInsertionAndRejectsNonPositiveLimit) {
+    RawDb raw(dbPath_);
+    raw.exec("INSERT INTO state_history_logs (device_id, total_mwh, timestamp) VALUES "
+             "('PLUG', 10, '2026-11-19 00:00:00'), ('PLUG', 20, '2026-11-19 00:00:00'), ('PLUG', 30, '2026-11-19 00:00:00');");
+
+    auto latestTwo = database.getEnergyHistory("PLUG", 2);
+    ASSERT_TRUE(latestTwo.ok());
+    ASSERT_EQ(latestTwo.value->size(), 2u);
+    EXPECT_EQ((*latestTwo.value)[0].total_mwh, 20);
+    EXPECT_EQ((*latestTwo.value)[1].total_mwh, 30);
+
+    EXPECT_EQ(database.getEnergyHistory("PLUG", 0).error.code, ErrorCode::InvalidRequest);
+    EXPECT_EQ(database.getEnergyHistory("PLUG", -1).error.code, ErrorCode::InvalidRequest);
+}
+
+// E14: E7 응답 필드·순서 전체
+TEST_F(EnergyPathTest, E7ReturnsExactFieldsOldestFirst) {
+    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {}, &matterFake);
+    manager.updateDeviceState("PLUG", "ON");
+    RawDb raw(dbPath_);
+    raw.exec("INSERT INTO state_history_logs (device_id, total_mwh, timestamp) VALUES "
+             "('PLUG', 1048576, '2026-11-16 09:30:00'), ('PLUG', 1040000, '2026-11-16 09:20:00'), ('OTHER', 5, '2026-11-16 09:25:00');");
+    startServer();
+
+    auto response = get("/api/devices/PLUG/energy/history");
+
+    ASSERT_TRUE(response);
+    EXPECT_EQ(response->status, 200);
+    EXPECT_EQ(json::parse(response->body), json::parse(R"({"device_status":"ON","logs":[
+        {"timestamp":"2026-11-16 09:20:00","totalEnergy_mWh":1040000},
+        {"timestamp":"2026-11-16 09:30:00","totalEnergy_mWh":1048576}]})"));
+}
+
+TEST_F(EnergyPathTest, E7UnregisteredDeviceReturns200WithError) {
+    startServer();
+    auto response = get("/api/devices/NOPE/energy/history");
+    ASSERT_TRUE(response);
+    EXPECT_EQ(response->status, 200);
+    EXPECT_EQ(json::parse(response->body), json::parse(R"({"error":"등록되지 않은 기기입니다."})"));
+}
+
+TEST_F(EnergyPathTest, E6DriverFailureReturns400) {
+    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {}, &matterFake);
+    matterFake.energyResult = Result<EnergyReading>::failure(ErrorCode::DeviceUnreachable, "누적 전력 값 없음");
+    startServer();
+    auto response = get("/api/devices/PLUG/energy");
+    ASSERT_TRUE(response);
+    EXPECT_EQ(response->status, 400);
+    EXPECT_EQ(json::parse(response->body), json::parse(R"({"error":"서버 내부 데이터 처리 오류입니다."})"));
+    EXPECT_EQ(statsRowCount("PLUG"), "0");
 }
 
 // ---- D4: 통계 조회가 실패하면 "최초 등록"으로 보지 않는다 ----

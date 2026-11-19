@@ -95,3 +95,63 @@ TEST(ParseIntegerTest, DoubleSignAndOverflowFail) {
         EXPECT_FALSE(parseInteger(text).ok()) << text;
     }
 }
+
+// ---- 전력 조회 결과 해석 ----
+
+TEST(ParseEnergyReadingTest, NumbersAreParsedAs64Bit) {
+    const auto reading = parseEnergyReading("15230", " 5000000000 ");
+    ASSERT_TRUE(reading.ok());
+    EXPECT_EQ(reading.value->activePower_mW, 15230);
+    EXPECT_EQ(reading.value->cumulative_mWh, 5000000000LL);
+}
+
+TEST(ParseEnergyReadingTest, ActivePowerBeyondIntIsKept) {
+    const auto reading = parseEnergyReading("3000000000", "1");
+    ASSERT_TRUE(reading.ok());
+    EXPECT_EQ(reading.value->activePower_mW, 3000000000LL);
+}
+
+TEST(ParseEnergyReadingTest, OnlyActivePowerUnknownBecomesZero) {
+    for (const char* missing : {"UNKNOWN", ""}) {
+        const auto reading = parseEnergyReading(missing, "700");
+        ASSERT_TRUE(reading.ok()) << missing;
+        EXPECT_EQ(reading.value->activePower_mW, 0);
+        EXPECT_EQ(reading.value->cumulative_mWh, 700);
+    }
+}
+
+TEST(ParseEnergyReadingTest, MissingCumulativeIsUnreachable) {
+    for (const char* missing : {"UNKNOWN", ""}) {
+        const auto reading = parseEnergyReading("10", missing);
+        ASSERT_FALSE(reading.ok()) << missing;
+        EXPECT_EQ(reading.error.code, ErrorCode::DeviceUnreachable);
+    }
+}
+
+TEST(ParseEnergyReadingTest, OfflineOrPairingInEitherIsUnreachable) {
+    for (const char* marker : {"OFFLINE", "PAIRING"}) {
+        EXPECT_EQ(parseEnergyReading(marker, "100").error.code, ErrorCode::DeviceUnreachable) << marker;
+        EXPECT_EQ(parseEnergyReading("10", marker).error.code, ErrorCode::DeviceUnreachable) << marker;
+        EXPECT_EQ(parseEnergyReading(marker, "").error.code, ErrorCode::DeviceUnreachable) << marker;
+    }
+}
+
+TEST(ParseEnergyReadingTest, NonNumericIsInternal) {
+    EXPECT_EQ(parseEnergyReading("abc", "100").error.code, ErrorCode::Internal);
+    EXPECT_EQ(parseEnergyReading("10", "ERROR").error.code, ErrorCode::Internal);
+    EXPECT_EQ(parseEnergyReading("10", "99999999999999999999").error.code, ErrorCode::Internal);
+}
+
+TEST(ParseEnergyReadingTest, NegativeCumulativeFailsButNegativePowerIsAllowed) {
+    EXPECT_EQ(parseEnergyReading("10", "-5").error.code, ErrorCode::Internal);
+    const auto exporting = parseEnergyReading("-200", "100"); // 역송전 등으로 음수 전력은 가능
+    ASSERT_TRUE(exporting.ok());
+    EXPECT_EQ(exporting.value->activePower_mW, -200);
+}
+
+TEST(ParseEnergyReadingTest, UnreachableMarkerHelper) {
+    EXPECT_TRUE(isUnreachableMarker("OFFLINE"));
+    EXPECT_TRUE(isUnreachableMarker("PAIRING"));
+    EXPECT_FALSE(isUnreachableMarker("UNKNOWN"));
+    EXPECT_FALSE(isUnreachableMarker("100"));
+}

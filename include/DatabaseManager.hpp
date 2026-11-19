@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <vector>
 #include <sqlite3.h>
@@ -35,7 +36,7 @@ public:
     bool initHistoryTable();
     bool insertEnergyLog(const std::string& deviceId, int64_t total_mwh);
 
-    // 최신 limit건을 오래된 것부터. DB 오류는 빈 목록이 아니라 failure(Internal)
+    // 최신 limit건을 오래된 것부터. DB 오류·limit<=0은 빈 목록이 아니라 failure
     Result<std::vector<EnergyLog>> getEnergyHistory(const std::string& deviceId, int limit = 50);
 private:
     // 아래 *Locked 함수는 호출자가 mutex_를 이미 잡았다고 가정한다
@@ -45,8 +46,9 @@ private:
     bool initHistoryTableLocked();
     bool migrateToV1Locked();
     bool backupLocked(const std::string& dbPath, int currentVersion, const std::string& timestampUtc);
-    bool tableExistsLocked(const char* tableName);
-    int readUserVersionLocked();
+    // 조회 자체가 실패하면 nullopt("없음"·0과 구분한다)
+    std::optional<bool> tableExistsLocked(const char* tableName);
+    std::optional<int> readUserVersionLocked();
 
     mutable std::mutex mutex_;
     sqlite3* db_;

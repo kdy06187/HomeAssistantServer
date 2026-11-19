@@ -144,6 +144,58 @@ ON CONFLICT(device_id) DO UPDATE SET display_name = excluded.display_name, ..., 
 <p><b>과제 2 (응용).</b> 2차에서 E6 오류를 v2.0 규약(없는 기기 404, 미지원 409 등)으로 바꾼다면, <code>HTTPServer</code>에서 어느 부분만 바꾸면 될까요? 왜 <code>DeviceManager</code>는 그대로 둬도 되나요?</p>
 <details><summary>정답 예시</summary><code>handleGetDeviceEnergy</code>의 <code>energy.error.code</code> → 응답 매핑만 바꾸면 된다. <code>DeviceManager</code>는 이미 DeviceNotFound / UnsupportedOperation / Internal을 구분해 돌려주므로, "무슨 일이 있었나"(도메인)와 "어떻게 답하나"(HTTP)가 분리돼 있다(ADR-003).</details>
 </section>
+
+<h2 style="margin-top:1.6em">6b. 리뷰 반영: 역순 완료 · 백업 먼저</h2>
+
+<section>
+<h2>1. 역순 완료가 왜 이중 집계가 되나</h2>
+<p>같은 플러그를 헬스체크(A)와 앱 E6(B)가 거의 동시에 조회했다. A가 먼저 시작했지만 chip-tool이 늦게 끝났다.</p>
+<svg viewBox="0 0 860 300" role="img" aria-label="역순 완료 타임라인">
+  <text x="20" y="22" font-weight="700">락 없음</text>
+  <path class="l" d="M20 60 H420"/><text x="20" y="50">A</text>
+  <rect class="b" x="40" y="40" width="250" height="24" rx="4"/><text x="50" y="57">A 조회 → 100 (늦게 끝남)</text>
+  <path class="l" d="M20 100 H420"/><text x="20" y="90">B</text>
+  <rect class="b" x="100" y="80" width="120" height="24" rx="4"/><text x="110" y="97">B 조회 → 120</text>
+  <rect class="w" x="225" y="120" width="190" height="24" rx="4"/><text x="232" y="137">① B 저장: last=120</text>
+  <rect class="r" x="225" y="152" width="190" height="24" rx="4"/><text x="232" y="169">② A 저장: 100 &lt; 120</text>
+  <text x="40" y="205">② 에서 "카운터가 줄었다 = 기기 초기화"로 보고</text>
+  <text x="40" y="227">100을 통째로 더함 → 합계 <tspan font-weight="700">220</tspan> (정답 120)</text>
+
+  <text x="450" y="22" font-weight="700">기기별 전력 락</text>
+  <rect class="b" x="460" y="40" width="250" height="24" rx="4"/><text x="470" y="57">[락] A 조회 100 → 저장 [해제]</text>
+  <rect class="w" x="460" y="80" width="250" height="24" rx="4"/><text x="470" y="97">B: 같은 기기 락 대기…</text>
+  <rect class="b" x="560" y="120" width="270" height="24" rx="4"/><text x="570" y="137">[락] B 조회 120 → +20 저장 [해제]</text>
+  <text x="460" y="205">조회와 저장을 같은 락 안에서 하므로</text>
+  <text x="460" y="227">저장 순서 = 조회 순서 → 합계 <tspan font-weight="700">120</tspan></text>
+  <text x="20" y="280">다른 기기·목록·제어는 이 락을 쓰지 않아 기다리지 않는다(테스트: 느린 조회 중 1초 안 응답).</text>
+</svg>
+<p><b>왜 기기별인가</b>: 전력 락 하나로 모든 기기를 묶으면, 플러그 하나의 chip-tool(최대 수 초)이 다른 플러그 E6까지 줄 세운다. 기기별 <code>shared_ptr&lt;mutex&gt;</code>를 작은 맵(<code>energyLocksMutex_</code>, 메모리만)에서 꺼내 쓴다.</p>
+<p><b>락 규칙과의 관계</b>: 이 락은 쥔 채로 드라이버·상태 락·DB 락을 <i>차례로</i> 잡는다. 그래서 L-7 순서의 맨 앞에 두고, "상태 락을 쥔 채 이 락을 잡지 않는다"를 지키면 순환 대기가 생기지 않는다.</p>
+<pre><code>const auto deviceEnergyLock = energyLockFor(deviceId);     // 맵 락: 꺼내고 바로 풂
+std::lock_guard&lt;std::mutex&gt; energyLock(*deviceEnergyLock);  // 같은 기기만 대기
+reading = driver-&gt;readEnergy(deviceId);
+{ [mutex_] 아직 있나? 없으면 DeviceNotFound }                 // E10: 저장 전에 재확인
+db_.updateEnergyStat(...);</code></pre>
+</section>
+
+<section>
+<h2>2. 왜 백업을 먼저 하나</h2>
+<table>
+<tr><th>순서</th><th>백업이 실패하면</th></tr>
+<tr><td>테이블 생성 → 백업 (6번까지)</td><td>이미 원본에 <code>CREATE TABLE</code>을 써 버렸다. "실패해서 아무것도 안 바꿨다"가 거짓이 된다.</td></tr>
+<tr><td>버전 확인 → <b>백업</b> → 테이블 생성 → 마이그레이션 (6b)</td><td>원본에는 읽기만 했으므로 파일이 바이트 단위로 그대로다(테스트로 확인).</td></tr>
+</table>
+<p>원칙은 5b의 삭제 순서와 같다: <b>되돌리기 어려운 쓰기 전에, 되돌릴 수단(백업)을 먼저 확보한다.</b> 운영 DB가 아직 v0이라 다음 서버 시작 때 바로 이 경로를 탄다.</p>
+<p>덤(E5): "테이블이 있나?" 조회가 <i>실패</i>했을 때 "없다"로 보면 백업을 건너뛰고 마이그레이션해 버린다. 그래서 <code>std::optional&lt;bool&gt;</code>로 "있음/없음/모름"을 나눴다.</p>
+</section>
+
+<section>
+<h2>3. 이해도 질문 (6b)</h2>
+<p><b>Q4.</b> 기기별 전력 락을 <code>removeDevice</code>에서도 잡으면 E10의 남은 틈이 완전히 닫힌다. 왜 지금은 그렇게 하지 않았나?</p>
+<details><summary>정답</summary>삭제 요청이 진행 중인 chip-tool 조회(최대 수 초)가 끝날 때까지 기다리게 된다. 남는 틈은 "재확인 직후 ~ 저장" 사이의 아주 짧은 구간이고, 결과도 무해한 통계 행 하나라 2차 정리(REQ-13)로 치우는 편이 응답성에 낫다.</details>
+<p><b>Q5.</b> <code>parseEnergyReading</code>을 MatterController 밖 순수 함수로 뺀 가장 큰 이득은?</p>
+<details><summary>정답</summary>CHIP SDK 없이 단위 테스트할 수 있다. OFFLINE·PAIRING·UNKNOWN·빈 값·비숫자·음수·64비트 값 같은 모든 분기를 chip-tool 없이 확인한다(TSan 빌드에도 포함됨).</details>
+</section>
 </main>
 </body>
 </html>

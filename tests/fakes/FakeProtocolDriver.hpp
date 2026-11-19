@@ -29,6 +29,8 @@ public:
     std::function<void()> onUnpair;
     std::function<void(const std::string&)> onSendCommand;
     std::function<void(const std::string&)> onReadState;
+    // 설정하면 energyResult 대신 이 함수의 결과를 돌려준다(호출별 값·멈춤 조작용). 기록 락 밖에서 호출된다.
+    std::function<Result<EnergyReading>(const std::string&)> onReadEnergy;
 
     // 기록
     std::vector<std::pair<std::string, std::string>> sentCommands;   // (deviceId, command)
@@ -66,8 +68,12 @@ public:
     }
     Result<EnergyReading> readEnergy(const std::string& deviceId) override {
         if (throwOnReadEnergy) throw std::runtime_error("fake readEnergy failure");
+        {
+            std::lock_guard<std::mutex> lock(recordMutex);
+            energyReadIds.push_back(deviceId);
+        }
+        if (onReadEnergy) return onReadEnergy(deviceId);
         std::lock_guard<std::mutex> lock(recordMutex);
-        energyReadIds.push_back(deviceId);
         return energyResult;
     }
 

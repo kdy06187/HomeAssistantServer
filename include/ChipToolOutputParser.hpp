@@ -1,4 +1,5 @@
 #pragma once
+#include "ProtocolDriver.hpp"
 #include "Result.hpp"
 #include <cstdint>
 #include <optional>
@@ -30,6 +31,14 @@ std::optional<std::string> extractEnergyText(const std::string& output);
 std::optional<std::string> extractSerialNumber(const std::string& output);
 
 bool isCommissioningSuccessful(const std::string& output);
+
+// 전력 조회 결과 두 문자열(getPowerUsage·getCumulativeEnergy 반환값)을 해석한다.
+// OFFLINE·PAIRING → DeviceUnreachable / 누적값 UNKNOWN·빈 값 → DeviceUnreachable /
+// 실시간 전력만 UNKNOWN·빈 값 → 0 / 숫자가 아님·음수 누적값 → Internal
+Result<EnergyReading> parseEnergyReading(const std::string& activePowerText, const std::string& cumulativeText);
+
+// 기기에 닿지 못했음을 뜻하는 표지 문자열인가("OFFLINE", "PAIRING")
+bool isUnreachableMarker(const std::string& text);
 
 // "시리얼,노드ID" 한 줄. 줄 끝의 \r·공백은 허용하고, 노드ID는 숫자만 허용한다.
 Result<std::pair<std::string, uint64_t>> parseRegisteredDeviceLine(const std::string& line);

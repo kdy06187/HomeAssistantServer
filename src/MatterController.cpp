@@ -430,32 +430,19 @@ std::string MatterController::readDeviceState(const std::string& rawDeviceId, bo
     }
     return "UNKNOWN";
 }
-// 값 해석 규칙: 실시간 전력은 "UNKNOWN"/빈 값이면 0(표시용, 통계에 안 쓰임).
-// 누적 전력은 "UNKNOWN"/빈 값이면 실패 — 0으로 넘기면 통계의 마지막 값이 0이 되어 다음 조회 때 누적값 전체가 다시 더해진다.
-// 그 외 숫자가 아니면 둘 다 실패
+// 값 해석 규칙은 ChipToolOutputParser::parseEnergyReading에 있다
 Result<EnergyReading> MatterController::readEnergy(const std::string& deviceId){
+    // 매핑이 없으면 노드 0에 chip-tool을 실행하게 되므로 바로 실패한다
+    if (getNodeId(deviceId) == 0) {
+        return Result<EnergyReading>::failure(ErrorCode::DeviceNotFound, "시리얼 매핑 없음");
+    }
     const std::string activePowerText = getPowerUsage(deviceId);
+    // 첫 조회에서 닿지 못했으면 두 번째 chip-tool 실행(최대 5초)을 생략한다
+    if (ChipToolOutputParser::isUnreachableMarker(activePowerText)) {
+        return ChipToolOutputParser::parseEnergyReading(activePowerText, "");
+    }
     const std::string cumulativeText = getCumulativeEnergy(deviceId);
-
-    EnergyReading reading{0, 0};
-    if (activePowerText != "UNKNOWN" && !activePowerText.empty()) {
-        const auto parsedPower = ChipToolOutputParser::parseInteger(activePowerText);
-        if (!parsedPower.ok() ||
-            *parsedPower.value < std::numeric_limits<int>::min() ||
-            *parsedPower.value > std::numeric_limits<int>::max()) {
-            return Result<EnergyReading>::failure(ErrorCode::Internal, "실시간 전력 값 해석 실패");
-        }
-        reading.activePower_mW = *parsedPower.value;
-    }
-    if (cumulativeText == "UNKNOWN" || cumulativeText.empty()) {
-        return Result<EnergyReading>::failure(ErrorCode::DeviceUnreachable, "누적 전력 값 없음");
-    }
-    const auto parsedEnergy = ChipToolOutputParser::parseInteger(cumulativeText);
-    if (!parsedEnergy.ok()) {
-        return Result<EnergyReading>::failure(ErrorCode::Internal, "누적 전력 값 해석 실패");
-    }
-    reading.cumulative_mWh = *parsedEnergy.value;
-    return Result<EnergyReading>::success(reading);
+    return ChipToolOutputParser::parseEnergyReading(activePowerText, cumulativeText);
 }
 std::string MatterController::getPowerUsage(std::string deviceId, bool isManualRequest){
     uint64_t nodeId = getNodeId(deviceId);
@@ -483,9 +470,16 @@ std::string MatterController::getPowerUsage(std::string deviceId, bool isManualR
     return result;
 }
 std::string MatterController::getCumulativeEnergy(std::string deviceId, bool isManualRequest){
-    std::string nodeId = std::to_string(getNodeId(deviceId));
+    const uint64_t nodeIdValue = getNodeId(deviceId);
+    std::string nodeId = std::to_string(nodeIdValue);
+
+    // getPowerUsage와 같은 건너뛰기 규칙
+    if (isPairing(nodeIdValue)) return "PAIRING";
+    if (!isManualRequest && isOffline(nodeId)) return "OFFLINE";
+
     std::cout << "[MatterController] 기기 전력량(누적) 조회 요청 : NodeId = " << nodeId << std::endl;
-    std::string cmd = mChipToolPath + " electricalenergymeasurement read cumulative-energy-imported " + nodeId + " 1";
+    // 2>&1: 오류가 stderr로만 나와도 성공·오류 표지 판정에 쓰이도록 함께 읽는다
+    std::string cmd = mChipToolPath + " electricalenergymeasurement read cumulative-energy-imported " + nodeId + " 1 2>&1";
     
     std::string output = this->executeCommandWithErrorResponse(cmd, nodeId);
 

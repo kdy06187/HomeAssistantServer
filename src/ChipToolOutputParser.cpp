@@ -160,4 +160,30 @@ Result<std::pair<std::string, uint64_t>> parseRegisteredDeviceLine(const std::st
     return LineResult::success({serial, nodeId});
 }
 
+bool isUnreachableMarker(const std::string& text) {
+    return text == "OFFLINE" || text == "PAIRING";
+}
+
+Result<EnergyReading> parseEnergyReading(const std::string& activePowerText, const std::string& cumulativeText) {
+    if (isUnreachableMarker(activePowerText) || isUnreachableMarker(cumulativeText)) {
+        return Result<EnergyReading>::failure(ErrorCode::DeviceUnreachable, "기기 오프라인 또는 페어링 중");
+    }
+    // 누적값은 통계의 기준이 되므로 "값 없음"을 0으로 바꾸지 않는다
+    if (cumulativeText == "UNKNOWN" || cumulativeText.empty()) {
+        return Result<EnergyReading>::failure(ErrorCode::DeviceUnreachable, "누적 전력 값 없음");
+    }
+
+    EnergyReading reading{0, 0};
+    if (activePowerText != "UNKNOWN" && !activePowerText.empty()) {
+        const auto parsedPower = parseInteger(activePowerText);
+        if (!parsedPower.ok()) return Result<EnergyReading>::failure(ErrorCode::Internal, "실시간 전력 값 해석 실패");
+        reading.activePower_mW = *parsedPower.value;
+    }
+    const auto parsedEnergy = parseInteger(cumulativeText);
+    if (!parsedEnergy.ok()) return Result<EnergyReading>::failure(ErrorCode::Internal, "누적 전력 값 해석 실패");
+    if (*parsedEnergy.value < 0) return Result<EnergyReading>::failure(ErrorCode::Internal, "음수 누적 전력 값");
+    reading.cumulative_mWh = *parsedEnergy.value;
+    return Result<EnergyReading>::success(reading);
+}
+
 } // namespace ChipToolOutputParser

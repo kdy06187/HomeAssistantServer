@@ -84,34 +84,48 @@ bool DatabaseManager::init(const std::string& dbPath, const std::string& backupT
         return false;
     }
 
-    const bool hadDevicesTable = fileExisted && tableExistsLocked("devices");
+    // 순서: 버전 확인 → (필요하면) 백업 → 테이블 생성 → 마이그레이션.
+    // 백업을 먼저 해야 실패했을 때 원본에 아무것도 쓰지 않은 상태로 멈출 수 있다
+    const auto currentVersion = readUserVersionLocked();
+    if (!currentVersion) {
+        std::cerr << "[DB] 스키마 버전 확인 실패: " << sqlite3_errmsg(db_) << std::endl;
+        closeLocked();
+        return false;
+    }
+    bool hadDevicesTable = false;
+    if (fileExisted) {
+        const auto exists = tableExistsLocked("devices");
+        if (!exists) {
+            std::cerr << "[DB] 테이블 확인 실패: " << sqlite3_errmsg(db_) << std::endl;
+            closeLocked();
+            return false;
+        }
+        hadDevicesTable = *exists;
+    }
+    if (*currentVersion < kSchemaVersion && hadDevicesTable) {
+        std::string stamp = backupTimestampUtc.empty() ? makeUtcTimestamp() : backupTimestampUtc;
+        if (!backupLocked(dbPath, *currentVersion, stamp)) {
+            std::cerr << "[DB] 백업 실패, 마이그레이션을 중단합니다" << std::endl;
+            closeLocked();
+            return false;
+        }
+    }
 
     if (!execLocked("CREATE TABLE IF NOT EXISTS devices("
                     "device_id TEXT PRIMARY KEY, "
                     "display_name TEXT, "
                     "protocol_type INTEGER, "
                     "is_active INTEGER, "
-                    "driverTypes TEXT);", "[DB] 테이블 생성 에러: ")) {
+                    "driverTypes TEXT);", "[DB] 테이블 생성 에러: ") ||
+        !initEnergyTableLocked() ||   // 전력량 테이블
+        !initHistoryTableLocked()) {  // 전력량 로그 테이블
         closeLocked();
         return false;
     }
-    initEnergyTableLocked(); // 전력량 테이블 초기화
-    initHistoryTableLocked(); // 전력량 로그 테이블 초기화
 
-    const int currentVersion = readUserVersionLocked();
-    if (currentVersion < kSchemaVersion) {
-        if (hadDevicesTable) {
-            std::string stamp = backupTimestampUtc.empty() ? makeUtcTimestamp() : backupTimestampUtc;
-            if (!backupLocked(dbPath, currentVersion, stamp)) {
-                std::cerr << "[DB] 백업 실패, 마이그레이션을 중단합니다" << std::endl;
-                closeLocked();
-                return false;
-            }
-        }
-        if (!migrateToV1Locked()) {
-            closeLocked();
-            return false;
-        }
+    if (*currentVersion < kSchemaVersion && !migrateToV1Locked()) {
+        closeLocked();
+        return false;
     }
     std::cout << "[DB] SQLite 로드 성공 (" << dbPath << ")" << std::endl;
     return true;
@@ -142,21 +156,24 @@ bool DatabaseManager::execLocked(const char* sql, const char* failLogPrefix) {
     return true;
 }
 
-bool DatabaseManager::tableExistsLocked(const char* tableName) {
+std::optional<bool> DatabaseManager::tableExistsLocked(const char* tableName) {
     sqlite3_stmt* stmt = nullptr;
-    bool found = false;
     if (sqlite3_prepare_v2(db_, "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?;",
-                           -1, &stmt, nullptr) == SQLITE_OK) {
-        sqlite3_bind_text(stmt, 1, tableName, -1, SQLITE_STATIC);
-        found = (sqlite3_step(stmt) == SQLITE_ROW);
+                           -1, &stmt, nullptr) != SQLITE_OK) {
+        sqlite3_finalize(stmt);
+        return std::nullopt;
     }
+    sqlite3_bind_text(stmt, 1, tableName, -1, SQLITE_STATIC);
+    const int rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
-    return found;
+    if (rc == SQLITE_ROW) return true;
+    if (rc == SQLITE_DONE) return false;
+    return std::nullopt;
 }
 
-int DatabaseManager::readUserVersionLocked() {
+std::optional<int> DatabaseManager::readUserVersionLocked() {
     sqlite3_stmt* stmt = nullptr;
-    int version = 0;
+    std::optional<int> version;
     if (sqlite3_prepare_v2(db_, "PRAGMA user_version;", -1, &stmt, nullptr) == SQLITE_OK &&
         sqlite3_step(stmt) == SQLITE_ROW) {
         version = sqlite3_column_int(stmt, 0);
@@ -280,7 +297,8 @@ std::vector<Device> DatabaseManager::loadAllDevices() {
         return devices;
     }
 
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
+    int stepResult = SQLITE_DONE;
+    while ((stepResult = sqlite3_step(stmt)) == SQLITE_ROW) {
         // NULL 열을 std::string에 그대로 넣으면 널 포인터 역참조가 된다
         const unsigned char* idText = sqlite3_column_text(stmt, 0);
         if (idText == nullptr) {
@@ -319,6 +337,10 @@ std::vector<Device> DatabaseManager::loadAllDevices() {
 
         devices.push_back(dev);
     }
+    if (stepResult != SQLITE_DONE) {
+        // 읽던 도중 오류: 지금까지 읽은 기기만 돌려준다(부팅을 막지 않는다)
+        std::cerr << "[DB 로드 에러] 기기 읽기 중단: " << sqlite3_errmsg(db_) << '\n';
+    }
     sqlite3_finalize(stmt);
     return devices;
 }
@@ -330,12 +352,16 @@ bool DatabaseManager::updateDeviceState(const std::string& device_id, int is_act
     const char* sql = "UPDATE devices SET is_active = ? WHERE device_id = ?;";
     sqlite3_stmt* stmt;
 
-    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "[DB 에러] 상태 저장 준비 실패(" << device_id << "): " << sqlite3_errmsg(db_) << "\n";
+        return false;
+    }
 
     sqlite3_bind_int(stmt, 1, is_active);
     sqlite3_bind_text(stmt, 2, device_id.c_str(), -1, SQLITE_STATIC);
 
     bool success = (sqlite3_step(stmt) == SQLITE_DONE);
+    if (!success) std::cerr << "[DB 에러] 상태 저장 실패(" << device_id << "): " << sqlite3_errmsg(db_) << "\n";
     sqlite3_finalize(stmt);
     return success;
 }
@@ -345,11 +371,15 @@ bool DatabaseManager::removeDevice(const std::string& device_id) {
     const char* sql = "DELETE FROM devices WHERE device_id = ?;";
     sqlite3_stmt* stmt;
 
-    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "[DB 에러] 기기 삭제 준비 실패(" << device_id << "): " << sqlite3_errmsg(db_) << "\n";
+        return false;
+    }
 
     sqlite3_bind_text(stmt, 1, device_id.c_str(), -1, SQLITE_STATIC);
 
     bool success = (sqlite3_step(stmt) == SQLITE_DONE);
+    if (!success) std::cerr << "[DB 에러] 기기 삭제 실패(" << device_id << "): " << sqlite3_errmsg(db_) << "\n";
     sqlite3_finalize(stmt);
     return success;
 }
@@ -367,6 +397,11 @@ bool DatabaseManager::initEnergyTableLocked() {
 }
 
 bool DatabaseManager::updateEnergyStat(const std::string& deviceId, int64_t current_mwh, int64_t& out_real_total) {
+    if (current_mwh < 0) {
+        // 음수 누적값은 기기 오류다. 받아들이면 "카운터 초기화"로 오인해 합계가 줄어든다
+        std::cerr << "[DB] 음수 누적 전력값 거부: " << deviceId << std::endl;
+        return false;
+    }
     std::lock_guard<std::mutex> lock(mutex_);
     // 조회→계산→저장을 한 트랜잭션으로 묶어 중간 상태가 보이지 않게 한다
     if (!execLocked("BEGIN IMMEDIATE;", "[DB] 전력량 트랜잭션 시작 실패: ")) return false;
@@ -458,10 +493,14 @@ bool DatabaseManager::insertEnergyLog(const std::string& deviceId, int64_t total
 Result<std::vector<EnergyLog>> DatabaseManager::getEnergyHistory(const std::string& deviceId, int limit) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!db_) return Result<std::vector<EnergyLog>>::failure(ErrorCode::Internal, "DB가 열려 있지 않음");
+    if (limit <= 0) {
+        // SQLite는 LIMIT 음수를 "제한 없음"으로 본다. 조용히 전체를 돌려주지 않도록 거부한다
+        return Result<std::vector<EnergyLog>>::failure(ErrorCode::InvalidRequest, "limit은 1 이상");
+    }
     std::vector<EnergyLog> logs;
 
     const char* sql = "SELECT timestamp, total_mwh FROM state_history_logs "
-                      "WHERE device_id = ? ORDER BY timestamp DESC LIMIT ?;";
+                      "WHERE device_id = ? ORDER BY timestamp DESC, log_id DESC LIMIT ?;"; // 같은 초면 넣은 순서
     sqlite3_stmt* stmt = nullptr;
 
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {

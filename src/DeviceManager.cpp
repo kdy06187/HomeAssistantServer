@@ -58,7 +58,11 @@ void DeviceManager::addDevice(std::string id, std::string name, ProtocolType pro
         std::lock_guard<std::mutex> lock(mutex_);
         devices_[id] = newDevice;
     }
-    db_.insertDevice(newDevice); // DB 연결 락과 겹치지 않도록 맵 락을 푼 뒤 저장
+    // DB 연결 락과 겹치지 않도록 맵 락을 푼 뒤 저장
+    if (!db_.insertDevice(newDevice)) {
+        // 메모리에는 등록됐지만 재시작하면 사라진다. 응답 반영은 커미셔닝 정리 때 한다
+        std::cerr << "[DeviceManager] 경고 : 기기 DB 저장 실패, 재시작 시 사라집니다 (" << id << ")" << std::endl;
+    }
     std::cout << "[DeviceManager] 기기 추가 완료: " << name << "(" << id << ")" << std::endl;
 }
 
@@ -253,7 +257,9 @@ void DeviceManager::runHealthCheck() {
                 std::cerr << "[DeviceManager] 기기 오프라인 : " << id << std::endl;
                 db_.updateDeviceState(id, 0); // 오프라인 상태로 DB 업데이트
             }
-            if (device.protocol_type == ProtocolType::MATTER && state != "UNKNOWN" && state != "OFFLINE") {
+            // 상태를 확인하지 못한 기기(UNKNOWN·OFFLINE·PAIRING·ERROR)는 전력 조회도 건너뛴다
+            const bool stateConfirmed = state != "UNKNOWN" && state != "OFFLINE" && state != "PAIRING" && state != "ERROR";
+            if (device.protocol_type == ProtocolType::MATTER && stateConfirmed) {
                 const auto energy = readEnergy(id);
                 if (energy.ok() && db_.insertEnergyLog(id, energy.value->totalEnergy_mWh)) {
                     std::cout << "[DeviceManager] 📊 기기(" << id << ") 시계열 데이터 기록: " << energy.value->totalEnergy_mWh << " mWh" << std::endl;
@@ -293,25 +299,31 @@ Result<EnergySnapshot> DeviceManager::readEnergy(const std::string& deviceId) {
         return Result<EnergySnapshot>::failure(ErrorCode::Internal, "protocol driver not found");
     }
 
-    const auto reading = protocolDriver->readEnergy(deviceId); // chip-tool 실행 중이므로 락 밖
+    // 같은 기기 조회끼리만 기다린다. mutex_는 쥐지 않은 상태다
+    const auto deviceEnergyLock = energyLockFor(deviceId);
+    std::lock_guard<std::mutex> energyLock(*deviceEnergyLock);
+
+    const auto reading = protocolDriver->readEnergy(deviceId); // chip-tool 실행 중이므로 상태 락 밖
     if (!reading.ok()) {
         std::cerr << "[DeviceManager] 기기(" << deviceId << ") 전력 조회 실패: " << reading.error.message << std::endl;
-        return Result<EnergySnapshot>::failure(reading.error.code, reading.error.message);
+        // 기기 존재는 위에서 확인했다. 드라이버의 "모름"(매핑 없음)은 내부 불일치로 본다
+        const ErrorCode code = reading.error.code == ErrorCode::DeviceNotFound ? ErrorCode::Internal : reading.error.code;
+        return Result<EnergySnapshot>::failure(code, reading.error.message);
     }
 
-    // 조회에 성공한 값만 통계에 반영한다. 실패를 0으로 저장하면 다음 정상 조회 때 누적값 전체가 더해진다
+    // 조회 도중 삭제됐으면 통계 행을 만들지 않도록 저장 전에 다시 확인한다
     EnergySnapshot snapshot;
-    snapshot.activePower_mW = reading.value->activePower_mW;
-    if (!db_.updateEnergyStat(deviceId, reading.value->cumulative_mWh, snapshot.totalEnergy_mWh)) {
-        return Result<EnergySnapshot>::failure(ErrorCode::Internal, "energy stat update failed");
-    }
-
-    // 응답의 상태는 조회가 끝난 뒤의 값을 쓴다(그동안 지워졌으면 없는 기기)
     {
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = devices_.find(deviceId);
         if (it == devices_.end()) return Result<EnergySnapshot>::failure(ErrorCode::DeviceNotFound, "device removed");
         snapshot.deviceState = it->second.state;
+    }
+
+    // 조회에 성공한 값만 통계에 반영한다. 실패를 0으로 저장하면 다음 정상 조회 때 누적값 전체가 더해진다
+    snapshot.activePower_mW = reading.value->activePower_mW;
+    if (!db_.updateEnergyStat(deviceId, reading.value->cumulative_mWh, snapshot.totalEnergy_mWh)) {
+        return Result<EnergySnapshot>::failure(ErrorCode::Internal, "energy stat update failed");
     }
     return Result<EnergySnapshot>::success(snapshot);
 }
@@ -335,4 +347,11 @@ Result<HistoryResult> DeviceManager::getEnergyHistory(const std::string& deviceI
 std::unordered_map<ProtocolType, ProtocolDriver*> DeviceManager::protocolDriversSnapshot() {
     std::lock_guard<std::mutex> lock(mutex_);
     return drivers_;
+}
+
+std::shared_ptr<std::mutex> DeviceManager::energyLockFor(const std::string& deviceId) {
+    std::lock_guard<std::mutex> lock(energyLocksMutex_);
+    auto& slot = energyLocks_[deviceId];
+    if (!slot) slot = std::make_shared<std::mutex>();
+    return slot;
 }

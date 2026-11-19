@@ -409,4 +409,43 @@ TEST_F(DatabaseMigrationTest, LegacySqlStillWorksOnV1Db) {
     EXPECT_EQ(raw.scalar("PRAGMA user_version"), "1");
 }
 
+// 백업은 원본에 아무것도 쓰기 전에 한다: 백업이 실패하면 원본 파일이 바이트 단위로 그대로다
+TEST_F(DatabaseMigrationTest, BackupFailureLeavesOriginalFileByteForByte) {
+    {
+        // 전력 테이블이 아직 없던 아주 옛 DB(기기 테이블만)
+        RawDb raw(dbPath_, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE);
+        raw.exec("CREATE TABLE devices(device_id TEXT PRIMARY KEY, display_name TEXT, protocol_type INTEGER, "
+                 "is_active INTEGER, driverTypes TEXT);"
+                 "INSERT INTO devices VALUES ('SN-1', 'Plug', 0, 1, '');");
+    }
+    const std::string before = readFile(dbPath_);
+    std::ofstream(dbPath_ + ".bak-v0-20260101T000000Z") << "existing"; // 백업 이름 충돌로 실패시킨다
+
+    DatabaseManager db;
+    EXPECT_FALSE(db.init(dbPath_, "20260101T000000Z"));
+
+    EXPECT_EQ(readFile(dbPath_), before);
+    RawDb raw(dbPath_);
+    EXPECT_EQ(raw.scalar("SELECT COUNT(*) FROM sqlite_master WHERE name IN ('device_energy_stats','state_history_logs')"), "0");
+}
+
+// 전력·이력 테이블을 만들지 못하면 init은 실패한다(예전에는 결과를 무시하고 true)
+TEST_F(DatabaseMigrationTest, TableCreationFailureMakesInitFail) {
+    if (::geteuid() == 0) GTEST_SKIP() << "root는 읽기 전용 파일에도 쓸 수 있어 재현 불가";
+    {
+        RawDb raw(dbPath_, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE);
+        raw.exec("CREATE TABLE devices(device_id TEXT PRIMARY KEY, display_name TEXT, protocol_type INTEGER, "
+                 "is_active INTEGER, driverTypes TEXT, ip TEXT, deleted_at TEXT);"
+                 "PRAGMA user_version = 1;");
+    }
+    ASSERT_EQ(::chmod(dbPath_.c_str(), 0444), 0);
+
+    DatabaseManager db;
+    const bool initialized = db.init(dbPath_);
+    db.close();
+    ::chmod(dbPath_.c_str(), 0644);
+
+    EXPECT_FALSE(initialized);
+}
+
 }  // namespace
