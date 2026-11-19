@@ -6,6 +6,7 @@
 #include "DatabaseManager.hpp"
 #include "TCPDriver.hpp"
 #include "MatterController.hpp"
+#include "ProcessChipToolRunner.hpp"
 #include "HTTPServer.hpp"
 #include "DriverManager.hpp"
 #include "PCDriver.hpp"
@@ -45,7 +46,8 @@ int main() {
     manager.registerDriver(ProtocolType::TCP_DIY, &tcpDriver);
     
     // MatterController 생성 및 초기화
-    MatterController matterController;
+    ProcessChipToolRunner chipToolRunner;  // chip-tool을 셸 없이 실행한다
+    MatterController matterController(chipToolRunner);
     if (matterController.Initialize()) {
         std::cout << "[Main] MatterController 초기화 및 스레드 구동 성공!" << std::endl;
     } else {

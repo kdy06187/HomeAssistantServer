@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>REQ-09 해설 - chip-tool 러너</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--fg:#1d2330;--sub:#5b6477;--ac:#2f6fed;--code:#0f1523;--codefg:#e6edf7;--add:#12391f;--del:#4a1620;--bd:#dde1e8}
+@media (prefers-color-scheme:dark){:root{--bg:#10131a;--card:#181d28;--fg:#e6e9ef;--sub:#9aa4b8;--ac:#6b9cff;--code:#0a0d14;--bd:#2a3142}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.65 -apple-system,"Noto Sans KR",sans-serif}
+main{max-width:920px;margin:0 auto;padding:20px 14px 60px}
+h1{font-size:2rem;margin:.4em 0 .1em}
+h2{font-size:1.3rem;margin:0 0 .6em;color:var(--ac)}
+h3{font-size:1.05rem;margin:1em 0 .3em}
+.lead{color:var(--sub);margin-bottom:20px}
+section{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:18px 20px;margin:16px 0}
+table{border-collapse:collapse;width:100%;font-size:.92rem;display:block;overflow-x:auto}
+th,td{border:1px solid var(--bd);padding:6px 10px;text-align:left;vertical-align:top}
+th{background:rgba(127,127,127,.12)}
+pre{background:var(--code);color:var(--codefg);padding:12px 14px;border-radius:8px;overflow-x:auto;font-size:.85rem;line-height:1.5;margin:8px 0}
+code{font-family:ui-monospace,Consolas,monospace}
+p code,li code,td code{background:rgba(127,127,127,.18);padding:1px 5px;border-radius:4px;font-size:.88em}
+.add{background:var(--add);display:block}.del{background:var(--del);display:block}
+.three{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+.three div{border:1px dashed var(--bd);border-radius:8px;padding:8px 10px;font-size:.92rem}
+.three b{display:block;color:var(--ac)}
+details{border:1px solid var(--bd);border-radius:8px;padding:6px 12px;margin:8px 0}
+summary{cursor:pointer;font-weight:600}
+svg{width:100%;height:auto;max-width:860px}
+svg text{fill:var(--fg);font-size:13px}
+svg .b{fill:var(--card);stroke:var(--ac);stroke-width:1.5}
+svg .w{fill:rgba(240,160,40,.15);stroke:#e0a030;stroke-width:1.5}
+svg .r{fill:rgba(220,60,60,.12);stroke:#d04040;stroke-width:1.5}
+svg .l{stroke:var(--sub);stroke-width:1.5;fill:none}
+svg .rl{stroke:#d04040;stroke-width:1.5;fill:none}
+</style>
+</head>
+<body>
+<main>
+<h1>REQ-07 해설</h1>
+<p class="lead">싱글톤을 없애고 생성자 주입으로 바꾼 변경 (3단계 4a, 학습 강도: 균형). 4b가 끝나면 아래에 "4b" 절을 덧붙인다.</p>
+
+<h1>REQ-09 해설 (8a)</h1>
+<p class="lead">chip-tool을 셸 문자열(<code>popen</code>) 대신 <code>ChipToolRunner</code>로 셸 없이 실행하게 바꾼 변경. REQ-09(종료 때 자식 정리)·REQ-06(느린 작업 관리)의 준비 단계 (3단계 8a, 학습 강도: 균형).</p>
+
+<section>
+<h2>1. 한눈에 보기</h2>
+<ul>
+<li><b>무엇</b>: MatterController의 chip-tool 호출 8곳이 모두 <code>mRunner.run(인자 배열, stdin, 제한 시간, 가릴 비밀값)</code> 하나로 모였다.</li>
+<li><b>왜</b>: 셸 문자열은 인젝션 경로이고, 제한 시간이 없는 호출(시리얼 읽기·unpair·페어링)이 있었고, 서버가 끝날 때 자식을 정리할 수단이 없었고, 테스트에서 가짜로 바꿀 수 없었다.</li>
+<li><b>그대로인 것</b>: chip-tool에 넘기는 인자, 출력 판정 문자열, REST 응답, DB·등록 파일.</li>
+</ul>
+<table>
+<tr><th>파일</th><th>역할</th></tr>
+<tr><td><code>include/ChipToolRunner.hpp</code></td><td>인터페이스(어댑터). 테스트는 가짜로 바꿔 끼움(8b)</td></tr>
+<tr><td><code>ProcessChipToolRunner.hpp/.cpp</code></td><td>실제 실행: fork·파이프·execv·poll·신호·waitpid</td></tr>
+<tr><td><code>src/MatterController.cpp</code></td><td>popen·system 삭제, <code>runChipTool</code>·<code>runChipToolCommand</code>로 통일</td></tr>
+</table>
+</section>
+
+<section>
+<h2>2. 흐름 그림: 셸 없이 실행하기</h2>
+<svg viewBox="0 0 860 420" role="img" aria-label="fork exec poll 흐름">
+  <text x="20" y="22" font-weight="700">부모(서버 스레드)</text>
+  <text x="470" y="22" font-weight="700">자식</text>
+  <rect class="b" x="20" y="36" width="400" height="40" rx="6"/><text x="32" y="60">① 파이프 만들기(O_CLOEXEC) · argv 미리 준비</text>
+  <rect class="b" x="20" y="88" width="400" height="40" rx="6"/><text x="32" y="112">② [락] fork + 자식 목록에 등록</text>
+  <path class="l" d="M220 76 V88"/>
+  <rect class="b" x="470" y="88" width="370" height="96" rx="6"/>
+  <text x="482" y="110">③ setpgid(0,0) — 새 프로세스 그룹</text>
+  <text x="482" y="132">   dup2: 0←/dev/null, 1·2←파이프 (= 2&gt;&amp;1)</text>
+  <text x="482" y="154">   execv(chip-tool, 인자 배열) — 셸 없음</text>
+  <text x="482" y="176">   실패하면 _exit(127)</text>
+  <path class="l" d="M420 108 H470"/>
+  <rect class="b" x="20" y="140" width="400" height="58" rx="6"/><text x="32" y="162">④ poll(파이프, 최대 100ms)을 반복하며 출력 모으기</text><text x="32" y="184">   매번 마감 시각·취소 플래그 확인</text>
+  <path class="l" d="M220 128 V140"/>
+  <path class="l" d="M470 150 H420"/><text x="430" y="146">출력</text>
+  <rect class="w" x="20" y="214" width="400" height="58" rx="6"/><text x="32" y="236">⑤ 시간 초과·취소 → 그룹 전체에 SIGTERM</text><text x="32" y="258">   1초 안에 안 끝나면 SIGKILL</text>
+  <path class="l" d="M220 198 V214"/>
+  <rect class="b" x="20" y="288" width="400" height="58" rx="6"/><text x="32" y="310">⑥ waitid(WNOWAIT)로 끝남 확인 → [락] 목록에서 뺌</text><text x="32" y="332">   → waitpid로 회수(좀비 없음)</text>
+  <path class="l" d="M220 272 V288"/>
+  <rect class="b" x="20" y="362" width="400" height="40" rx="6"/><text x="32" y="386">⑦ 출력의 비밀값을 *** 로 바꿔 돌려줌</text>
+  <path class="l" d="M220 346 V362"/>
+  <text x="470" y="230">왜 ⑥에서 "확인 → 빼기 → 회수" 순서인가:</text>
+  <text x="470" y="252">회수(waitpid)하는 순간 pid 번호가 커널로 돌아가</text>
+  <text x="470" y="274">다른 프로세스가 받을 수 있다. 그 전에 목록에서</text>
+  <text x="470" y="296">빼야 cancelAll이 엉뚱한 프로세스에 kill하지 않는다.</text>
+</svg>
+</section>
+
+<section>
+<h2>3. 셸 방식과의 차이</h2>
+<table>
+<tr><th>항목</th><th>셸(<code>popen("timeout 5 chip-tool … 2&gt;&amp;1")</code>)</th><th>러너(<code>execv</code> + 인자 배열)</th></tr>
+<tr><td>인젝션</td><td>문자열을 <code>/bin/sh</code>가 해석. 값에 <code>;</code>·<code>$( )</code>·따옴표가 섞이면 다른 명령이 실행될 수 있다</td><td>인자 하나하나가 그대로 전달. 해석하는 셸이 없다(테스트: <code>"a; echo injected $(id)"</code>가 글자 그대로 출력)</td></tr>
+<tr><td>PATH</td><td>셸이 <code>timeout</code>을 PATH에서 찾는다. 환경에 따라 다른 프로그램이 실행될 수 있다</td><td>실행 파일 경로를 직접 지정. PATH를 보지 않는다</td></tr>
+<tr><td>2&gt;&amp;1</td><td>셸 문법으로 stderr를 stdout에 합침. 빠뜨리면(예전 누적 전력 조회) 오류 출력이 사라진다</td><td>자식에서 <code>dup2</code>로 1·2번을 같은 파이프에 연결 — 모든 호출에 항상 적용</td></tr>
+<tr><td>timeout</td><td>외부 명령 <code>timeout 5</code>. 붙인 곳만 제한, 시리얼·unpair·페어링은 무제한</td><td>러너가 마감 시각을 직접 셈(5/10/180초). 손자 프로세스까지 그룹째 종료</td></tr>
+<tr><td>표준 입력·fd</td><td>서버의 stdin과 CLOEXEC 아닌 fd를 물려받음</td><td>stdin은 <code>/dev/null</code>(또는 지정 텍스트), 러너 fd는 모두 CLOEXEC</td></tr>
+<tr><td>종료 때 정리</td><td>방법 없음(popen 자식 pid를 모름)</td><td><code>cancelAll()</code> — 2차 11번 SIGTERM 정상 종료에서 사용</td></tr>
+<tr><td>테스트</td><td>실제 chip-tool 필요</td><td>인터페이스라 가짜 러너로 교체(8b)</td></tr>
+</table>
+</section>
+
+<section>
+<h2>4. 코드 해설</h2>
+<h3>4-1. fork 뒤 자식에서 하면 안 되는 것</h3>
+<pre><code>// 부모에서 미리: argv 벡터 준비 (fork 뒤 malloc 금지)
+pid = ::fork();
+if (pid == 0) {
+    ::setpgid(0, 0);
+    ::dup2(childStdin, STDIN_FILENO);
+    ::dup2(outputPipe[1], STDOUT_FILENO);
+    ::dup2(outputPipe[1], STDERR_FILENO);
+    ::execv(argv[0], argv.data());
+    ::_exit(127);
+}</code></pre>
+<p>멀티스레드 프로그램에서 fork하면 자식에는 fork한 스레드 하나만 남는다. 다른 스레드가 malloc 락을 쥔 순간이었다면 자식이 malloc을 부르는 순간 영원히 멈춘다. 그래서 자식에서는 신호 안전 함수(<code>dup2</code>, <code>execv</code>, <code>_exit</code>)만 쓴다.</p>
+
+<h3>4-2. 파이프에 쓰다 SIGPIPE로 죽지 않게</h3>
+<p>소켓은 <code>MSG_NOSIGNAL</code>이 있지만 파이프 <code>write</code>에는 없다. 프로세스 전체 신호 설정을 바꾸지 않고, 이 스레드에서만 <code>pthread_sigmask</code>로 SIGPIPE를 막은 뒤 생긴 신호를 <code>sigtimedwait</code>로 거둬들인다.</p>
+
+<h3>4-3. MatterController 쪽</h3>
+<pre><code><span class="del">-    std::string cmd = mChipToolPath + " onoff on " + std::to_string(nodeId) + " 1 2&gt;&amp;1";
+-    std::string output = executeCommandWithErrorResponse(cmd, ...);   // 안에서 "timeout 5 " + cmd</span><span class="add">+    std::string output = runChipToolCommand({"onoff", "on", std::to_string(nodeId), "1"}, ...);  // 5초</span></code></pre>
+</section>
+
+<section>
+<h2>5. 용어 풀이</h2>
+<table>
+<tr><th>용어</th><th>뜻</th></tr>
+<tr><td>fork / exec</td><td>fork는 현재 프로세스를 복제, exec는 그 자리를 다른 프로그램으로 바꿈. 둘 사이에서 fd·그룹을 정리한다.</td></tr>
+<tr><td>프로세스 그룹</td><td>함께 신호를 받는 프로세스 묶음. <code>kill(-pgid, sig)</code>로 손자까지 한 번에.</td></tr>
+<tr><td>좀비</td><td>끝났지만 부모가 <code>waitpid</code>로 회수하지 않은 프로세스. 프로세스 표 자리를 차지한다.</td></tr>
+<tr><td><code>WNOWAIT</code></td><td>끝났는지 확인만 하고 회수는 미룸 → 그동안 pid가 재사용되지 않는다.</td></tr>
+<tr><td>어댑터 패턴</td><td>외부 프로그램(chip-tool)을 우리 인터페이스 뒤로 숨겨, 실제/가짜를 바꿔 끼울 수 있게 함.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>6. 이해도 질문</h2>
+<p><b>Q1.</b> <code>timeout 5</code>로 감싼 예전 방식에서 chip-tool이 자식 프로세스를 하나 더 띄웠다면, 시간 초과 때 무엇이 남을 수 있었나?</p>
+<details><summary>정답</summary><code>timeout</code>은 직접 실행한 프로세스에만 신호를 보낸다(기본값). 손자는 남아 계속 돌 수 있다. 러너는 자식을 새 프로세스 그룹으로 만들고 그룹 전체에 신호를 보낸다(테스트: <code>sleep 30 &amp;</code> 손자까지 사라짐).</details>
+<p><b>Q2.</b> 출력 파이프가 닫히면(EOF) 바로 <code>waitpid</code>를 막힌 채로 부르면 안 되는 이유는?</p>
+<details><summary>정답</summary>프로그램이 stdout·stderr를 닫고도 계속 실행될 수 있다. 그러면 waitpid가 끝없이 기다린다. 러너는 남은 제한 시간 안에서만 기다리고, 넘으면 종료 절차(SIGTERM → SIGKILL)로 넘어간다.</details>
+<p><b>Q3.</b> stdin 방식(비밀번호를 인자 대신 stdin으로)을 8번에 넣지 않은 이유는?</p>
+<details><summary>정답</summary>chip-tool <code>interactive start</code>가 파이프 입력에서 어떻게 동작하는지(프롬프트, 종료 감지, 공백·따옴표 처리)를 실기로 확인하지 않았다. 추측으로 만들면 틀릴 가능성이 높다(절대 규칙 4). 러너에 <code>stdinText</code> 칸은 만들어 <code>/bin/cat</code>으로 시험해 두었고, 실기 확인 뒤 2차 13번에서 쓴다.</details>
+</section>
+
+<section>
+<h2>7. 응용 실습</h2>
+<p><b>과제 (빈칸).</b> 시리얼 번호 읽기를 러너로 바꾸세요. 제한 시간은 느린 명령용입니다.</p>
+<pre><code>const std::string output = runChipTool(
+    { /* (1) 하위 명령과 인자들 */ },
+    /* (2) 제한 시간 상수 */);</code></pre>
+<details><summary>정답</summary><code>{"basicinformation", "read", "serial-number", std::to_string(nodeId), "0"}</code>, <code>kSlowCommandTimeout</code>(10초). 실행 파일 경로는 <code>runChipTool</code>이 앞에 붙인다.</details>
+</section>
+</main>
+</body>
+</html>

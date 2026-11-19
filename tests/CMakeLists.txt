@@ -5,6 +5,7 @@ add_executable(hac_tests
     unit/FakeClockTest.cpp
     unit/ChipToolOutputParserTest.cpp
     unit/DatabaseMigrationTest.cpp
+    unit/ProcessChipToolRunnerTest.cpp
     integration/DeviceManagerIntegrationTest.cpp
     integration/DeviceManagerBehaviorTest.cpp
     integration/HttpServerTest.cpp

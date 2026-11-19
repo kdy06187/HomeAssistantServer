@@ -1,6 +1,7 @@
 #pragma once
 #include "ProtocolDriver.hpp"
 #include "IMessageSender.hpp"
+#include "ChipToolRunner.hpp"
 #include <string>
 #include <cstdint>
 #include <vector>
@@ -16,8 +17,14 @@
 
 class MatterController : public ProtocolDriver, public IMessageSender {
 public:
-    MatterController();
+    // chip-tool은 모두 runner로 실행한다(셸 없음). runner는 이 객체보다 오래 살아야 한다
+    explicit MatterController(ChipToolRunner& runner);
     ~MatterController();
+
+    // chip-tool 제한 시간(9번 실기에서 확인)
+    static constexpr std::chrono::milliseconds kCommandTimeout{5000};     // 제어·상태·전력
+    static constexpr std::chrono::milliseconds kSlowCommandTimeout{10000}; // 시리얼 읽기·unpair
+    static constexpr std::chrono::milliseconds kPairingTimeout{180000};   // BLE+Wi-Fi 페어링
 
     // =========================================================
     // 1. 생명주기 (Lifecycle) 관리
@@ -64,11 +71,12 @@ private:
     Result<CommissionOutcome> commissionDevice(uint64_t nodeId, const std::string& name, const std::string& manualPincode,
                           const std::string& wifiSsid, const std::string& wifiPassword,
                           const std::unordered_set<std::string>& activeDeviceIds);
-    bool executeCommand(const std::string& cmd);
-    std::string executeCommandWithOutput(std::string cmd);
-    // 셸을 거치지 않고 실행해 stdout과 stderr를 함께 반환한다. 외부 입력이 인자에 포함될 때 사용한다.
-    std::string executeArgsWithOutput(const std::vector<std::string>& args);
-    std::string executeCommandWithErrorResponse(const std::string& cmd, const std::string& deviceId);
+    // chip-tool 하위 명령을 실행해 출력(stdout+stderr)을 돌려준다. 실행하지 못했으면 빈 문자열
+    std::string runChipTool(const std::vector<std::string>& subcommand, std::chrono::milliseconds timeout,
+                            const std::vector<std::string>& secretsToMask = {});
+    // 제어·조회용: 성공 표지가 없거나 오류 키워드가 있으면 "OFFLINE"(오프라인 명부 갱신), 아니면 출력
+    std::string runChipToolCommand(const std::vector<std::string>& subcommand, const std::string& deviceId);
+    ChipToolRunner& mRunner;
     std::string onDevicePairingComplete(uint64_t nodeId, const std::string& deviceName);
     bool checkDeviceRegistered(uint64_t nodeId);
     void saveDeviceRegistration(const std::string& serialNumber,uint64_t nodeId);

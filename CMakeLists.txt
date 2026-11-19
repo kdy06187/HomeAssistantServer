@@ -39,6 +39,7 @@ add_library(hac_core OBJECT
     src/PeriodicTasks.cpp
     src/TcpConnection.cpp
     src/TcpServer.cpp
+    src/ProcessChipToolRunner.cpp
 )
 target_include_directories(hac_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(hac_core PUBLIC OpenSSL::Crypto sqlite3 Threads::Threads)

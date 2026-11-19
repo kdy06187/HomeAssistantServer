@@ -15,24 +15,9 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-namespace {
-    // 외부 프로그램 출력은 내용을 보장할 수 없으므로, 로그에 남기기 전에 비밀값을 가린다.
-    std::string redactSecrets(std::string text, const std::vector<std::string>& secrets) {
-        const std::string mask = "***";
-        for (const auto& secret : secrets) {
-            if (secret.empty()) continue; // 빈 문자열은 무한 반복을 일으키므로 건너뛴다.
-            size_t position = 0;
-            while ((position = text.find(secret, position)) != std::string::npos) {
-                text.replace(position, secret.size(), mask);
-                position += mask.size();
-            }
-        }
-        return text;
-    }
-}
-
-MatterController::MatterController()
+MatterController::MatterController(ChipToolRunner& runner)
     : mChipToolPath("../third_party/connectedhomeip/out/host/chip-tool"),
+      mRunner(runner),
       mConfigFilePath("../config/registered_devices.txt") {
 }
 
@@ -73,82 +58,20 @@ void MatterController::shutdown(){
     std::cout << "[MatterController] 종료" << std::endl;
 }
 
-bool MatterController::executeCommand(const std::string& cmd) {
-    std::cout << "[MatterController]  쉘 명령 실행: " << cmd << std::endl;
-    
-    // std::system은 명령이 성공적으로 끝나면 0을 반환합니다.
-    int result = std::system(cmd.c_str());
-    
-    if (result == 0) {
-        std::cout << "[MatterController] 명령 전송 성공!" << std::endl;
-        return true;
-    } else {
-        std::cerr << "[MatterController] 명령 실패. (리턴 코드: " << result << ")" << std::endl;
-        return false;
-    }
+std::string MatterController::runChipTool(const std::vector<std::string>& subcommand, std::chrono::milliseconds timeout,
+                                          const std::vector<std::string>& secretsToMask) {
+    // 셸 없이 인자 배열 그대로 실행한다. 출력 판정은 기존처럼 호출부가 문자열로 한다
+    std::vector<std::string> args;
+    args.reserve(subcommand.size() + 1);
+    args.push_back(mChipToolPath);
+    args.insert(args.end(), subcommand.begin(), subcommand.end());
+    ProcessResult result = mRunner.run(args, "", timeout, secretsToMask);
+    if (result.startFailed) std::cerr << "[MatterController] chip-tool 실행 실패" << std::endl;
+    if (result.timedOut) std::cerr << "[MatterController] chip-tool 제한 시간 초과" << std::endl;
+    return std::move(result.output);
 }
-std::string MatterController::executeCommandWithOutput(std::string cmd){
-    std::array<char,128> buffer;
-    std::string result;
-    std::unique_ptr<FILE,int(*)(FILE*)> pipe(popen(cmd.c_str(),"r"),pclose);
-    if(!pipe){
-        std::cerr << "[MatterController] 명령 실행 실패: " << cmd << std::endl;
-        return "";
-    }
-    while(fgets(buffer.data(),buffer.size(),pipe.get())!=nullptr){
-        result += buffer.data();
-    }
-    return result;
-}
-std::string MatterController::executeArgsWithOutput(const std::vector<std::string>& args){
-    // 멀티스레드 프로세스에서 fork한 자식은 malloc을 쓰면 교착될 수 있으므로, argv를 fork 전에 준비한다.
-    std::vector<char*> argv;
-    argv.reserve(args.size() + 1);
-    for (const auto& arg : args) {
-        argv.push_back(const_cast<char*>(arg.c_str()));
-    }
-    argv.push_back(nullptr);
-
-    int pipeFds[2];
-    if (pipe2(pipeFds, O_CLOEXEC) != 0) {
-        std::cerr << "[MatterController] 파이프 생성 실패" << std::endl;
-        return "";
-    }
-
-    pid_t childPid = fork();
-    if (childPid < 0) {
-        std::cerr << "[MatterController] 프로세스 생성 실패" << std::endl;
-        close(pipeFds[0]);
-        close(pipeFds[1]);
-        return "";
-    }
-    if (childPid == 0) {
-        // 자식: 기존 "2>&1"과 같게 stdout과 stderr를 파이프로 보낸다.
-        dup2(pipeFds[1], STDOUT_FILENO);
-        dup2(pipeFds[1], STDERR_FILENO);
-        execv(argv[0], argv.data());
-        _exit(127); // exec 실패. 부모의 버퍼를 비우지 않도록 _exit를 쓴다.
-    }
-
-    close(pipeFds[1]);
-    std::string output;
-    std::array<char, 128> buffer;
-    while (true) {
-        ssize_t readBytes = read(pipeFds[0], buffer.data(), buffer.size());
-        if (readBytes > 0) {
-            output.append(buffer.data(), static_cast<size_t>(readBytes));
-        } else if (readBytes == 0 || errno != EINTR) {
-            break;
-        }
-    }
-    close(pipeFds[0]);
-
-    int childStatus = 0;
-    while (waitpid(childPid, &childStatus, 0) < 0 && errno == EINTR) {} // 좀비 프로세스 방지
-    return output; // 성공 여부는 기존처럼 호출부에서 출력 문자열로 판단한다.
-}
-std::string MatterController::executeCommandWithErrorResponse(const std::string& cmd, const std::string& deviceId){
-    std::string output = executeCommandWithOutput("timeout 5 " + cmd);
+std::string MatterController::runChipToolCommand(const std::vector<std::string>& subcommand, const std::string& deviceId){
+    std::string output = runChipTool(subcommand, kCommandTimeout);
     bool isSuccess = ChipToolOutputParser::hasCommandSuccessMarker(output);
     if(output.empty() || !isSuccess){
         std::cerr << "[MatterController] 기기(" << deviceId << ") 통신 에러/오프라인. 사유: 출력 없음" << std::endl;
@@ -220,11 +143,10 @@ bool MatterController::removeDeviceRegistration(const std::string& serialNumber)
     const std::string deviceIdStr = std::to_string(deviceId);
 
     // 2. chip-tool의 내부 KVS 데이터베이스에서도 이별 통보 (unpair)
-    std::string cmd = mChipToolPath + " pairing unpair " + deviceIdStr + " 2>&1";
     std::cout << "[MatterController] 기기(" << deviceIdStr << ") 페어링 해제 중..." << std::endl;
-    std::thread([this,cmd,deviceId](){
+    std::thread([this,deviceId](){
         std::string deviceIdStr = std::to_string(deviceId);
-        std::string output = this->executeCommandWithOutput(cmd);
+        std::string output = this->runChipTool({"pairing", "unpair", deviceIdStr}, kSlowCommandTimeout);
         
         // 오프라인이어서 타임아웃이 나더라도 KVS에서는 지워지므로 상황에 맞게 로그만 분기
         if (output.find("Timeout") != std::string::npos || output.find("Error") != std::string::npos) {
@@ -282,7 +204,7 @@ Result<CommissionOutcome> MatterController::commissionDevice(uint64_t nodeId, co
     // SSID와 비밀번호는 REST 입력이므로 셸을 거치지 않는다.
     // str: 접두사는 hex:로 시작하는 값이 16진수로 디코딩되는 것을 막는다.
     const std::vector<std::string> pairingArgs = {
-        mChipToolPath, "pairing", "ble-wifi", std::to_string(nodeId),
+        "pairing", "ble-wifi", std::to_string(nodeId),
         "str:" + wifiSsid, "str:" + wifiPassword,
         std::to_string(payload.setUpPINCode), "3830",
         "--paa-trust-store-path", "../paa_certs/paa-root-certs"
@@ -292,8 +214,9 @@ Result<CommissionOutcome> MatterController::commissionDevice(uint64_t nodeId, co
 
     Result<CommissionOutcome> outcome =
         Result<CommissionOutcome>::failure(ErrorCode::CommissionFailed, "chip-tool 페어링 실패");
-    // 2. 에러 스트림 통합 및 결과 읽기 (executeCommand 대신 사용)
-    std::string output = executeArgsWithOutput(pairingArgs);
+    // 2. 에러 스트림 통합 및 결과 읽기. 출력의 비밀값은 러너가 ***로 가린다
+    const std::string output = runChipTool(pairingArgs, kPairingTimeout,
+                                           {wifiPassword, manualPincode, std::to_string(payload.setUpPINCode)});
     
     // 3. 성공 키워드 검사 (chip-tool 페어링 성공 로그 기준)
     if (ChipToolOutputParser::isCommissioningSuccessful(output)) {
@@ -301,10 +224,7 @@ Result<CommissionOutcome> MatterController::commissionDevice(uint64_t nodeId, co
         std::cout << "[MatterController] 커미셔닝 성공. 기기 정보를 내부 스토리지에 저장" << std::endl;
         outcome = Result<CommissionOutcome>::success(CommissionOutcome{serialNumber});
     } else {
-        const std::string safeOutput = redactSecrets(output, {
-            wifiPassword, manualPincode, std::to_string(payload.setUpPINCode)
-        });
-        std::cerr << "[MatterController] 커미셔닝 실패 (타임아웃 또는 에러): \n" << safeOutput << std::endl;
+        std::cerr << "[MatterController] 커미셔닝 실패 (타임아웃 또는 에러): \n" << output << std::endl;
     }
 
     // 4. 작업 완료 후 Lock 해제
@@ -317,8 +237,8 @@ std::string MatterController::getDeviceSerialNumber(uint64_t nodeId) {
     std::cout << "[MatterController] 기기 시리얼 넘버 조회 중... (NodeID: " << nodeId << ")" << std::endl;
     
     // chip-tool basic 클러스터 사용
-    std::string cmd = mChipToolPath + " basicinformation read serial-number " + std::to_string(nodeId) + " 0 2>&1";
-    std::string output = executeCommandWithOutput(cmd);
+    const std::string output = runChipTool({"basicinformation", "read", "serial-number", std::to_string(nodeId), "0"},
+                                           kSlowCommandTimeout);
 
     auto serial = ChipToolOutputParser::extractSerialNumber(output);
     if (serial) return *serial;
@@ -335,8 +255,7 @@ bool MatterController::turnOn(uint64_t nodeId,uint16_t endpointId){
     }
     std::cout << "[MatterController] 💡 기기 켜기 요청 (NodeID: " << nodeId << ")" << std::endl;
 
-    std::string cmd = mChipToolPath + " onoff on " + std::to_string(nodeId) + " " + std::to_string(endpointId) + " 2>&1";
-    std::string output = executeCommandWithErrorResponse(cmd, std::to_string(nodeId));
+    std::string output = runChipToolCommand({"onoff", "on", std::to_string(nodeId), std::to_string(endpointId)}, std::to_string(nodeId));
     if (output == "OFFLINE" || output == "UNKNOWN") {
         return false;
     }
@@ -352,8 +271,7 @@ bool MatterController::turnOff(uint64_t nodeId,uint16_t endpointId){
     }
     std::cout << "[MatterController] 🔌 기기 끄기 요청 (NodeID: " << nodeId << ")" << std::endl;
 
-    std::string cmd = mChipToolPath + " onoff off " + std::to_string(nodeId) + " " + std::to_string(endpointId) + " 2>&1";
-    std::string output = executeCommandWithErrorResponse(cmd, std::to_string(nodeId));
+    std::string output = runChipToolCommand({"onoff", "off", std::to_string(nodeId), std::to_string(endpointId)}, std::to_string(nodeId));
     if (output == "OFFLINE" || output == "UNKNOWN") {
         return false;
     }
@@ -416,9 +334,9 @@ std::string MatterController::readDeviceState(const std::string& rawDeviceId, bo
     }
 
     std::cout << "[MatterController] 기기 상태 읽기 요청 : NodeId = " << nodeId << std::endl;
-    std::string cmd = mChipToolPath + " onoff read on-off " + std::to_string(nodeId) + " 1 2>&1";
+
     try{
-        std::string output = this->executeCommandWithErrorResponse(cmd, std::to_string(nodeId));
+        std::string output = this->runChipToolCommand({"onoff", "read", "on-off", std::to_string(nodeId), "1"}, std::to_string(nodeId));
         
         if (output == "OFFLINE" || output == "UNKNOWN") return output;
 
@@ -454,9 +372,8 @@ std::string MatterController::getPowerUsage(std::string deviceId, bool isManualR
     if (!isManualRequest && isOffline(std::to_string(nodeId))) return "OFFLINE";
 
     std::cout << "[MatterController] 기기 전력량(실시간) 조회 요청 : NodeId = " << nodeId << std::endl;
-    std::string cmd = mChipToolPath + " electricalpowermeasurement read active-power " + std::to_string(nodeId) + " 1 2>&1";
-    
-    std::string output = this->executeCommandWithErrorResponse(cmd, std::to_string(nodeId));
+    std::string output = this->runChipToolCommand(
+        {"electricalpowermeasurement", "read", "active-power", std::to_string(nodeId), "1"}, std::to_string(nodeId));
 
     if (output == "OFFLINE" || output == "UNKNOWN") return output;
 
@@ -478,10 +395,9 @@ std::string MatterController::getCumulativeEnergy(std::string deviceId, bool isM
     if (!isManualRequest && isOffline(nodeId)) return "OFFLINE";
 
     std::cout << "[MatterController] 기기 전력량(누적) 조회 요청 : NodeId = " << nodeId << std::endl;
-    // 2>&1: 오류가 stderr로만 나와도 성공·오류 표지 판정에 쓰이도록 함께 읽는다
-    std::string cmd = mChipToolPath + " electricalenergymeasurement read cumulative-energy-imported " + nodeId + " 1 2>&1";
-    
-    std::string output = this->executeCommandWithErrorResponse(cmd, nodeId);
+    // 러너가 stderr도 함께 읽으므로(셸의 2>&1과 같음) 오류가 stderr로만 나와도 판정에 쓰인다
+    std::string output = this->runChipToolCommand(
+        {"electricalenergymeasurement", "read", "cumulative-energy-imported", nodeId, "1"}, nodeId);
 
     if (output == "OFFLINE" || output == "UNKNOWN") return output;
 
