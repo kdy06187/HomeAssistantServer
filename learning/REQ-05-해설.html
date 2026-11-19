@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>REQ-05 해설 - TCP 연결 계층</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--fg:#1d2330;--sub:#5b6477;--ac:#2f6fed;--code:#0f1523;--codefg:#e6edf7;--add:#12391f;--del:#4a1620;--bd:#dde1e8}
+@media (prefers-color-scheme:dark){:root{--bg:#10131a;--card:#181d28;--fg:#e6e9ef;--sub:#9aa4b8;--ac:#6b9cff;--code:#0a0d14;--bd:#2a3142}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.65 -apple-system,"Noto Sans KR",sans-serif}
+main{max-width:920px;margin:0 auto;padding:20px 14px 60px}
+h1{font-size:2rem;margin:.4em 0 .1em}
+h2{font-size:1.3rem;margin:0 0 .6em;color:var(--ac)}
+h3{font-size:1.05rem;margin:1em 0 .3em}
+.lead{color:var(--sub);margin-bottom:20px}
+section{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:18px 20px;margin:16px 0}
+table{border-collapse:collapse;width:100%;font-size:.92rem;display:block;overflow-x:auto}
+th,td{border:1px solid var(--bd);padding:6px 10px;text-align:left;vertical-align:top}
+th{background:rgba(127,127,127,.12)}
+pre{background:var(--code);color:var(--codefg);padding:12px 14px;border-radius:8px;overflow-x:auto;font-size:.85rem;line-height:1.5;margin:8px 0}
+code{font-family:ui-monospace,Consolas,monospace}
+p code,li code,td code{background:rgba(127,127,127,.18);padding:1px 5px;border-radius:4px;font-size:.88em}
+.add{background:var(--add);display:block}.del{background:var(--del);display:block}
+.three{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+.three div{border:1px dashed var(--bd);border-radius:8px;padding:8px 10px;font-size:.92rem}
+.three b{display:block;color:var(--ac)}
+details{border:1px solid var(--bd);border-radius:8px;padding:6px 12px;margin:8px 0}
+summary{cursor:pointer;font-weight:600}
+svg{width:100%;height:auto;max-width:860px}
+svg text{fill:var(--fg);font-size:13px}
+svg .b{fill:var(--card);stroke:var(--ac);stroke-width:1.5}
+svg .w{fill:rgba(240,160,40,.15);stroke:#e0a030;stroke-width:1.5}
+svg .r{fill:rgba(220,60,60,.12);stroke:#d04040;stroke-width:1.5}
+svg .l{stroke:var(--sub);stroke-width:1.5;fill:none}
+svg .rl{stroke:#d04040;stroke-width:1.5;fill:none}
+</style>
+</head>
+<body>
+<main>
+<h1>REQ-07 해설</h1>
+<p class="lead">싱글톤을 없애고 생성자 주입으로 바꾼 변경 (3단계 4a, 학습 강도: 균형). 4b가 끝나면 아래에 "4b" 절을 덧붙인다.</p>
+
+<h1>REQ-05 해설</h1>
+<p class="lead">DIY 기기 TCP 소켓을 객체(<code>TcpConnection</code>)로 감싸고, 수락·연결 맵을 <code>TcpServer</code>로 분리한 변경 (3단계 7a, 학습 강도: 균형).</p>
+
+<section>
+<h2>1. 한눈에 보기</h2>
+<ul>
+<li><b>무엇</b>: fd를 int로 맵에 넣고 여기저기서 <code>close</code>하던 구조를 "연결 객체 + <code>shared_ptr</code>"로 바꿨다. 응답은 줄 단위로 끝까지 읽고, 같은 기기 요청은 한 쌍씩 처리한다.</li>
+<li><b>왜</b>: 512바이트 1회 수신, 재접속 때 fd 누수, "ALL" 순회 중 무락, 락 쥔 채 송신, 끊긴 소켓에 쓰면 SIGPIPE로 서버 종료 위험.</li>
+<li><b>그대로인 것</b>: 기기가 받는 문자열(바이트 단위 테스트), 기기 ID <code>ARD_&lt;IP&gt;</code>, REST 응답, DB.</li>
+</ul>
+<table>
+<tr><th>파일</th><th>역할</th></tr>
+<tr><td><code>TcpConnection.hpp/.cpp</code></td><td>소켓 1개: RAII, 줄 버퍼(4KiB), <code>ioMutex_</code>, 1초 마감</td></tr>
+<tr><td><code>TcpServer.hpp/.cpp</code></td><td>수락 스레드, 연결 맵, 상한 32, 재접속 교체, 정지</td></tr>
+<tr><td><code>TcpProtocol.hpp</code></td><td>요청 줄 만들기(CONTROL·GET_STATE·RESET)</td></tr>
+<tr><td><code>TCPDriver.cpp</code></td><td>BLE 커미셔닝 + <code>TcpServer</code> 위임만</td></tr>
+</table>
+</section>
+
+<section>
+<h2>2. 흐름 그림: 요청 한 번</h2>
+<svg viewBox="0 0 860 330" role="img" aria-label="TCP 요청 흐름">
+  <rect class="b" x="20" y="30" width="250" height="44" rx="6"/><text x="32" y="50">① [맵 락] shared_ptr 복사</text><text x="32" y="68">→ 맵 락 해제</text>
+  <rect class="b" x="300" y="30" width="250" height="44" rx="6"/><text x="312" y="50">② [ioMutex_] 남은 입력 버림</text><text x="312" y="68">→ 요청 줄 전송(MSG_NOSIGNAL)</text>
+  <rect class="b" x="580" y="30" width="260" height="44" rx="6"/><text x="592" y="50">③ poll로 1초까지 수신</text><text x="592" y="68">줄 조립(4KiB 상한)</text>
+  <path class="l" d="M270 52 H300"/><path class="l" d="M550 52 H580"/>
+  <rect class="b" x="580" y="110" width="260" height="44" rx="6"/><text x="592" y="130">④ 첫 유효 JSON 줄 + 이미 온 줄</text><text x="592" y="148">→ 마지막 유효 JSON 반환</text>
+  <path class="l" d="M710 74 V110"/>
+  <rect class="w" x="300" y="110" width="250" height="44" rx="6"/><text x="312" y="130">실패(끊김·시간 초과·상한)</text><text x="312" y="148">→ shutdown + "같은 객체면" 맵에서 뺌</text>
+  <path class="l" d="M580 132 H550"/>
+  <rect class="b" x="20" y="200" width="820" height="100" rx="8"/>
+  <text x="36" y="226" font-weight="700">수명 규칙 (fd 재사용 사고 방지)</text>
+  <text x="36" y="250">shutdown(): 막힌 poll/recv를 깨우기만 한다. 여러 스레드가 객체를 쥐고 있어도 안전.</text>
+  <text x="36" y="272">close(): 마지막 shared_ptr이 사라질 때 소멸자에서 단 한 번 → 닫힌 번호를 다른 소켓이 받아도 건드릴 일이 없다.</text>
+  <text x="36" y="294">맵 락과 ioMutex_는 동시에 쥐지 않는다(L-1·L-4). 맵 락 안에서는 메모리만(닫기는 락 밖).</text>
+</svg>
+</section>
+
+<section>
+<h2>3. 코드 해설</h2>
+<h3>3-1. "ID로 지우기"가 위험했던 이유</h3>
+<pre><code><span class="del">-    client_sockets_.erase(deviceId);   // 그 사이 같은 기기가 재접속했다면 새 연결을 지움
+-    close(socket_fd);                  // 이 번호가 이미 다른 소켓에 재사용됐다면 남의 소켓을 닫음</span><span class="add">+    if (connection-&gt;isClosed()) removeIfSame(deviceId, connection);  // 맵의 값이 이 객체일 때만
++    // close는 소멸자에서 (마지막 shared_ptr이 사라질 때)</span></code></pre>
+
+<h3>3-2. 정지가 실제로 되게</h3>
+<pre><code>running_ = false;
+::shutdown(listenFd_, SHUT_RDWR);   // 막혀 있는 accept()가 오류로 돌아온다
+acceptThread_.join();</code></pre>
+<p>예전 <code>stopServer</code>는 플래그만 바꿔, 다음 접속이 올 때까지 <code>accept</code>에서 깨어나지 못했다(join이 영원히 대기).</p>
+
+<h3>3-3. 이전 동작과 맞춘 세부 규칙</h3>
+<ul>
+<li>줄바꿈 없이 끝나도 유효 JSON이면 인정 — 예전 <code>getline</code>은 마지막 조각도 해석했다.</li>
+<li>해석 불가 응답만 오면 실패지만 연결은 유지 — 예전에도 그 경우는 소켓을 지우지 않았다.</li>
+<li>요청 직전 남은 입력은 버림 — 늦게 온 이전 응답을 이번 답으로 오인하지 않게(새 규칙, 로그 남김).</li>
+</ul>
+
+<h3>3-4. 테스트에서 배운 것: TIME_WAIT</h3>
+<p>가짜 기기 소켓이 먼저 닫히면 그쪽 포트가 약 60초 <code>TIME_WAIT</code>로 묶인다. 테스트 수백 번이면 수천 개가 쌓여, 다른 테스트가 "빈 포트"로 고른 번호가 <code>0.0.0.0</code> 바인드에서 충돌했다. 가짜 기기에 <code>SO_LINGER{1,0}</code>(RST로 종료)을 줘서 해결했다. 실제 서버 코드는 바꾸지 않았다.</p>
+</section>
+
+<section>
+<h2>4. 용어 풀이</h2>
+<table>
+<tr><th>용어</th><th>뜻</th></tr>
+<tr><td>RAII</td><td>자원(fd)을 객체 수명에 묶는 기법. 생성 때 얻고 소멸 때 반드시 돌려준다.</td></tr>
+<tr><td>줄 프레이밍</td><td>TCP는 바이트 흐름이라 "메시지 경계"가 없다. 줄바꿈을 경계로 삼아 조각을 모아 한 메시지로 만든다.</td></tr>
+<tr><td><code>shutdown</code> vs <code>close</code></td><td>shutdown은 연결을 끊고 막힌 호출을 깨우지만 fd 번호는 유지. close는 번호를 커널에 돌려줘 재사용될 수 있다.</td></tr>
+<tr><td>SIGPIPE</td><td>끊긴 소켓에 쓰면 기본 동작이 프로세스 종료인 신호. <code>MSG_NOSIGNAL</code>로 막는다.</td></tr>
+<tr><td>TIME_WAIT</td><td>먼저 닫은 쪽이 늦게 온 패킷을 처리하려고 잠시 포트를 붙잡는 상태.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>5. 이해도 질문</h2>
+<p><b>Q1.</b> <code>TcpConnection::shutdown()</code> 안에서 <code>close(fd_)</code>까지 하면 어떤 일이 생길 수 있나?</p>
+<details><summary>정답</summary>다른 스레드가 같은 객체로 <code>poll</code>/<code>recv</code> 중일 수 있다. 그 사이 번호가 커널로 돌아가고 새 접속이 같은 번호를 받으면, 남은 스레드가 남의 소켓에서 읽거나 쓴다. 그래서 close는 아무도 객체를 쥐지 않을 때(소멸자)만 한다.</details>
+<p><b>Q2.</b> 같은 기기에 동시 요청 두 개가 올 때 <code>ioMutex_</code>가 없으면 왜 응답이 섞이나? 프로토콜에 요청 ID가 있었다면?</p>
+<details><summary>정답</summary>두 요청이 차례로 나가고 두 응답이 한 버퍼로 들어와, 각 스레드가 어느 응답이 자기 것인지 알 수 없다. 요청 ID가 있으면 응답을 짝지을 수 있어 동시 처리(다중화)가 가능하지만, 펌웨어를 바꿀 수 없어(NFR-04) 한 쌍씩 직렬화했다.</details>
+<p><b>Q3.</b> 33번째 연결은 거부하는데, 이미 있는 기기의 재접속은 왜 받아들이나?</p>
+<details><summary>정답</summary>재접속은 옛 연결을 교체하므로 연결 수가 늘지 않는다. 막으면 IP가 같은 실제 기기가 다시 붙지 못해 오프라인이 계속된다.</details>
+</section>
+
+<section>
+<h2>6. 응용 실습</h2>
+<p><b>과제 1 (빈칸).</b> "ALL" 브로드캐스트를 맵을 직접 돌지 않게 완성하세요.</p>
+<pre><code>if (target_id == "ALL") {
+    for (const auto&amp; id : /* (1) 무엇을 순회? */) {
+        this-&gt;sendCommand(id, payload);
+    }
+    return;
+}</code></pre>
+<details><summary>정답</summary><code>server_.connectedIds()</code> — 맵 락 안에서 ID만 복사한 사본. 순회 중 다른 스레드가 연결을 지우거나 바꿔도 사본은 그대로다.</details>
+<p><b>과제 2 (응용).</b> 2차에서 ID를 <code>TCP_&lt;MAC&gt;</code>로 바꾸려면 <code>TcpServer::acceptLoop</code>의 어느 한 줄을 무엇으로 바꾸면 될까요? 바꿨을 때 테스트의 <code>FakeDevice::id()</code>는 어떻게 해야 할까요?</p>
+<details><summary>정답 예시</summary><code>const std::string deviceId = "ARD_" + clientIp;</code>를 <code>MacResolver</code>로 얻은 ID로 바꾼다(실패 시 미식별 처리). 테스트는 <code>FakeMacResolver</code>를 주입해 IP→MAC 표를 정하고, <code>FakeDevice::id()</code>가 그 표의 ID를 돌려주게 한다. 생성자 주입(ADR-001) 덕분에 실제 ARP 없이 시험할 수 있다.</details>
+</section>
+</main>
+</body>
+</html>
