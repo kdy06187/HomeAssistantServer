@@ -200,4 +200,56 @@ TEST(ProcessChipToolRunnerTest, EmptyArgsFailToStart) {
     EXPECT_EQ(result.exitCode, -1);
 }
 
+// ---- 8c ----
+
+// 출력은 1MiB까지만 모으고, 넘으면 자르고 표시를 붙인다(자식은 막히지 않고 끝난다)
+TEST(ProcessChipToolRunnerTest, OutputIsCappedAndMarked) {
+    ProcessChipToolRunner runner;
+    const auto result = runner.run({"/usr/bin/head", "-c", "3000000", "/dev/zero"}, "", 5000ms);
+    EXPECT_FALSE(result.timedOut);
+    EXPECT_EQ(result.exitCode, 0);
+    const std::string marker = ProcessChipToolRunner::kTruncatedMarker;
+    ASSERT_EQ(result.output.size(), ProcessChipToolRunner::kMaxOutputBytes + marker.size());
+    EXPECT_EQ(result.output.substr(result.output.size() - marker.size()), marker);
+}
+
+// 리더가 정상 종료해도 그룹에 남은 손자 프로세스는 끝낸다
+TEST(ProcessChipToolRunnerTest, GrandchildLeftByNormallyExitingLeaderIsTerminated) {
+    ProcessChipToolRunner runner;
+    const auto started = std::chrono::steady_clock::now();
+    const auto result = runner.run(sh("sleep 30 >/dev/null 2>&1 & echo $!"), "", 3000ms);
+    const auto elapsed = std::chrono::steady_clock::now() - started;
+    ASSERT_EQ(result.exitCode, 0);
+    const pid_t grandchild = static_cast<pid_t>(std::stol(result.output));
+    errno = 0;
+    EXPECT_EQ(::kill(grandchild, 0), -1);
+    EXPECT_EQ(errno, ESRCH) << "손자 " << grandchild << "가 남아 있다";
+    EXPECT_LT(elapsed, 1500ms);  // SIGTERM으로 바로 끝나므로 유예 시간을 다 쓰지 않는다
+}
+
+// 겹치는 비밀값(짧은 값이 긴 값의 일부)도 남김없이 가린다
+TEST(ProcessChipToolRunnerTest, OverlappingSecretsAreMaskedLongestFirst) {
+    EXPECT_EQ(ProcessChipToolRunner::maskSecrets("pw=p1234word pin=1234", {"1234", "p1234word", ""}), "pw=*** pin=***");
+    EXPECT_EQ(ProcessChipToolRunner::maskSecrets("abcabc", {"abc", "abcabc"}), "***");
+}
+
+// 서버가 0~2번 fd를 닫은 채 돌아도(파이프가 0~2번을 받음) 자식의 표준 입출력이 올바르게 연결된다.
+// 테스트 프로세스 자체의 0~2번을 건드리지 않도록 fork한 자식 안에서 확인하고 종료 코드로 알린다
+TEST(ProcessChipToolRunnerTest, WorksWhenServerHasStandardFdsClosed) {
+    const pid_t checker = ::fork();
+    ASSERT_GE(checker, 0);
+    if (checker == 0) {
+        ::close(0);
+        ::close(1);
+        ::close(2);
+        ProcessChipToolRunner runner;
+        const auto result = runner.run({"/bin/cat"}, "piped\n", 2000ms);
+        ::_exit(result.exitCode == 0 && result.output == "piped\n" ? 0 : 1);
+    }
+    int status = 0;
+    ASSERT_EQ(::waitpid(checker, &status, 0), checker);
+    ASSERT_TRUE(WIFEXITED(status));
+    EXPECT_EQ(WEXITSTATUS(status), 0);
+}
+
 }  // namespace

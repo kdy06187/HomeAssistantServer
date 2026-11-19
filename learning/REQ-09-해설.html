@@ -41,7 +41,7 @@ svg .rl{stroke:#d04040;stroke-width:1.5;fill:none}
 <h1>REQ-07 해설</h1>
 <p class="lead">싱글톤을 없애고 생성자 주입으로 바꾼 변경 (3단계 4a, 학습 강도: 균형). 4b가 끝나면 아래에 "4b" 절을 덧붙인다.</p>
 
-<h1>REQ-09 해설 (8a·8b)</h1>
+<h1>REQ-09 해설 (8a·8b·8c)</h1>
 <p class="lead">chip-tool을 셸 문자열(<code>popen</code>) 대신 <code>ChipToolRunner</code>로 셸 없이 실행하게 바꾼 변경. REQ-09(종료 때 자식 정리)·REQ-06(느린 작업 관리)의 준비 단계 (3단계 8a, 학습 강도: 균형).</p>
 
 <section>
@@ -190,6 +190,48 @@ using SetupPinParser = std::function&lt;Result&lt;uint32_t&gt;(const std::string
 <details><summary>정답</summary>MatterController가 <code>stateMutex_</code>를 쥔 채 러너(chip-tool, 최대 수 초)를 부른다면, 러너 안에서 같은 락을 다시 잡는 순간 같은 스레드가 자기 락을 기다려 멈춘다(감시자가 실패시킴). 멈추지 않는다는 것은 "chip-tool은 락 밖에서" 규칙(L-2)이 지켜졌다는 뜻이다.</details>
 <p><b>Q5.</b> 왜 <code>MatterSetupCode.cpp</code>는 테스트하지 못하나? 그 위험은 어떻게 줄였나?</p>
 <details><summary>정답</summary>Matter SDK가 필요해 테스트 빌드에 넣을 수 없다. 코드는 기존 것을 그대로 옮기기만 했고(로직 변경 없음), 실제 동작은 9번 실기 페어링으로 확인한다. 경계를 한 함수로 작게 만든 것 자체가 위험을 줄이는 방법이다.</details>
+</section>
+
+<h2 style="margin-top:1.6em">8c. 리뷰 반영: DB 먼저 · 원자적 rename · 긴 비밀값부터</h2>
+
+<section>
+<h2>1. 왜 DB를 먼저 쓰나</h2>
+<table>
+<tr><th>순서</th><th>DB 저장이 실패하면</th></tr>
+<tr><td>메모리 → DB (8b)</td><td>잠깐 동안 다른 스레드가 "곧 사라질 기기"를 본다(목록·제어). 되돌리는 코드가 필요하고, 그 사이 같은 ID로 들어온 변경을 덮을 위험이 있다</td></tr>
+<tr><td>DB → 메모리 (8c)</td><td>메모리는 처음부터 안 바뀐다. 되돌릴 것이 없다</td></tr>
+</table>
+<p>원칙(5b 삭제 순서와 같은 계열): <b>"오래 남는 곳"이 성공한 뒤에 "보이는 곳"을 바꾼다.</b> 그리고 기기는 이미 페어링됐으므로, 서버 등록이 실패하면 드라이버 쪽 등록(Matter 매핑·등록 파일)까지 <code>unpairDevice</code>로 정리해 "실패 = 아무것도 남지 않음"을 맞춘다.</p>
+</section>
+
+<section>
+<h2>2. 원자적 rename</h2>
+<svg viewBox="0 0 860 170" role="img" aria-label="임시 파일 쓰기 후 rename">
+  <rect class="r" x="20" y="20" width="390" height="50" rx="6"/><text x="32" y="42">전: 같은 파일을 trunc 후 다시 씀</text><text x="32" y="62">→ 중간에 죽으면 반쯤 쓴(빈) 파일만 남음</text>
+  <rect class="b" x="450" y="20" width="390" height="130" rx="6"/>
+  <text x="462" y="42">후: ① registered_devices.txt.tmp에 전부 쓰기</text>
+  <text x="462" y="64">    ② fsync — 디스크에 내림</text>
+  <text x="462" y="86">    ③ rename(tmp → 원래 이름) — 한 번에 바뀜</text>
+  <text x="462" y="108">    ④ 폴더 fsync — 이름 바뀐 사실도 디스크에</text>
+  <text x="462" y="134">어느 순간 죽어도 "옛 파일 전체" 또는 "새 파일 전체"</text>
+</svg>
+<p><code>rename</code>은 같은 파일 시스템 안에서 원자적이다. 그래서 임시 파일은 같은 폴더에 만든다. 저장할 때 같은 시리얼의 옛 줄은 지워, 시작 때 어느 노드가 맞는지 모호해지지 않게 했다.</p>
+</section>
+
+<section>
+<h2>3. 왜 긴 비밀값부터 가리나</h2>
+<pre><code>출력:    "pw=p1234word pin=1234"
+짧은 것 먼저: "1234" → "pw=p***word pin=***"   → 이제 "p1234word"는 출력에 없어 가릴 수 없다 (p, word가 남음)
+긴 것 먼저:   "p1234word" → "1234"  →  "pw=*** pin=***"</code></pre>
+<p>PIN이 설정 코드의 일부이거나, 비밀번호에 PIN이 들어 있을 수 있다. 긴 것부터 가려야 짧은 값이 긴 값을 조각내지 않는다.</p>
+</section>
+
+<section>
+<h2>4. 이해도 질문 (8c)</h2>
+<p><b>Q6.</b> 출력에 <code>CHIP_NO_ERROR</code>가 있어도 시간 초과면 실패로 보는 이유는?</p>
+<details><summary>정답</summary>시간 초과는 러너가 프로세스를 강제로 끝낸 것이다. 그 전까지 찍힌 성공 문구는 명령 전체가 끝났다는 뜻이 아니다(예: 여러 단계 중 첫 단계만 성공). 끝까지 정상 종료(코드 0)한 실행만 결과를 믿는다.</details>
+<p><b>Q7.</b> 취소된 실행을 오프라인으로 표시하지 않는 이유는?</p>
+<details><summary>정답</summary>취소는 서버가 멈추는 중이라 생긴 것이지 기기가 응답하지 않은 것이 아니다. 오프라인으로 표시하면 다음 헬스체크가 그 기기 조회를 건너뛰고, DB의 상태도 틀리게 바뀐다. 그래서 "UNKNOWN"(모름)으로 돌려 상태를 바꾸지 않는다.</details>
 </section>
 </main>
 </body>

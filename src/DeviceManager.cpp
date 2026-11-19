@@ -54,21 +54,15 @@ bool DeviceManager::addDevice(std::string id, std::string name, ProtocolType pro
         newDevice.driver_types = driverTypes;
         deviceDrivers_.attachDriversToDevice(newDevice, driverTypes, sender);
     }
-    std::optional<Device> previous;  // 같은 ID가 있었다면 실패 때 되돌릴 값
+    // DB에 먼저 저장하고 성공했을 때만 메모리에 넣는다. 그래야 실패 시 되돌릴 것이 없고,
+    // 다른 스레드가 "곧 사라질 기기"를 보는 틈도 없다. DB 호출은 맵 락 밖에서(L-2)
+    if (!db_.insertDevice(newDevice)) {
+        std::cerr << "[DeviceManager] 에러 : 기기 DB 저장 실패, 등록하지 않습니다 (" << id << ")" << std::endl;
+        return false;
+    }
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        auto it = devices_.find(id);
-        if (it != devices_.end()) previous = it->second;
-        devices_[id] = newDevice;
-    }
-    // DB 연결 락과 겹치지 않도록 맵 락을 푼 뒤 저장
-    if (!db_.insertDevice(newDevice)) {
-        // 메모리에만 있으면 재시작 때 사라지고 앱 목록과 어긋나므로, "실패 = 등록 안 됨"이 되게 되돌린다
-        std::cerr << "[DeviceManager] 에러 : 기기 DB 저장 실패, 등록을 되돌립니다 (" << id << ")" << std::endl;
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (previous) devices_[id] = std::move(*previous);
-        else devices_.erase(id);
-        return false;
+        devices_[id] = std::move(newDevice);
     }
     std::cout << "[DeviceManager] 기기 추가 완료: " << name << "(" << id << ")" << std::endl;
     return true;
@@ -189,8 +183,14 @@ bool DeviceManager::startCommissioning(ProtocolType type, std::string name, std:
     bool isCommissioned = outcome.ok();
     if (isCommissioned && !outcome.value->deviceId.empty() &&
         !addDevice(outcome.value->deviceId, name, type, driverTypes, dynamic_cast<IMessageSender*>(driver))) {
-        // 기기는 이미 페어링됐지만 서버 등록은 실패: 다시 커미셔닝하면 새로 페어링된다
+        // 기기는 페어링됐지만 서버 등록은 실패: 드라이버 쪽 등록(Matter 매핑·등록 파일, TCP 연결)도 정리해
+        // "실패 = 아무것도 남지 않음"이 되게 한다. 락 밖에서 부른다
         isCommissioned = false;
+        try {
+            driver->unpairDevice(outcome.value->deviceId);
+        } catch (const std::exception& e) {
+            std::cerr << "[DeviceManager] 등록 실패 정리 중 예외 : " << outcome.value->deviceId << " (" << e.what() << ")" << std::endl;
+        }
     }
     std::cout << "[DeviceManager] " << getProtocolString(type) << " 커미셔닝 결과: "
               << (isCommissioned ? "성공" : "실패") << std::endl;

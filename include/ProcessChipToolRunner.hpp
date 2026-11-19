@@ -1,5 +1,6 @@
 #pragma once
 #include <atomic>
+#include <cstddef>
 #include <mutex>
 #include <unordered_set>
 #include <sys/types.h>
@@ -12,6 +13,9 @@
 class ProcessChipToolRunner : public ChipToolRunner {
 public:
     static constexpr std::chrono::milliseconds kTerminateGrace{1000};
+    // chip-tool 출력 상한. 넘으면 자르고 끝에 표시를 붙인다(로그·메모리 폭주 방지)
+    static constexpr std::size_t kMaxOutputBytes = 1024 * 1024;
+    static constexpr const char* kTruncatedMarker = "\n[출력 잘림]";
 
     ProcessResult run(const std::vector<std::string>& args, const std::string& stdinText,
                       std::chrono::milliseconds timeout,

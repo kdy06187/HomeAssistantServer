@@ -41,7 +41,7 @@ public:
 
     void initFromDatabase();
     // 디바이스 등록 API - 디바이스를 등록하고, 프로토콜 타입에 맞는 드라이버를 통해 초기화.
-    // DB 저장에 실패하면 메모리 등록도 되돌리고 false
+    // DB에 먼저 저장하고, 성공했을 때만 메모리에 넣는다. 실패하면 false(메모리 불변)
     bool addDevice(std::string id, std::string name, ProtocolType protocol_type,
                    const std::vector<DriverType>& driverTypes, IMessageSender* sender);
     bool getDevice(std::string id, Device& outDevice);

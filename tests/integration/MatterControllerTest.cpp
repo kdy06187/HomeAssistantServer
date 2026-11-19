@@ -86,14 +86,16 @@ protected:
         ASSERT_TRUE(controller->Initialize());
     }
     void TearDown() override {
-        waitForRunnerIdle();  // unpair의 분리 스레드가 controller를 쓰는 동안 해제하지 않는다
+        // unpair의 분리 스레드가 controller를 쓰는 동안 해제하지 않는다. 해제를 부른 테스트는
+        // expectedUnpairs_를 올려 두어, 그 스레드가 run에 들어와 끝날 때까지 기다린다
+        EXPECT_TRUE(runner.waitUntilIdle(minimumStartedCalls()));
         controller.reset();
         fs::remove_all(dir_);
     }
 
-    void waitForRunnerIdle() {
-        for (int i = 0; i < 300 && runner.running.load() > 0; ++i) std::this_thread::sleep_for(10ms);
-    }
+    void waitForRunnerIdle() { runner.waitUntilIdle(minimumStartedCalls()); }
+    int minimumStartedCalls() { return static_cast<int>(runner.callsSnapshot().size()) + expectedUnpairs_.exchange(0); }
+    std::atomic<int> expectedUnpairs_{0};  // 아직 시작 안 했을 수 있는 unpair 분리 스레드 수
     std::string readConfig() {
         std::ifstream in(configPath_);
         std::stringstream ss;
@@ -253,8 +255,7 @@ TEST_F(MatterControllerTest, ConcurrentCommissionsGetDistinctNodeIds) {
 
 TEST_F(MatterControllerTest, UnpairRemovesMappingAndFileLineThenRunsUnpairWithSlowTimeout) {
     EXPECT_TRUE(controller->unpairDevice("SN-1"));
-    for (int i = 0; i < 200 && runner.callsSnapshot().empty(); ++i) std::this_thread::sleep_for(10ms);
-    waitForRunnerIdle();
+    ASSERT_TRUE(runner.waitUntilIdle(1));
 
     EXPECT_EQ(readConfig(), "SN-2,102\n");
     const auto calls = runner.callsSnapshot();
@@ -298,6 +299,7 @@ TEST_F(MatterControllerTest, ConcurrentControlReadEnergyCommissionAndUnpairAreRa
         return FakeChipToolOutput::ok("");
     };
     constexpr int kIterations = 40;
+    std::atomic<int> unpairsRequested{0};
     std::atomic<bool> start{false};
     auto waitStart = [&] { while (!start) std::this_thread::yield(); };
     std::vector<std::thread> workers;
@@ -308,15 +310,113 @@ TEST_F(MatterControllerTest, ConcurrentControlReadEnergyCommissionAndUnpairAreRa
         waitStart();
         for (int i = 0; i < kIterations / 4; ++i) {
             auto outcome = controller->commission(CommissionRequest{"plug", kGoodCode, "ssid", "pw"}, {});
-            if (outcome.ok()) controller->unpairDevice(outcome.value->deviceId);
+            if (outcome.ok()) {
+                ++unpairsRequested;
+                controller->unpairDevice(outcome.value->deviceId);
+            }
         }
     });
     start = true;
     for (auto& worker : workers) worker.join();
-    waitForRunnerIdle();
+    // 동기 호출 수(이미 기록됨) + 아직 run에 못 들어왔을 수 있는 unpair 분리 스레드 수만큼 기다린다
+    ASSERT_TRUE(runner.waitUntilIdle(static_cast<int>(runner.callsSnapshot().size()) + 0));
+    for (int i = 0; i < 500; ++i) {
+        int unpairCalls = 0;
+        for (const auto& sub : subcommands()) if (startsWith(sub, {"pairing", "unpair"})) ++unpairCalls;
+        if (unpairCalls >= unpairsRequested.load()) break;
+        std::this_thread::sleep_for(5ms);
+    }
+    ASSERT_TRUE(runner.waitUntilIdle());
 
     // 처음 두 기기는 그대로, 새로 등록·해제한 기기는 파일에 남지 않는다
     EXPECT_EQ(readConfig(), "SN-1,101\nSN-2,102\n");
+}
+
+// ---- 8c: 실행 결과(ProcessResult)를 판정에 쓴다 ----
+
+// 시간 초과·비정상 종료면 출력에 성공 표지가 있어도 실패이고 오프라인으로 본다
+TEST_F(MatterControllerTest, TimeoutOrAbnormalExitIsFailureEvenWithSuccessMarker) {
+    runner.respond = [](const std::vector<std::string>&) { return ProcessResult{128 + 15, "CHIP_NO_ERROR", true, false, false}; };
+    EXPECT_FALSE(controller->sendCommand("SN-1", "ON"));
+    EXPECT_EQ(controller->readDeviceState("SN-1", false), "OFFLINE");  // 오프라인 명부에 들어감(실행 생략)
+    EXPECT_EQ(runner.callsSnapshot().size(), 1u);
+
+    runner.respond = [](const std::vector<std::string>&) { return ProcessResult{1, "CHIP_NO_ERROR\nData = true", false, false, false}; };
+    EXPECT_EQ(controller->readDeviceState("SN-2", true), "OFFLINE");
+}
+
+// 취소(서버 종료 등)는 실패지만 기기를 오프라인으로 표시하지 않는다
+TEST_F(MatterControllerTest, CancelledRunFailsWithoutMarkingOffline) {
+    runner.respond = [](const std::vector<std::string>&) { return ProcessResult{-1, "", false, true, false}; };
+    EXPECT_FALSE(controller->sendCommand("SN-1", "ON"));
+    EXPECT_EQ(controller->readDeviceState("SN-1", false), "UNKNOWN");  // 명부에 없어 실제로 실행됨
+    EXPECT_EQ(runner.callsSnapshot().size(), 2u);
+}
+
+TEST_F(MatterControllerTest, PairingTimeoutWithSuccessTextIsFailureAndSavesNothing) {
+    runner.respond = [](const std::vector<std::string>& sub) {
+        if (startsWith(sub, {"pairing", "ble-wifi"})) return ProcessResult{128 + 15, "Device commissioning completed with success", true, false, false};
+        return FakeChipToolOutput::ok("SerialNumber: SN-NEW");
+    };
+    EXPECT_FALSE(controller->commission(CommissionRequest{"plug", kGoodCode, "ssid", "pw"}, {}).ok());
+    EXPECT_EQ(readConfig(), "SN-1,101\nSN-2,102\n");
+    EXPECT_EQ(runner.callsSnapshot().size(), 1u);  // 시리얼 읽기로 넘어가지 않음
+}
+
+// 매핑 없는 시리얼은 제어·상태 읽기도 chip-tool을 실행하지 않는다
+TEST_F(MatterControllerTest, UnknownSerialControlAndStateRunNothing) {
+    EXPECT_FALSE(controller->sendCommand("NOPE", "ON"));
+    EXPECT_EQ(controller->readDeviceState("NOPE", true), "UNKNOWN");
+    EXPECT_TRUE(runner.callsSnapshot().empty());
+}
+
+// 등록 파일 쓰기는 같은 시리얼 줄을 하나로 바꾸고, 임시 파일을 남기지 않는다
+TEST_F(MatterControllerTest, RegistrationWriteReplacesSameSerialAndLeavesNoTempFile) {
+    runner.respond = [](const std::vector<std::string>& sub) {
+        if (startsWith(sub, {"pairing", "ble-wifi"})) return FakeChipToolOutput::ok("Device commissioning completed with success");
+        return FakeChipToolOutput::ok("SerialNumber: SN-1");  // 이미 101로 등록된 시리얼이 다시 페어링됨
+    };
+    const auto outcome = controller->commission(CommissionRequest{"plug", kGoodCode, "ssid", "pw"}, {});
+    ASSERT_TRUE(outcome.ok());
+    const std::string nodeId = runner.callsSnapshot()[0].args[3];
+
+    EXPECT_EQ(readConfig(), "SN-2,102\nSN-1," + nodeId + "\n");
+    EXPECT_FALSE(fs::exists(configPath_ + ".tmp"));
+}
+
+// ---- E9 + R7: DB 저장에 실패하면 Matter 쪽 등록(매핑·파일)까지 정리한다 ----
+
+TEST_F(MatterControllerTest, DatabaseFailureAfterPairingCleansUpMatterRegistration) {
+    const std::string dbPath = (dir_ / "test.db").string();
+    DatabaseManager database;
+    ASSERT_TRUE(database.init(dbPath));
+    {
+        sqlite3* raw = nullptr;
+        ASSERT_EQ(sqlite3_open(dbPath.c_str(), &raw), SQLITE_OK);
+        ASSERT_EQ(sqlite3_exec(raw, "CREATE TRIGGER reject_device BEFORE INSERT ON devices BEGIN SELECT RAISE(ABORT, 'no'); END;",
+                               nullptr, nullptr, nullptr), SQLITE_OK);
+        sqlite3_close_v2(raw);
+    }
+    DriverManager deviceDrivers;
+    FakeClock clock;
+    DeviceManager manager(database, deviceDrivers, clock);
+    manager.registerDriver(ProtocolType::MATTER, controller.get());
+    runner.respond = [](const std::vector<std::string>& sub) {
+        if (startsWith(sub, {"pairing", "ble-wifi"})) return FakeChipToolOutput::ok("Device commissioning completed with success");
+        if (startsWith(sub, {"basicinformation"})) return FakeChipToolOutput::ok("SerialNumber: SN-NEW");
+        return FakeChipToolOutput::ok("");
+    };
+
+    EXPECT_FALSE(manager.startCommissioning(ProtocolType::MATTER, "plug", kGoodCode, "ssid", "pw"));
+    ASSERT_TRUE(runner.waitUntilIdle(3));  // 페어링 + 시리얼 + 정리 과정의 unpair 분리 스레드까지 끝날 때까지
+
+    EXPECT_TRUE(manager.getAllDevices().empty());
+    EXPECT_EQ(controller->readEnergy("SN-NEW").error.code, ErrorCode::DeviceNotFound);  // 매핑 없음
+    EXPECT_EQ(readConfig(), "SN-1,101\nSN-2,102\n");                                     // 파일 줄 없음
+    bool unpairRan = false;
+    for (const auto& sub : subcommands()) unpairRan = unpairRan || startsWith(sub, {"pairing", "unpair"});
+    EXPECT_TRUE(unpairRan);
+    database.close();
 }
 
 // ---- E9: DB 저장에 실패하면 등록을 되돌리고 커미셔닝 실패 ----
@@ -365,7 +465,8 @@ TEST_F(CommissionRollbackTest, DatabaseFailureUndoesRegistrationAndReportsFailur
     EXPECT_TRUE(database.loadAllDevices().empty());
 }
 
-TEST_F(CommissionRollbackTest, DatabaseFailureOnReRegistrationRestoresPreviousDevice) {
+// DB를 먼저 쓰므로 실패하면 메모리는 처음부터 바뀌지 않는다(이전 기기 그대로)
+TEST_F(CommissionRollbackTest, DatabaseFailureOnReRegistrationKeepsPreviousDevice) {
     ASSERT_TRUE(manager.addDevice("A", "old name", ProtocolType::TCP_DIY, {}, &tcpFake));
     rejectDeviceInserts();
 

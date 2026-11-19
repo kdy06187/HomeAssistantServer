@@ -7,6 +7,8 @@
 #include <cstdlib>
 #include <sstream>
 #include <fstream>
+#include <filesystem>
+#include <cstring>
 #include <ctime>
 #include <memory>
 #include <array>
@@ -61,23 +63,33 @@ void MatterController::shutdown(){
     std::cout << "[MatterController] 종료" << std::endl;
 }
 
-std::string MatterController::runChipTool(const std::vector<std::string>& subcommand, std::chrono::milliseconds timeout,
-                                          const std::vector<std::string>& secretsToMask) {
-    // 셸 없이 인자 배열 그대로 실행한다. 출력 판정은 기존처럼 호출부가 문자열로 한다
+MatterController::ChipToolOutcome MatterController::runChipTool(const std::vector<std::string>& subcommand,
+                                                                std::chrono::milliseconds timeout,
+                                                                const std::vector<std::string>& secretsToMask) {
+    // 셸 없이 인자 배열 그대로 실행한다
     std::vector<std::string> args;
     args.reserve(subcommand.size() + 1);
     args.push_back(mChipToolPath);
     args.insert(args.end(), subcommand.begin(), subcommand.end());
     ProcessResult result = mRunner.run(args, "", timeout, secretsToMask);
+
+    ChipToolOutcome outcome;
+    outcome.cancelled = result.cancelled;
+    outcome.ok = !result.startFailed && !result.timedOut && !result.cancelled && result.exitCode == 0;
     if (result.startFailed) std::cerr << "[MatterController] chip-tool 실행 실패" << std::endl;
-    if (result.timedOut) std::cerr << "[MatterController] chip-tool 제한 시간 초과" << std::endl;
-    return std::move(result.output);
+    else if (result.timedOut) std::cerr << "[MatterController] chip-tool 제한 시간 초과" << std::endl;
+    else if (result.cancelled) std::cerr << "[MatterController] chip-tool 실행 취소됨" << std::endl;
+    else if (result.exitCode != 0) std::cerr << "[MatterController] chip-tool 비정상 종료 (코드 " << result.exitCode << ")" << std::endl;
+    outcome.output = std::move(result.output);
+    return outcome;
 }
 std::string MatterController::runChipToolCommand(const std::vector<std::string>& subcommand, const std::string& deviceId){
-    std::string output = runChipTool(subcommand, kCommandTimeout);
-    bool isSuccess = ChipToolOutputParser::hasCommandSuccessMarker(output);
-    if(output.empty() || !isSuccess){
-        std::cerr << "[MatterController] 기기(" << deviceId << ") 통신 에러/오프라인. 사유: 출력 없음" << std::endl;
+    const ChipToolOutcome result = runChipTool(subcommand, kCommandTimeout);
+    if (result.cancelled) return "UNKNOWN";  // 기기 상태를 모르는 것이지 오프라인이 아니다
+    const std::string& output = result.output;
+    if (!result.ok || output.empty() || !ChipToolOutputParser::hasCommandSuccessMarker(output)) {
+        std::cerr << "[MatterController] 기기(" << deviceId << ") 통신 에러/오프라인. 사유: "
+                  << (result.ok ? "성공 표지 없음" : "실행 실패·시간 초과·비정상 종료") << std::endl;
         markOffline(deviceId); // 오프라인 명부에 추가
         return "OFFLINE";
     }
@@ -93,7 +105,7 @@ std::string MatterController::runChipToolCommand(const std::vector<std::string>&
         std::cout << "[MatterController] 기기(" << deviceId << ") 온라인 복구됨." << std::endl;
     }
 
-    return output; 
+    return output;
 }
 bool MatterController::removeDeviceRegistration(const std::string& serialNumber) {
     // 조회와 삭제를 한 락 블록에서 한다. 따로 하면 그 사이 다른 스레드가 매핑을 바꿀 수 있다(TOCTOU)
@@ -112,29 +124,13 @@ bool MatterController::removeDeviceRegistration(const std::string& serialNumber)
     // 텍스트 파일에서 해당 기기 번호만 삭제 (읽기~덮어쓰기를 한 락으로 묶어 다른 쓰기와 섞이지 않게 한다)
     {
         std::lock_guard<std::mutex> fileLock(fileMutex_);
-        std::ifstream fileIn(mConfigFilePath);
-        std::vector<std::string> lines;
-        std::string line;
-
-        if (fileIn.is_open()) {
-            while (std::getline(fileIn, line)) {
-                size_t commaPos = line.find(',');
-                if (commaPos != std::string::npos) {
-                    std::string savedSerial = line.substr(0, commaPos);
-                    // 삭제하려는 시리얼 넘버와 다를 때만 백업
-                    if (savedSerial != serialNumber) {
-                        lines.push_back(line);
-                    }
-                }
-            }
-            fileIn.close();
+        std::vector<std::string> kept;
+        for (const auto& line : readRegistrationLinesLocked()) {
+            const size_t commaPos = line.find(',');
+            // 삭제하려는 시리얼 넘버와 다를 때만 남긴다
+            if (commaPos != std::string::npos && line.substr(0, commaPos) != serialNumber) kept.push_back(line);
         }
-
-        // 백업해둔 줄들만 다시 파일에 덮어쓰기 (새로고침)
-        std::ofstream fileOut(mConfigFilePath, std::ios::trunc);
-        for (const auto& l : lines) {
-            fileOut << l << "\n";
-        }
+        writeRegistrationLinesLocked(kept);
     }
 
     if (!foundNodeId) {
@@ -149,10 +145,10 @@ bool MatterController::removeDeviceRegistration(const std::string& serialNumber)
     std::cout << "[MatterController] 기기(" << deviceIdStr << ") 페어링 해제 중..." << std::endl;
     std::thread([this,deviceId](){
         std::string deviceIdStr = std::to_string(deviceId);
-        std::string output = this->runChipTool({"pairing", "unpair", deviceIdStr}, kSlowCommandTimeout);
-        
+        const ChipToolOutcome result = this->runChipTool({"pairing", "unpair", deviceIdStr}, kSlowCommandTimeout);
+
         // 오프라인이어서 타임아웃이 나더라도 KVS에서는 지워지므로 상황에 맞게 로그만 분기
-        if (output.find("Timeout") != std::string::npos || output.find("Error") != std::string::npos) {
+        if (!result.ok || result.output.find("Timeout") != std::string::npos || result.output.find("Error") != std::string::npos) {
             std::cerr << "[MatterController] 기기(" << deviceIdStr << ") 오프라인 상태. 로컬에서 강제 페어링 해제 완료." << std::endl;
         } else {
             std::cout << "[MatterController] 기기(" << deviceIdStr << ") 정상 페어링 해제 완료" << std::endl;
@@ -176,10 +172,65 @@ bool MatterController::checkDeviceRegistered(uint64_t nodeId) {
     return false;
 }
 
-void MatterController::saveDeviceRegistration(const std::string& serialNumber, uint64_t nodeId) {
+bool MatterController::saveDeviceRegistration(const std::string& serialNumber, uint64_t nodeId) {
     std::lock_guard<std::mutex> fileLock(fileMutex_);
-    std::ofstream file(mConfigFilePath, std::ios::app); // 파일 끝에 추가 모드
-    file << serialNumber << "," << nodeId << "\n";
+    // 같은 시리얼의 옛 줄은 지우고 새 줄로 바꾼다(중복 줄이 쌓이면 시작 때 어느 노드가 맞는지 모호해진다)
+    std::vector<std::string> lines;
+    for (const auto& line : readRegistrationLinesLocked()) {
+        const size_t commaPos = line.find(',');
+        if (commaPos != std::string::npos && line.substr(0, commaPos) == serialNumber) continue;
+        lines.push_back(line);
+    }
+    lines.push_back(serialNumber + "," + std::to_string(nodeId));
+    return writeRegistrationLinesLocked(lines);
+}
+
+std::vector<std::string> MatterController::readRegistrationLinesLocked() {
+    std::vector<std::string> lines;
+    std::ifstream fileIn(mConfigFilePath);
+    std::string line;
+    while (std::getline(fileIn, line)) {
+        if (!line.empty()) lines.push_back(line);
+    }
+    return lines;
+}
+
+bool MatterController::writeRegistrationLinesLocked(const std::vector<std::string>& lines) {
+    // 같은 폴더의 임시 파일에 다 쓰고 디스크에 내린 뒤 rename으로 바꿔 끼운다.
+    // rename은 원자적이라 중간에 죽어도 "옛 파일 전체" 또는 "새 파일 전체"만 남는다(반쯤 쓴 파일 없음)
+    const std::string tempPath = mConfigFilePath + ".tmp";
+    std::string content;
+    for (const auto& line : lines) content += line + "\n";
+
+    const int fd = ::open(tempPath.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
+    if (fd < 0) {
+        std::cerr << "[MatterController] 등록 파일 임시본 열기 실패: " << std::strerror(errno) << std::endl;
+        return false;
+    }
+    bool ok = true;
+    std::size_t written = 0;
+    while (ok && written < content.size()) {
+        const ssize_t n = ::write(fd, content.data() + written, content.size() - written);
+        if (n < 0 && errno == EINTR) continue;
+        if (n < 0) ok = false;
+        else written += static_cast<std::size_t>(n);
+    }
+    if (ok && ::fsync(fd) != 0) ok = false;
+    if (::close(fd) != 0) ok = false;
+    if (ok && ::rename(tempPath.c_str(), mConfigFilePath.c_str()) != 0) ok = false;
+    if (!ok) {
+        std::cerr << "[MatterController] 등록 파일 쓰기 실패: " << std::strerror(errno) << std::endl;
+        ::unlink(tempPath.c_str());
+        return false;
+    }
+    // 이름 바꾸기 자체도 디스크에 남도록 폴더를 동기화한다(실패해도 내용은 이미 맞다)
+    const std::string directory = std::filesystem::path(mConfigFilePath).parent_path().string();
+    const int dirFd = ::open(directory.empty() ? "." : directory.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (dirFd >= 0) {
+        ::fsync(dirFd);
+        ::close(dirFd);
+    }
+    return true;
 }
 //기기 등록
 Result<CommissionOutcome> MatterController::commissionDevice(uint64_t nodeId, const std::string& name,const std::string& manualPincode,
@@ -216,11 +267,11 @@ Result<CommissionOutcome> MatterController::commissionDevice(uint64_t nodeId, co
     Result<CommissionOutcome> outcome =
         Result<CommissionOutcome>::failure(ErrorCode::CommissionFailed, "chip-tool 페어링 실패");
     // 2. 에러 스트림 통합 및 결과 읽기. 출력의 비밀값은 러너가 ***로 가린다
-    const std::string output = runChipTool(pairingArgs, kPairingTimeout,
-                                           {wifiPassword, manualPincode, pinText});
-    
-    // 3. 성공 키워드 검사 (chip-tool 페어링 성공 로그 기준)
-    if (ChipToolOutputParser::isCommissioningSuccessful(output)) {
+    const ChipToolOutcome pairing = runChipTool(pairingArgs, kPairingTimeout, {wifiPassword, manualPincode, pinText});
+    const std::string& output = pairing.output;
+
+    // 3. 정상 종료이고 성공 키워드가 있을 때만 성공 (chip-tool 페어링 성공 로그 기준)
+    if (pairing.ok && ChipToolOutputParser::isCommissioningSuccessful(output)) {
         const std::string serialNumber = this->onDevicePairingComplete(nodeId, name);
         std::cout << "[MatterController] 커미셔닝 성공. 기기 정보를 내부 스토리지에 저장" << std::endl;
         outcome = Result<CommissionOutcome>::success(CommissionOutcome{serialNumber});
@@ -235,11 +286,13 @@ std::string MatterController::getDeviceSerialNumber(uint64_t nodeId) {
     std::cout << "[MatterController] 기기 시리얼 넘버 조회 중... (NodeID: " << nodeId << ")" << std::endl;
     
     // chip-tool basic 클러스터 사용
-    const std::string output = runChipTool({"basicinformation", "read", "serial-number", std::to_string(nodeId), "0"},
-                                           kSlowCommandTimeout);
+    const ChipToolOutcome result = runChipTool({"basicinformation", "read", "serial-number", std::to_string(nodeId), "0"},
+                                               kSlowCommandTimeout);
 
-    auto serial = ChipToolOutputParser::extractSerialNumber(output);
-    if (serial) return *serial;
+    if (result.ok) {
+        auto serial = ChipToolOutputParser::extractSerialNumber(result.output);
+        if (serial) return *serial;
+    }
 
     // 시리얼 넘버를 지원하지 않는 기기일 경우, 안전장치로 NodeId 기반의 문자열 반환
     return "UNKNOWN_SERIAL_" + std::to_string(nodeId);
@@ -281,6 +334,11 @@ bool MatterController::turnOff(uint64_t nodeId,uint16_t endpointId){
 bool MatterController::sendCommand(const std::string& deviceId, const std::string& command){
     
     uint64_t nodeId = getNodeId(deviceId);
+    if (nodeId == 0) {
+        // 매핑이 없으면 0번 노드에 명령을 보내게 되므로 실행하지 않는다
+        std::cerr << "[MatterController] 시리얼 매핑 없음, 명령 건너뜀: " << deviceId << std::endl;
+        return false;
+    }
 
     if(command == "ON"|| command == "TURN_ON"){
         return turnOn(nodeId,1);
@@ -303,7 +361,9 @@ std::string MatterController::onDevicePairingComplete(uint64_t nodeId, const std
         mSerialToNodeId[serialNumber] = nodeId; // 시리얼 넘버와 NodeId 매핑 저장
     }
     
-    saveDeviceRegistration(serialNumber, nodeId);
+    if (!saveDeviceRegistration(serialNumber, nodeId)) {
+        std::cerr << "[MatterController] 등록 파일 저장 실패: 재시작하면 이 기기의 노드 매핑이 사라집니다 (" << serialNumber << ")" << std::endl;
+    }
     return serialNumber;
 }
 bool MatterController::unpairDevice(const std::string& deviceId){
@@ -319,6 +379,10 @@ std::string MatterController::readDeviceState(const std::string& rawDeviceId, bo
     deviceId.erase(std::remove(deviceId.begin(), deviceId.end(), ' '), deviceId.end());
 
     uint64_t nodeId = getNodeId(deviceId);
+    if (nodeId == 0) {
+        std::cerr << "[MatterController] 시리얼 매핑 없음, 상태 읽기 건너뜀: " << deviceId << std::endl;
+        return "UNKNOWN";  // 상태를 모름(기기를 오프라인으로 바꾸지 않는다)
+    }
 
     // 기기가 현재 페어링 중이면 즉시 스킵
     if (isPairing(nodeId)) {

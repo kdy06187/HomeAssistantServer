@@ -1,6 +1,7 @@
 #pragma once
 #include "ChipToolRunner.hpp"
 #include <atomic>
+#include <thread>
 #include <functional>
 #include <mutex>
 #include <string>
@@ -15,14 +16,29 @@ public:
     ProcessResult run(const std::vector<std::string>& args, const std::string& stdinText,
                       std::chrono::milliseconds timeout, const std::vector<std::string>& secretsToMask) override {
         std::vector<std::string> subcommand(args.begin() + (args.empty() ? 0 : 1), args.end());
+        ++started;  // 기록보다 먼저 세야 "기록은 됐는데 아직 시작 전"인 틈에 대기가 끝나지 않는다
+        ++running;
         {
             std::lock_guard<std::mutex> lock(recordMutex);
             calls.push_back(Call{args, stdinText, timeout, secretsToMask});
         }
-        ++running;
-        ProcessResult result = respond ? respond(subcommand) : ProcessResult{0, "CHIP_NO_ERROR", false, false, false};
-        --running;
-        return result;
+        // 응답 함수가 예외를 던져도 "끝난 호출"로 센다
+        struct Finish {
+            FakeChipToolRunner& self;
+            ~Finish() { --self.running; ++self.finished; }
+        } finish{*this};
+        return respond ? respond(subcommand) : ProcessResult{0, "CHIP_NO_ERROR", false, false, false};
+    }
+
+    // 시작한 호출이 expectedStarted개 이상이 되고, 시작한 만큼 모두 끝날 때까지 기다린다.
+    // 분리 스레드(unpair)가 아직 run에 들어오지 않았을 수 있으므로 "시작 수"를 함께 기다린다
+    bool waitUntilIdle(int expectedStarted = 0, std::chrono::milliseconds limit = std::chrono::milliseconds(5000)) {
+        const auto deadline = std::chrono::steady_clock::now() + limit;
+        while (std::chrono::steady_clock::now() < deadline) {
+            if (started.load() >= expectedStarted && started.load() == finished.load()) return true;
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        return false;
     }
     void cancelAll() override { cancelled = true; }
 
@@ -40,6 +56,8 @@ public:
     std::mutex recordMutex;
     std::vector<Call> calls;
     std::atomic<int> running{0};
+    std::atomic<int> started{0};
+    std::atomic<int> finished{0};
     std::atomic<bool> cancelled{false};
 };
 

@@ -73,10 +73,16 @@ private:
     Result<CommissionOutcome> commissionDevice(uint64_t nodeId, const std::string& name, const std::string& manualPincode,
                           const std::string& wifiSsid, const std::string& wifiPassword,
                           const std::unordered_set<std::string>& activeDeviceIds);
-    // chip-tool 하위 명령을 실행해 출력(stdout+stderr)을 돌려준다. 실행하지 못했으면 빈 문자열
-    std::string runChipTool(const std::vector<std::string>& subcommand, std::chrono::milliseconds timeout,
-                            const std::vector<std::string>& secretsToMask = {});
-    // 제어·조회용: 성공 표지가 없거나 오류 키워드가 있으면 "OFFLINE"(오프라인 명부 갱신), 아니면 출력
+    // chip-tool 한 번 실행 결과. ok는 "정상 실행·정상 종료(0)"일 때만 true —
+    // 시간 초과·실행 실패·비정상 종료는 출력에 성공 표지가 있어도 실패다
+    struct ChipToolOutcome {
+        bool ok = false;
+        bool cancelled = false;  // 서버 종료 등으로 취소됨: 실패지만 기기 탓이 아니다(오프라인 표시 안 함)
+        std::string output;
+    };
+    ChipToolOutcome runChipTool(const std::vector<std::string>& subcommand, std::chrono::milliseconds timeout,
+                                const std::vector<std::string>& secretsToMask = {});
+    // 제어·조회용: 실패·성공 표지 없음·오류 키워드면 "OFFLINE"(오프라인 명부 갱신), 취소면 "UNKNOWN", 아니면 출력
     std::string runChipToolCommand(const std::vector<std::string>& subcommand, const std::string& deviceId);
     ChipToolRunner& mRunner;
     SetupPinParser mParseSetupPin;
@@ -98,7 +104,10 @@ private:
     uint64_t mLastIssuedNodeId = 0; // stateMutex_
     std::string onDevicePairingComplete(uint64_t nodeId, const std::string& deviceName);
     bool checkDeviceRegistered(uint64_t nodeId);
-    void saveDeviceRegistration(const std::string& serialNumber,uint64_t nodeId);
+    bool saveDeviceRegistration(const std::string& serialNumber,uint64_t nodeId);
+    // 등록 파일 읽기·쓰기(호출자가 fileMutex_를 잡는다). 쓰기는 임시 파일 → fsync → rename으로 원자적
+    std::vector<std::string> readRegistrationLinesLocked();
+    bool writeRegistrationLinesLocked(const std::vector<std::string>& lines);
     std::string mConfigFilePath;
 
     // 페어링 중인 기기의 NodeId를 저장
