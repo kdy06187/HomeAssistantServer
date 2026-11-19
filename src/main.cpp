@@ -47,7 +47,7 @@ int main() {
     
     // MatterController 생성 및 초기화
     ProcessChipToolRunner chipToolRunner;  // chip-tool을 셸 없이 실행한다
-    MatterController matterController(chipToolRunner);
+    MatterController matterController(chipToolRunner, parseManualSetupPin);
     if (matterController.Initialize()) {
         std::cout << "[Main] MatterController 초기화 및 스레드 구동 성공!" << std::endl;
     } else {

@@ -46,7 +46,7 @@ void DeviceManager::initFromDatabase(){
     std::cout << "[DeviceManager] DB에서 기기 로드 완료 (" << loadedCount << "개)" << std::endl;
 }
 // 기기 추가
-void DeviceManager::addDevice(std::string id, std::string name, ProtocolType protocol_type,
+bool DeviceManager::addDevice(std::string id, std::string name, ProtocolType protocol_type,
                               const std::vector<DriverType>& driverTypes, IMessageSender* sender){
     Device newDevice(id, name, protocol_type);
     newDevice.state = "UNKNOWN";
@@ -54,16 +54,24 @@ void DeviceManager::addDevice(std::string id, std::string name, ProtocolType pro
         newDevice.driver_types = driverTypes;
         deviceDrivers_.attachDriversToDevice(newDevice, driverTypes, sender);
     }
+    std::optional<Device> previous;  // 같은 ID가 있었다면 실패 때 되돌릴 값
     {
         std::lock_guard<std::mutex> lock(mutex_);
+        auto it = devices_.find(id);
+        if (it != devices_.end()) previous = it->second;
         devices_[id] = newDevice;
     }
     // DB 연결 락과 겹치지 않도록 맵 락을 푼 뒤 저장
     if (!db_.insertDevice(newDevice)) {
-        // 메모리에는 등록됐지만 재시작하면 사라진다. 응답 반영은 커미셔닝 정리 때 한다
-        std::cerr << "[DeviceManager] 경고 : 기기 DB 저장 실패, 재시작 시 사라집니다 (" << id << ")" << std::endl;
+        // 메모리에만 있으면 재시작 때 사라지고 앱 목록과 어긋나므로, "실패 = 등록 안 됨"이 되게 되돌린다
+        std::cerr << "[DeviceManager] 에러 : 기기 DB 저장 실패, 등록을 되돌립니다 (" << id << ")" << std::endl;
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (previous) devices_[id] = std::move(*previous);
+        else devices_.erase(id);
+        return false;
     }
     std::cout << "[DeviceManager] 기기 추가 완료: " << name << "(" << id << ")" << std::endl;
+    return true;
 }
 
 //기기 정보 조회
@@ -178,9 +186,11 @@ bool DeviceManager::startCommissioning(ProtocolType type, std::string name, std:
 
     // 커미셔닝은 수십 초 걸리므로 락 밖에서 하고, 드라이버에는 활성 ID 사본만 넘긴다
     const auto outcome = driver->commission(CommissionRequest{name, payload, ssid, password}, idsSnapshot);
-    const bool isCommissioned = outcome.ok();
-    if (isCommissioned && !outcome.value->deviceId.empty()) {
-        addDevice(outcome.value->deviceId, name, type, driverTypes, dynamic_cast<IMessageSender*>(driver));
+    bool isCommissioned = outcome.ok();
+    if (isCommissioned && !outcome.value->deviceId.empty() &&
+        !addDevice(outcome.value->deviceId, name, type, driverTypes, dynamic_cast<IMessageSender*>(driver))) {
+        // 기기는 이미 페어링됐지만 서버 등록은 실패: 다시 커미셔닝하면 새로 페어링된다
+        isCommissioned = false;
     }
     std::cout << "[DeviceManager] " << getProtocolString(type) << " 커미셔닝 결과: "
               << (isCommissioned ? "성공" : "실패") << std::endl;

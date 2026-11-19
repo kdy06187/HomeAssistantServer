@@ -15,6 +15,7 @@
 #include "DriverManager.hpp"
 #include "Command.hpp"
 #include <unordered_set>
+#include <optional>
 
 // E6 응답에 쓰는 값. totalEnergy_mWh는 DB 보정이 끝난 누적값
 struct EnergySnapshot {
@@ -39,8 +40,9 @@ public:
     void registerDriver(ProtocolType type, ProtocolDriver* driver);
 
     void initFromDatabase();
-    // 디바이스 등록 API - 디바이스를 등록하고, 프로토콜 타입에 맞는 드라이버를 통해 초기화
-    void addDevice(std::string id, std::string name, ProtocolType protocol_type,
+    // 디바이스 등록 API - 디바이스를 등록하고, 프로토콜 타입에 맞는 드라이버를 통해 초기화.
+    // DB 저장에 실패하면 메모리 등록도 되돌리고 false
+    bool addDevice(std::string id, std::string name, ProtocolType protocol_type,
                    const std::vector<DriverType>& driverTypes, IMessageSender* sender);
     bool getDevice(std::string id, Device& outDevice);
     std::string getDeviceState(std::string id, bool isManualRefresh = false);

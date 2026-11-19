@@ -40,6 +40,7 @@ add_library(hac_core OBJECT
     src/TcpConnection.cpp
     src/TcpServer.cpp
     src/ProcessChipToolRunner.cpp
+    src/MatterController.cpp
 )
 target_include_directories(hac_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(hac_core PUBLIC OpenSSL::Crypto sqlite3 Threads::Threads)
@@ -60,7 +61,7 @@ if(HAC_BUILD_SERVER)
     # CHIP·SimpleBLE에 의존하는 프로토콜 드라이버
     add_library(hac_drivers OBJECT
         src/TCPDriver.cpp
-        src/MatterController.cpp
+        src/MatterSetupCode.cpp
     )
     target_include_directories(hac_drivers PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include

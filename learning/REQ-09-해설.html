@@ -41,7 +41,7 @@ svg .rl{stroke:#d04040;stroke-width:1.5;fill:none}
 <h1>REQ-07 해설</h1>
 <p class="lead">싱글톤을 없애고 생성자 주입으로 바꾼 변경 (3단계 4a, 학습 강도: 균형). 4b가 끝나면 아래에 "4b" 절을 덧붙인다.</p>
 
-<h1>REQ-09 해설 (8a)</h1>
+<h1>REQ-09 해설 (8a·8b)</h1>
 <p class="lead">chip-tool을 셸 문자열(<code>popen</code>) 대신 <code>ChipToolRunner</code>로 셸 없이 실행하게 바꾼 변경. REQ-09(종료 때 자식 정리)·REQ-06(느린 작업 관리)의 준비 단계 (3단계 8a, 학습 강도: 균형).</p>
 
 <section>
@@ -155,6 +155,41 @@ if (pid == 0) {
     { /* (1) 하위 명령과 인자들 */ },
     /* (2) 제한 시간 상수 */);</code></pre>
 <details><summary>정답</summary><code>{"basicinformation", "read", "serial-number", std::to_string(nodeId), "0"}</code>, <code>kSlowCommandTimeout</code>(10초). 실행 파일 경로는 <code>runChipTool</code>이 앞에 붙인다.</details>
+</section>
+
+<h2 style="margin-top:1.6em">8b. MatterController를 테스트 가능하게</h2>
+
+<section>
+<h2>1. 무엇이 막고 있었나</h2>
+<p>MatterController는 Matter SDK(CHIP) 헤더를 include해서, SDK가 없는 테스트·TSan 빌드에 넣을 수 없었다. 그런데 SDK를 실제로 쓰는 곳은 <b>설정 코드 → PIN 해석 한 줄</b>뿐이었다. 그 한 줄을 함수 주입으로 바꾸자 나머지 전부가 SDK 없이 빌드된다.</p>
+<pre><code>// MatterSetupCode.hpp (SDK 없음)
+using SetupPinParser = std::function&lt;Result&lt;uint32_t&gt;(const std::string&amp;)&gt;;
+// main: MatterController matterController(chipToolRunner, parseManualSetupPin);   // 실제(SDK)
+// 테스트: MatterController controller(fakeRunner, fakePinParser, "/fake/chip-tool", 임시파일);</code></pre>
+<p>원칙: <b>무거운 의존은 가장 작은 경계 하나로 몰아넣는다.</b> 러너(8a)가 chip-tool을, 이 함수가 SDK를 막아 주므로 MatterController 본체는 순수 로직이 됐다.</p>
+</section>
+
+<section>
+<h2>2. 노드 ID와 RAII 가드 (G7)</h2>
+<table>
+<tr><th>문제</th><th>전</th><th>후</th></tr>
+<tr><td>같은 초 두 커미셔닝</td><td><code>time(nullptr)</code> → 같은 번호</td><td>락 안에서 <code>max(시각, 마지막+1)</code>, 쓰는 번호 건너뜀, 같은 락에서 "페어링 중" 표시</td></tr>
+<tr><td>도중 예외</td><td><code>setPairing(false)</code>를 못 지나 영원히 "페어링 중"</td><td><code>PairingGuard</code> 소멸자가 반드시 해제</td></tr>
+</table>
+<p>번호를 고르는 일과 "사용 중" 표시를 <b>같은 락 안에서</b> 해야 하는 이유: 따로 하면 두 스레드가 같은 번호를 고른 뒤 각자 표시한다(TOCTOU, 5b에서 본 것과 같은 모양).</p>
+</section>
+
+<section>
+<h2>3. E9: 실패하면 아무것도 남기지 않기</h2>
+<p>DB 저장에 실패한 기기를 메모리에만 두면, 앱 목록에는 보이는데 재시작하면 사라진다. 그래서 메모리 등록을 되돌리고(같은 ID가 있었으면 이전 값 복원) 커미셔닝 실패로 답한다. 대가: 기기는 이미 페어링돼 있어 다시 등록하면 새 노드 ID로 페어링된다(실기 절차서에 기록).</p>
+</section>
+
+<section>
+<h2>4. 이해도 질문 (8b)</h2>
+<p><b>Q4.</b> 테스트 <code>RunnerIsCalledWithoutHoldingControllerLocks</code>는 러너 안에서 <code>controller-&gt;isPairing()</code>을 부른다. 이것으로 무엇을 확인하나?</p>
+<details><summary>정답</summary>MatterController가 <code>stateMutex_</code>를 쥔 채 러너(chip-tool, 최대 수 초)를 부른다면, 러너 안에서 같은 락을 다시 잡는 순간 같은 스레드가 자기 락을 기다려 멈춘다(감시자가 실패시킴). 멈추지 않는다는 것은 "chip-tool은 락 밖에서" 규칙(L-2)이 지켜졌다는 뜻이다.</details>
+<p><b>Q5.</b> 왜 <code>MatterSetupCode.cpp</code>는 테스트하지 못하나? 그 위험은 어떻게 줄였나?</p>
+<details><summary>정답</summary>Matter SDK가 필요해 테스트 빌드에 넣을 수 없다. 코드는 기존 것을 그대로 옮기기만 했고(로직 변경 없음), 실제 동작은 9번 실기 페어링으로 확인한다. 경계를 한 함수로 작게 만든 것 자체가 위험을 줄이는 방법이다.</details>
 </section>
 </main>
 </body>

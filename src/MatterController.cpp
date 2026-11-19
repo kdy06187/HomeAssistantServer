@@ -1,4 +1,5 @@
 #include <limits>
+#include <algorithm>
 #include "MatterController.hpp"
 #include <optional>
 #include "ChipToolOutputParser.hpp"
@@ -15,10 +16,12 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-MatterController::MatterController(ChipToolRunner& runner)
-    : mChipToolPath("../third_party/connectedhomeip/out/host/chip-tool"),
+MatterController::MatterController(ChipToolRunner& runner, SetupPinParser parseSetupPin,
+                                   std::string chipToolPath, std::string configFilePath)
+    : mChipToolPath(std::move(chipToolPath)),
       mRunner(runner),
-      mConfigFilePath("../config/registered_devices.txt") {
+      mParseSetupPin(std::move(parseSetupPin)),
+      mConfigFilePath(std::move(configFilePath)) {
 }
 
 MatterController::~MatterController() {
@@ -194,29 +197,27 @@ Result<CommissionOutcome> MatterController::commissionDevice(uint64_t nodeId, co
         return Result<CommissionOutcome>::success(CommissionOutcome{});
     }
     std::cout << "[MatterController] 기기 등록 시도: NodeId=" << nodeId << std::endl;
-    chip::SetupPayload payload;
-    CHIP_ERROR err = chip::ManualSetupPayloadParser(manualPincode).populatePayload(payload);
-    if (err != CHIP_NO_ERROR) {
-        std::cerr << "[MatterController] ❌ 핀 코드 파싱 실패. Error: " << err.Format() << std::endl;
+    const auto setupPin = mParseSetupPin ? mParseSetupPin(manualPincode)
+                                         : Result<uint32_t>::failure(ErrorCode::Internal, "설정 코드 해석기 없음");
+    if (!setupPin.ok()) {
         return Result<CommissionOutcome>::failure(ErrorCode::CommissionFailed, "핀 코드 파싱 실패");
     }
+    const std::string pinText = std::to_string(*setupPin.value);
    
     // SSID와 비밀번호는 REST 입력이므로 셸을 거치지 않는다.
     // str: 접두사는 hex:로 시작하는 값이 16진수로 디코딩되는 것을 막는다.
     const std::vector<std::string> pairingArgs = {
         "pairing", "ble-wifi", std::to_string(nodeId),
         "str:" + wifiSsid, "str:" + wifiPassword,
-        std::to_string(payload.setUpPINCode), "3830",
+        pinText, "3830",
         "--paa-trust-store-path", "../paa_certs/paa-root-certs"
     };
-
-    setPairing(nodeId, true);
 
     Result<CommissionOutcome> outcome =
         Result<CommissionOutcome>::failure(ErrorCode::CommissionFailed, "chip-tool 페어링 실패");
     // 2. 에러 스트림 통합 및 결과 읽기. 출력의 비밀값은 러너가 ***로 가린다
     const std::string output = runChipTool(pairingArgs, kPairingTimeout,
-                                           {wifiPassword, manualPincode, std::to_string(payload.setUpPINCode)});
+                                           {wifiPassword, manualPincode, pinText});
     
     // 3. 성공 키워드 검사 (chip-tool 페어링 성공 로그 기준)
     if (ChipToolOutputParser::isCommissioningSuccessful(output)) {
@@ -227,10 +228,7 @@ Result<CommissionOutcome> MatterController::commissionDevice(uint64_t nodeId, co
         std::cerr << "[MatterController] 커미셔닝 실패 (타임아웃 또는 에러): \n" << output << std::endl;
     }
 
-    // 4. 작업 완료 후 Lock 해제
-    setPairing(nodeId, false);
-
-    return outcome;
+    return outcome;  // "페어링 중" 표시는 호출자의 PairingGuard가 푼다
 }
 
 std::string MatterController::getDeviceSerialNumber(uint64_t nodeId) {
@@ -293,7 +291,8 @@ bool MatterController::sendCommand(const std::string& deviceId, const std::strin
 }
 Result<CommissionOutcome> MatterController::commission(const CommissionRequest& request,
                                                        const std::unordered_set<std::string>& activeDeviceIds){
-    uint64_t nodeId = static_cast<uint64_t>(std::time(nullptr));
+    const uint64_t nodeId = reserveNodeIdForPairing();
+    PairingGuard pairingGuard(*this, nodeId);
     return commissionDevice(nodeId, request.name, request.payload, request.ssid, request.password, activeDeviceIds);
 }
 std::string MatterController::onDevicePairingComplete(uint64_t nodeId, const std::string& deviceName) {
@@ -439,4 +438,18 @@ void MatterController::markOffline(const std::string& nodeIdText) {
 bool MatterController::clearOffline(const std::string& nodeIdText) {
     std::lock_guard<std::mutex> stateLock(stateMutex_);
     return mOfflineNodes.erase(nodeIdText) > 0;
+}
+
+uint64_t MatterController::reserveNodeIdForPairing() {
+    std::lock_guard<std::mutex> stateLock(stateMutex_);
+    uint64_t candidate = std::max<uint64_t>(static_cast<uint64_t>(std::time(nullptr)), mLastIssuedNodeId + 1);
+    auto inUse = [this](uint64_t id) {
+        if (mPairingNodes.count(id) > 0) return true;
+        for (const auto& pair : mSerialToNodeId) if (pair.second == id) return true;
+        return false;
+    };
+    while (inUse(candidate)) ++candidate;
+    mLastIssuedNodeId = candidate;
+    mPairingNodes.insert(candidate);
+    return candidate;
 }
