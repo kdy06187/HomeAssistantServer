@@ -1,5 +1,6 @@
 #include <limits>
 #include "MatterController.hpp"
+#include <optional>
 #include "ChipToolOutputParser.hpp"
 #include <iostream>
 #include <cstdlib>
@@ -169,47 +170,57 @@ std::string MatterController::executeCommandWithErrorResponse(const std::string&
     return output; 
 }
 bool MatterController::removeDeviceRegistration(const std::string& serialNumber) {
-    uint64_t deviceId = getNodeId(serialNumber);
-    std::string deviceIdStr = std::to_string(deviceId);
-
-    // 방어막(캐시) 명부와 시리얼 매핑에서 기기 정보 즉시 완전 삭제
+    // 조회와 삭제를 한 락 블록에서 한다. 따로 하면 그 사이 다른 스레드가 매핑을 바꿀 수 있다(TOCTOU)
+    std::optional<uint64_t> foundNodeId;
     {
         std::lock_guard<std::mutex> stateLock(stateMutex_);
-        mPairingNodes.erase(deviceId);
-        mOfflineNodes.erase(deviceIdStr);
-        mSerialToNodeId.erase(serialNumber);
+        auto it = mSerialToNodeId.find(serialNumber);
+        if (it != mSerialToNodeId.end()) {
+            foundNodeId = it->second;
+            mSerialToNodeId.erase(it);
+            mPairingNodes.erase(*foundNodeId);
+            mOfflineNodes.erase(std::to_string(*foundNodeId));
+        }
     }
 
     // 텍스트 파일에서 해당 기기 번호만 삭제 (읽기~덮어쓰기를 한 락으로 묶어 다른 쓰기와 섞이지 않게 한다)
-    std::unique_lock<std::mutex> fileLock(fileMutex_);
-    std::ifstream fileIn(mConfigFilePath);
-    std::vector<std::string> lines;
-    std::string line;
-    
-    if (fileIn.is_open()) {
-        while (std::getline(fileIn, line)) {
-            size_t commaPos = line.find(',');
-            if (commaPos != std::string::npos) {
-                std::string savedSerial = line.substr(0, commaPos);
-                // 삭제하려는 시리얼 넘버와 다를 때만 백업
-                if (savedSerial != serialNumber) {
-                    lines.push_back(line);
+    {
+        std::lock_guard<std::mutex> fileLock(fileMutex_);
+        std::ifstream fileIn(mConfigFilePath);
+        std::vector<std::string> lines;
+        std::string line;
+
+        if (fileIn.is_open()) {
+            while (std::getline(fileIn, line)) {
+                size_t commaPos = line.find(',');
+                if (commaPos != std::string::npos) {
+                    std::string savedSerial = line.substr(0, commaPos);
+                    // 삭제하려는 시리얼 넘버와 다를 때만 백업
+                    if (savedSerial != serialNumber) {
+                        lines.push_back(line);
+                    }
                 }
             }
+            fileIn.close();
         }
-        fileIn.close();
+
+        // 백업해둔 줄들만 다시 파일에 덮어쓰기 (새로고침)
+        std::ofstream fileOut(mConfigFilePath, std::ios::trunc);
+        for (const auto& l : lines) {
+            fileOut << l << "\n";
+        }
     }
 
-    // 백업해둔 줄들만 다시 파일에 덮어쓰기 (새로고침)
-    std::ofstream fileOut(mConfigFilePath, std::ios::trunc);
-    for (const auto& l : lines) {
-        fileOut << l << "\n";
+    if (!foundNodeId) {
+        // 매핑이 없으면 노드 번호를 알 수 없다. 0번 노드에 unpair를 보내지 않도록 건너뛴다
+        std::cerr << "[MatterController] 시리얼 매핑 없음, 페어링 해제 건너뜀: " << serialNumber << std::endl;
+        return true; // 기존 응답 유지: 등록 정보 정리는 끝났다
     }
-    fileOut.close();
-    fileLock.unlock();
+    const uint64_t deviceId = *foundNodeId;
+    const std::string deviceIdStr = std::to_string(deviceId);
 
     // 2. chip-tool의 내부 KVS 데이터베이스에서도 이별 통보 (unpair)
-    std::string cmd = mChipToolPath + " pairing unpair " + std::to_string(deviceId) + " 2>&1";
+    std::string cmd = mChipToolPath + " pairing unpair " + deviceIdStr + " 2>&1";
     std::cout << "[MatterController] 기기(" << deviceIdStr << ") 페어링 해제 중..." << std::endl;
     std::thread([this,cmd,deviceId](){
         std::string deviceIdStr = std::to_string(deviceId);

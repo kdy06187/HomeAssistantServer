@@ -191,6 +191,98 @@ TEST_F(LockRulesTest, ConcurrentOperationsFinishWithoutDeadlock) {
     EXPECT_EQ(manager.executeCommand("D0", "ON").outcome, CommandOutcome::Succeeded);
 }
 
+// 한 기기의 하드웨어 통신(제어·상태 읽기)이 멈춰 있어도 목록 조회와 다른 기기 제어는 1초 안에 끝난다
+TEST_F(LockRulesTest, SlowHardwareCallDoesNotBlockOtherDevices) {
+    DeadlockWatchdog watchdog(std::chrono::seconds(20));
+    addTcpDevice("SLOW");
+    addTcpDevice("FAST");
+
+    for (const bool useReadState : {false, true}) {
+        std::promise<void> entered;
+        std::promise<void> release;
+        std::shared_future<void> releaseSignal = release.get_future().share();
+        std::atomic<bool> enteredOnce{false};
+        auto stallOnSlow = [&entered, &enteredOnce, releaseSignal](const std::string& deviceId) {
+            if (deviceId != "SLOW" || enteredOnce.exchange(true)) return;
+            entered.set_value();
+            releaseSignal.wait_for(std::chrono::seconds(5));
+        };
+        // 훅은 스레드를 띄우기 전에 설정한다
+        tcpFake.onSendCommand = useReadState ? std::function<void(const std::string&)>() : stallOnSlow;
+        tcpFake.onReadState = useReadState ? stallOnSlow : std::function<void(const std::string&)>();
+
+        auto slowCall = std::async(std::launch::async, [this, useReadState] {
+            if (useReadState) manager.getDeviceState("SLOW");
+            else manager.executeCommand("SLOW", "ON");
+        });
+        ASSERT_EQ(entered.get_future().wait_for(std::chrono::seconds(3)), std::future_status::ready);
+
+        auto otherRequests = std::async(std::launch::async, [this] {
+            const auto devices = manager.getAllDevices();
+            const auto control = manager.executeCommand("FAST", "ON");
+            return devices.size() == 2 && control.outcome == CommandOutcome::Succeeded;
+        });
+        const auto status = otherRequests.wait_for(kResponsiveLimit);
+        release.set_value();
+
+        EXPECT_EQ(status, std::future_status::ready)
+            << (useReadState ? "상태 읽기" : "제어") << " 중에 다른 요청이 1초 넘게 막혔다";
+        EXPECT_TRUE(otherRequests.get());
+        slowCall.get();
+        tcpFake.onSendCommand = nullptr;
+        tcpFake.onReadState = nullptr;
+    }
+}
+
+// 같은 ID를 한 스레드는 지우고 다른 스레드는 다시 등록하기를 동시에 반복한다.
+// 맵과 DB 갱신은 한 락으로 묶지 않으므로(락 규칙) 반복 도중에는 둘이 잠깐 어긋날 수 있다.
+// 여기서는 교착·경쟁 없이 끝나고, 그 뒤 순차 삭제·등록으로 메모리와 DB가 다시 일치하는지 본다.
+TEST_F(LockRulesTest, ConcurrentRemoveAndAddOfSameIdRecoversConsistency) {
+    DeadlockWatchdog watchdog(std::chrono::seconds(60));
+    constexpr int kIterations = 200;
+    std::atomic<bool> startFlag{false};
+    auto waitStart = [&startFlag] { while (!startFlag.load()) std::this_thread::yield(); };
+    auto inDatabase = [this] {
+        for (const auto& device : database.loadAllDevices()) if (device.id == "X") return true;
+        return false;
+    };
+
+    std::thread remover([&] {
+        waitStart();
+        for (int i = 0; i < kIterations; ++i) manager.removeDevice("X");
+    });
+    std::thread adder([&] {
+        waitStart();
+        for (int i = 0; i < kIterations; ++i) addTcpDevice("X");
+    });
+    startFlag = true;
+    remover.join();
+    adder.join();
+
+    const bool memoryHasDevice = manager.activeDeviceIds().count("X") == 1;
+    if (memoryHasDevice != inDatabase()) {
+        GTEST_LOG_(INFO) << "반복 직후 메모리·DB 어긋남 관찰(감수하는 경쟁)";
+    }
+
+    manager.removeDevice("X");
+    EXPECT_EQ(manager.activeDeviceIds().count("X"), 0u);
+    EXPECT_FALSE(inDatabase());
+    addTcpDevice("X");
+    EXPECT_EQ(manager.activeDeviceIds().count("X"), 1u);
+    EXPECT_TRUE(inDatabase());
+}
+
+// 해제가 예외를 던져도 DB 삭제는 이미 끝나 있다(재시작 뒤 되살아나지 않음)
+TEST_F(LockRulesTest, UnpairExceptionStillLeavesDeviceDeletedFromDatabase) {
+    addTcpDevice("A");
+    tcpFake.throwOnUnpair = true;
+
+    EXPECT_THROW(manager.removeDevice("A"), std::runtime_error);
+
+    EXPECT_TRUE(manager.getAllDevices().empty());
+    EXPECT_TRUE(database.loadAllDevices().empty());
+}
+
 // ---- 명령 결과의 state는 응답에 바로 쓰는 값이다 ----
 
 TEST_F(LockRulesTest, CommandResultStateIsUnknownForMissingDevice) {
@@ -267,13 +359,14 @@ int findFreePort() {
 }
 
 TEST_F(LockRulesTest, UnhandledExceptionInHandlerReturns500WithFixedBody) {
+    // 가짜 설정은 서버 스레드가 뜨기 전에 끝낸다(설정 값은 락으로 보호하지 않는다)
+    addTcpDevice("A");
+    tcpFake.throwOnSendCommand = true;
     const std::string token = "test-token-0123456789abcdef";
     const int port = findFreePort();
     HTTPServer server(manager, token, port);
     ASSERT_TRUE(server.start());
     ASSERT_TRUE(server.waitUntilReady(std::chrono::seconds(3)));
-    addTcpDevice("A");
-    tcpFake.throwOnSendCommand = true;
 
     httplib::Client client("127.0.0.1", port);
     const httplib::Headers headers = {{"Authorization", "Bearer " + token}};

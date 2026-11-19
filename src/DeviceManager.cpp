@@ -180,7 +180,10 @@ bool DeviceManager::startCommissioning(ProtocolType type, std::string name, std:
               << (isCommissioned ? "성공" : "실패") << std::endl;
     return isCommissioned;
 }
+// 순서: [락] 맵에서 꺼냄 → DB 삭제(실패 시 되돌림) → 락 없이 해제.
+// DB를 먼저 지워, 해제가 실패하거나 예외를 던져도 재시작 뒤 기기가 되살아나지 않게 한다.
 bool DeviceManager::removeDevice(std::string id){
+    Device removedDevice;
     ProtocolDriver* protocolDriver = nullptr;
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -191,15 +194,22 @@ bool DeviceManager::removeDevice(std::string id){
         }
         auto driverIt = drivers_.find(it->second.protocol_type);
         if (driverIt != drivers_.end()) protocolDriver = driverIt->second;
-        // 맵에서 먼저 빼서, 해제가 진행되는 동안 들어온 요청은 "없는 기기"로 처리되게 한다
+        // 맵에서 먼저 빼서, 삭제가 진행되는 동안 들어온 요청은 "없는 기기"로 처리되게 한다
+        removedDevice = std::move(it->second);
         devices_.erase(it);
+    }
+    if (!db_.removeDevice(id)) {
+        std::cerr << "[DeviceManager] 에러 : DB 삭제 실패, 기기를 되돌립니다 (" << id << ")" << std::endl;
+        std::lock_guard<std::mutex> lock(mutex_);
+        // 그 사이 같은 ID가 다시 등록됐다면 새 기기를 덮어쓰지 않는다
+        devices_.emplace(id, std::move(removedDevice));
+        return false;
     }
     // 드라이버 해제는 자기 락(소켓·파일)을 잡으므로 맵 락을 쥔 채 부르면 교착 위험이 있다
     bool success = false;
     if (protocolDriver) {
         success = protocolDriver->unpairDevice(id);
     }
-    db_.removeDevice(id);
     std::cout << "[DeviceManager] 기기 삭제 완료 : "<< id << std::endl;
     return success;
 }

@@ -164,6 +164,58 @@ catch (...) { respondInternalError(res); }</code></pre>
 for (const auto&amp; id : targetIds) sendCommand(id, payload);  // 락 밖 송신</code></pre>
 7번에서는 소켓을 <code>shared_ptr&lt;TcpConnection&gt;</code>으로 복사해, 순회 중 다른 스레드가 연결을 닫아도 객체 수명이 보장되게 바꿀 예정입니다.</details>
 </section>
+
+<h2 style="margin-top:1.6em">5b. 리뷰 반영: 삭제 순서와 TOCTOU</h2>
+
+<section>
+<h2>1. 한눈에 보기 (5b)</h2>
+<ul>
+<li><b>삭제 순서</b>: "맵에서 꺼냄 → <b>DB 삭제</b> → 기기 해제"로 바꿨다(5번에서는 해제가 DB보다 먼저였다).</li>
+<li><b>Matter 해제</b>: 시리얼로 노드 번호를 찾는 일과 명부에서 지우는 일을 한 락 블록에서 한다. 매핑이 없으면 0번 노드에 unpair를 보내지 않는다.</li>
+<li><b>테스트</b>: 느린 제어·상태 읽기 중에도 다른 기기가 1초 안에 응답하는지, unpair가 예외를 던져도 DB에서 지워졌는지, 같은 ID를 동시에 지우고 등록한 뒤에도 다시 일치하는지 확인한다.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. 왜 DB를 먼저 지우나</h2>
+<table>
+<tr><th>순서</th><th>unpair가 실패·예외일 때</th><th>DB 삭제가 실패할 때</th></tr>
+<tr><td>해제 → DB (5번)</td><td>예외면 DB 삭제가 실행되지 않음 → 메모리엔 없는데 DB엔 남음 → <b>재시작하면 지운 기기가 되살아남</b></td><td>기기는 이미 해제됐는데 DB엔 남음 → 되돌릴 수 없음</td></tr>
+<tr><td>DB → 해제 (5b, 설계 5.2)</td><td>DB는 이미 지워짐 → 재시작해도 안 돌아옴. 기기 쪽 정리는 로그로 추적</td><td>아직 해제 전이므로 맵에 되돌리고 false → 아무것도 바뀌지 않은 상태</td></tr>
+</table>
+<p>원칙: <b>되돌리기 쉬운 단계(메모리, DB)를 먼저, 되돌릴 수 없는 단계(기기에 RESET·unpair 보내기)를 마지막에</b>. 그래야 중간에 실패해도 "아무것도 안 됨" 아니면 "다 됨"에 가깝게 끝난다.</p>
+<pre><code>if (!db_.removeDevice(id)) {
+    std::lock_guard&lt;std::mutex&gt; lock(mutex_);
+    devices_.emplace(id, std::move(removedDevice)); // 그 사이 재등록된 새 기기는 덮지 않는다
+    return false;
+}
+success = protocolDriver-&gt;unpairDevice(id);          // 락 없이, 마지막에</code></pre>
+<p><code>emplace</code>는 키가 이미 있으면 아무것도 넣지 않는다. 복원하려는 사이에 다른 스레드가 같은 ID를 새로 등록했다면, 새 기기가 이긴다.</p>
+</section>
+
+<section>
+<h2>3. TOCTOU 예</h2>
+<p>TOCTOU(Time Of Check to Time Of Use): 확인한 시점과 사용하는 시점 사이에 상태가 바뀌는 문제. 각 단계가 따로 락을 잡으면, 단계마다 락이 있어도 생긴다.</p>
+<pre><code><span class="del">-    uint64_t deviceId = getNodeId(serialNumber);   // 락 A 잡고 풀고 (확인)
+-    {   std::lock_guard lock(stateMutex_);            // 락 A 다시 (사용)
+-        mPairingNodes.erase(deviceId); ...  }        // 그 사이 매핑이 바뀌었을 수 있음, 없으면 0</span><span class="add">+    {   std::lock_guard lock(stateMutex_);
++        auto it = mSerialToNodeId.find(serialNumber);   // 확인과
++        if (it != mSerialToNodeId.end()) {
++            foundNodeId = it-&gt;second;                    // 사용을
++            mSerialToNodeId.erase(it); ...               // 한 블록에서
++        }
++    }
++    if (!foundNodeId) return true;                      // 0번 노드 unpair 방지</span></code></pre>
+<p>예: 스레드 1이 노드 번호 5를 읽고 락을 푼 사이에 스레드 2가 같은 기기를 지웠다. 스레드 1은 이미 사라진 5번을 지우려 하고, 매핑이 없을 때는 <code>getNodeId</code>가 0을 돌려줘 엉뚱한 0번 노드에 unpair를 보냈다.</p>
+</section>
+
+<section>
+<h2>4. 이해도 질문 (5b)</h2>
+<p><b>Q4.</b> 같은 ID를 한 스레드는 계속 지우고 다른 스레드는 계속 등록하면, 반복 중간에 메모리와 DB가 어긋날 수 있다. 어떤 순서에서 그런가?</p>
+<details><summary>정답</summary>삭제 스레드가 맵에서 꺼냄 → 등록 스레드가 맵에 넣고 DB에 INSERT → 삭제 스레드가 DB DELETE. 결과적으로 메모리엔 있고 DB엔 없다. 맵과 DB를 한 락으로 묶지 않는 대가(ADR-002)이며, 다음 등록·삭제나 재등록이 바로잡는다. 테스트는 반복이 끝난 뒤 순차 삭제·등록으로 다시 일치하는지만 본다.</details>
+<p><b>Q5.</b> <code>fileMutex_</code>를 <code>unique_lock</code> + 수동 <code>unlock()</code> 대신 블록 안의 <code>lock_guard</code>로 바꾼 이유는?</p>
+<details><summary>정답</summary>수동 unlock은 그 전에 예외가 나거나, 나중에 누가 <code>return</code>을 끼워 넣으면 해제 위치가 흐려진다. 블록 <code>lock_guard</code>는 중괄호가 곧 임계 구역이라 범위가 눈에 보이고, 예외에도 RAII로 반드시 풀린다.</details>
+</section>
 </main>
 </body>
 </html>

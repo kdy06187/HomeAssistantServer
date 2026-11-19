@@ -24,8 +24,11 @@ public:
     bool throwOnReadState = false;
     bool throwOnReadEnergy = false;
     bool throwOnSendCommand = false;
-    // 해제 도중에 멈추게 하는 훅(교착 시험용). 락 밖에서 호출된다.
+    bool throwOnUnpair = false;
+    // 호출 도중에 멈추게 하는 훅(교착 시험용). 기록 락 밖에서 호출되며 인자는 deviceId다.
     std::function<void()> onUnpair;
+    std::function<void(const std::string&)> onSendCommand;
+    std::function<void(const std::string&)> onReadState;
 
     // 기록
     std::vector<std::pair<std::string, std::string>> sentCommands;   // (deviceId, command)
@@ -35,6 +38,7 @@ public:
     std::vector<std::pair<std::string, std::string>> sentMessages;   // (target, payload)
 
     bool sendCommand(const std::string& deviceId, const std::string& command) override {
+        if (onSendCommand) onSendCommand(deviceId);
         if (throwOnSendCommand) throw std::runtime_error("fake sendCommand failure");
         std::lock_guard<std::mutex> lock(recordMutex);
         sentCommands.emplace_back(deviceId, command);
@@ -49,11 +53,13 @@ public:
     }
     bool unpairDevice(const std::string& deviceId) override {
         if (onUnpair) onUnpair();
+        if (throwOnUnpair) throw std::runtime_error("fake unpairDevice failure");
         std::lock_guard<std::mutex> lock(recordMutex);
         unpairedIds.push_back(deviceId);
         return unpairResult;
     }
-    std::string readDeviceState(const std::string&, bool) override {
+    std::string readDeviceState(const std::string& deviceId, bool) override {
+        if (onReadState) onReadState(deviceId);
         if (throwOnReadState) throw std::runtime_error("fake readDeviceState failure");
         return stateToReturn;
     }
