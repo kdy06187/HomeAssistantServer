@@ -138,6 +138,27 @@ acceptThread_.join();</code></pre>
 <p><b>과제 2 (응용).</b> 2차에서 ID를 <code>TCP_&lt;MAC&gt;</code>로 바꾸려면 <code>TcpServer::acceptLoop</code>의 어느 한 줄을 무엇으로 바꾸면 될까요? 바꿨을 때 테스트의 <code>FakeDevice::id()</code>는 어떻게 해야 할까요?</p>
 <details><summary>정답 예시</summary><code>const std::string deviceId = "ARD_" + clientIp;</code>를 <code>MacResolver</code>로 얻은 ID로 바꾼다(실패 시 미식별 처리). 테스트는 <code>FakeMacResolver</code>를 주입해 IP→MAC 표를 정하고, <code>FakeDevice::id()</code>가 그 표의 ID를 돌려주게 한다. 생성자 주입(ADR-001) 덕분에 실제 ARP 없이 시험할 수 있다.</details>
 </section>
+
+<h2 style="margin-top:1.6em">7b. IMessageSender: 마법 문자열 "ALL" 없애기</h2>
+
+<section>
+<h2>1. 무엇이 바뀌었나</h2>
+<pre><code><span class="del">-    virtual void SendCommandTo(const std::string&amp; target_id, const std::string&amp; command) = 0;
+-    pc_messenger_-&gt;SendCommandTo("ALL", payload);</span><span class="add">+    virtual Status sendTo(const std::string&amp; deviceId, const std::string&amp; jsonLine) = 0;
++    virtual void broadcast(const std::string&amp; jsonLine) = 0;
++    pc_messenger_-&gt;broadcast(payload);</span></code></pre>
+<ul>
+<li><b>"ALL"은 기기 ID 자리에 들어간 특별한 값</b>(센티널)이었다. 받는 쪽이 문자열을 비교해 분기해야 했고, 이름이 "ALL"인 기기가 생기면 구분할 수 없다. 의도를 메서드 이름으로 드러내면 그런 분기가 사라진다.</li>
+<li><code>sendTo</code>는 <code>Status</code>를 돌려줘 성공·실패를 호출자가 알 수 있다(예전은 <code>void</code>). 지금 호출자는 없지만 2차 스케줄러(지연 명령)가 쓸 자리다.</li>
+<li>동작은 그대로: 브로드캐스트는 7a와 같이 연결 ID 사본을 돌며 기기마다 보낸다.</li>
+</ul>
+</section>
+
+<section>
+<h2>2. 이해도 질문 (7b)</h2>
+<p><b>Q4.</b> 인터페이스를 바꿨는데 왜 <code>FakeProtocolDriver</code>·<code>MockMessageSender</code>·테스트까지 고쳐야 했나? 이것이 인터페이스 설계에서 주는 교훈은?</p>
+<details><summary>정답</summary>가짜·목은 인터페이스를 구현하므로 시그니처가 바뀌면 함께 바뀐다. 인터페이스는 구현체 수만큼 변경 비용이 커지므로, 처음 설계할 때 의도(한 기기 / 전체)를 메서드로 나눠 두는 편이 낫다. 반대로 기기 드라이버(PCDriver)는 인터페이스에만 의존해 TCPDriver 내부(7a 재작성)가 바뀌어도 영향이 없었다.</details>
+</section>
 </main>
 </body>
 </html>

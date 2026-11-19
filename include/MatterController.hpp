@@ -54,9 +54,11 @@ public:
     std::string getPowerUsage(std::string deviceId, bool isManualRequest = false);
     std::string getCumulativeEnergy(std::string deviceId, bool isManualRequest = false);
 
-    void SendCommandTo(const std::string& target_id, const std::string& command) override{
-        // 사용안함
+    // PC 종료 메시지는 main에서 항상 TCPDriver로 보내므로 Matter 쪽 발송은 쓰지 않는다
+    Status sendTo(const std::string& /*deviceId*/, const std::string& /*jsonLine*/) override {
+        return Status::failure(ErrorCode::UnsupportedOperation, "Matter 드라이버는 메시지 발송을 지원하지 않음");
     }
+    void broadcast(const std::string& /*jsonLine*/) override {}
 private:
     std::string mChipToolPath;
     Result<CommissionOutcome> commissionDevice(uint64_t nodeId, const std::string& name, const std::string& manualPincode,

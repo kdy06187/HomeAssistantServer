@@ -138,8 +138,9 @@ TEST(DeviceManagerPcDriverTest, OffOnRunningPcSendsShutdownMessageAndDefersHardw
     EXPECT_EQ(result.outcome, CommandOutcome::Accepted);
     EXPECT_EQ(result.delaySeconds, 45);
 
-    ASSERT_EQ(tcpFake->sentMessages.size(), 1u);
-    EXPECT_EQ(tcpFake->sentMessages[0].first, "ALL");
+    ASSERT_EQ(tcpFake->broadcastMessages.size(), 1u);
+    EXPECT_NE(tcpFake->broadcastMessages[0].find("SHUTDOWN"), std::string::npos);
+    EXPECT_TRUE(tcpFake->sentMessages.empty());
     EXPECT_TRUE(tcpFake->sentCommands.empty());
 }
 

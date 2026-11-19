@@ -17,8 +17,9 @@ public:
                                          const std::unordered_set<std::string>& activeDeviceIds) override;
     bool unpairDevice(const std::string& deviceId) override;
     std::string readDeviceState(const std::string& deviceId, bool isManualRequest) override;
-    //IMessageSender의 SendCommandTo 메서드 구현
-    void SendCommandTo(const std::string& target_id, const std::string& command) override;
+    // IMessageSender 구현
+    Status sendTo(const std::string& deviceId, const std::string& jsonLine) override;
+    void broadcast(const std::string& jsonLine) override;
     // TCP 서버 시작 및 종료 메서드
     void startServer(int port);
     void stopServer();

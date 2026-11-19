@@ -163,13 +163,14 @@ std::string TCPDriver::readDeviceState(const std::string& deviceId, bool isManua
 
     return currentState;
 }
-void TCPDriver::SendCommandTo(const std::string& target_id, const std::string& payload) {
-    if (target_id == "ALL") {
-        // 연결 목록 사본을 순회한다. 순회 중 삭제·재접속이 있어도 맵을 직접 돌지 않으므로 안전하다
-        for (const auto& id : server_.connectedIds()) {
-            this->sendCommand(id, payload);
-        }
-        return;
+Status TCPDriver::sendTo(const std::string& deviceId, const std::string& jsonLine) {
+    if (sendCommand(deviceId, jsonLine)) return Status::success();
+    return Status::failure(ErrorCode::DeviceUnreachable, "기기 응답 없음 또는 오류 응답");
+}
+
+void TCPDriver::broadcast(const std::string& jsonLine) {
+    // 연결 목록 사본을 순회한다. 순회 중 삭제·재접속이 있어도 맵을 직접 돌지 않으므로 안전하다
+    for (const auto& id : server_.connectedIds()) {
+        this->sendCommand(id, jsonLine);
     }
-    this->sendCommand(target_id, payload);
 }

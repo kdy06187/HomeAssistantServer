@@ -37,7 +37,8 @@ public:
     std::vector<CommissionRequest> commissionRequests;
     std::vector<std::unordered_set<std::string>> commissionActiveIds;
     std::vector<std::string> unpairedIds;
-    std::vector<std::pair<std::string, std::string>> sentMessages;   // (target, payload)
+    std::vector<std::pair<std::string, std::string>> sentMessages;   // sendTo: (deviceId, jsonLine)
+    std::vector<std::string> broadcastMessages;                      // broadcast: jsonLine
     std::vector<std::string> energyReadIds;
 
     bool sendCommand(const std::string& deviceId, const std::string& command) override {
@@ -77,9 +78,14 @@ public:
         return energyResult;
     }
 
-    void SendCommandTo(const std::string& target_id, const std::string& command) override {
+    Status sendTo(const std::string& deviceId, const std::string& jsonLine) override {
         std::lock_guard<std::mutex> lock(recordMutex);
-        sentMessages.emplace_back(target_id, command);
+        sentMessages.emplace_back(deviceId, jsonLine);
+        return Status::success();
+    }
+    void broadcast(const std::string& jsonLine) override {
+        std::lock_guard<std::mutex> lock(recordMutex);
+        broadcastMessages.push_back(jsonLine);
     }
 
     std::mutex recordMutex;
