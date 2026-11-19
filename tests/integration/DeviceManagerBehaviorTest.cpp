@@ -63,41 +63,40 @@ TEST_F(DeviceManagerBehaviorTest, FailedCommissioningDoesNotLeakDriverTypesToLat
     EXPECT_TRUE(device.driver_types.empty());
 }
 
-TEST_F(DeviceManagerBehaviorTest, EnergyForUnregisteredIdReturnsTrueWithZeros) {
-    int power = -1;
-    long total = -1;
+TEST_F(DeviceManagerBehaviorTest, EnergyForUnregisteredIdFailsWithoutReadingDriver) {
+    const auto energy = manager.readEnergy("NOPE");
 
-    EXPECT_TRUE(manager.getDeviceEnergyInfo("NOPE", power, total));
-
-    EXPECT_EQ(power, 0);
-    EXPECT_EQ(total, 0);
+    ASSERT_FALSE(energy.ok());
+    EXPECT_EQ(energy.error.code, ErrorCode::DeviceNotFound);
+    EXPECT_TRUE(matterFake.energyReadIds.empty());
 }
 
-TEST_F(DeviceManagerBehaviorTest, EnergyForTcpDeviceIsReadFromMatterDriverNotTcp) {
+// TCP 기기는 자기 드라이버(전력 조회 미지원)에 묻고, Matter 드라이버는 부르지 않는다
+TEST_F(DeviceManagerBehaviorTest, EnergyForTcpDeviceUsesItsOwnDriverNotMatter) {
     tcpFake.commissionResult = Result<CommissionOutcome>::success(CommissionOutcome{"ARD_1"});
     manager.startCommissioning(ProtocolType::TCP_DIY, "lamp", "");
+    tcpFake.energyResult = Result<EnergyReading>::failure(ErrorCode::UnsupportedOperation, "unsupported");
     matterFake.energyResult = Result<EnergyReading>::success(EnergyReading{42, 7});
-    int power = 0;
-    long total = 0;
 
-    ASSERT_TRUE(manager.getDeviceEnergyInfo("ARD_1", power, total));
+    const auto energy = manager.readEnergy("ARD_1");
 
-    EXPECT_EQ(power, 42);
+    ASSERT_FALSE(energy.ok());
+    EXPECT_EQ(energy.error.code, ErrorCode::UnsupportedOperation);
+    EXPECT_TRUE(matterFake.energyReadIds.empty());
+    ASSERT_EQ(tcpFake.energyReadIds.size(), 1u);
 }
 
-TEST_F(DeviceManagerBehaviorTest, EnergyWithoutMatterDriverReturnsTrueWithZeros) {
+TEST_F(DeviceManagerBehaviorTest, EnergyWithoutProtocolDriverFailsAsInternal) {
     DatabaseManager db2;
     ASSERT_TRUE(db2.init(":memory:"));
     DriverManager drivers2;
-    DeviceManager only(db2, drivers2, clock);
-    only.registerDriver(ProtocolType::TCP_DIY, &tcpFake);
-    only.startCommissioning(ProtocolType::TCP_DIY, "lamp", "");
-    int power = -1;
-    long total = -1;
+    DeviceManager bare(db2, drivers2, clock);
+    bare.addDevice("PLUG", "plug", ProtocolType::MATTER, {}, nullptr);
 
-    EXPECT_TRUE(only.getDeviceEnergyInfo("FAKE_1", power, total));
+    const auto energy = bare.readEnergy("PLUG");
 
-    EXPECT_EQ(power, 0);
+    ASSERT_FALSE(energy.ok());
+    EXPECT_EQ(energy.error.code, ErrorCode::Internal);
 }
 
 TEST_F(DeviceManagerBehaviorTest, HealthCheckRecordsEnergyOnlyForOnlineMatterDevices) {
@@ -108,15 +107,15 @@ TEST_F(DeviceManagerBehaviorTest, HealthCheckRecordsEnergyOnlyForOnlineMatterDev
     matterFake.energyResult = Result<EnergyReading>::success(EnergyReading{5, 300});
 
     manager.runHealthCheck(); // 둘 다 ON
-    EXPECT_EQ(database.getEnergyHistory("M_1").size(), 1u);
-    EXPECT_TRUE(database.getEnergyHistory("T_1").empty());
+    EXPECT_EQ(database.getEnergyHistory("M_1").value->size(), 1u);
+    EXPECT_TRUE(database.getEnergyHistory("T_1").value->empty());
 
     matterFake.stateToReturn = "OFFLINE";
     manager.runHealthCheck();
-    EXPECT_EQ(database.getEnergyHistory("M_1").size(), 1u); // OFFLINE이면 기록 없음
+    EXPECT_EQ(database.getEnergyHistory("M_1").value->size(), 1u); // OFFLINE이면 기록 없음
     matterFake.stateToReturn = "UNKNOWN";
     manager.runHealthCheck();
-    EXPECT_EQ(database.getEnergyHistory("M_1").size(), 1u);
+    EXPECT_EQ(database.getEnergyHistory("M_1").value->size(), 1u);
 }
 
 TEST_F(DeviceManagerBehaviorTest, HealthCheckUnknownStateZeroesDatabaseState) {

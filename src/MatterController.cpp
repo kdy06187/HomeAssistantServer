@@ -430,7 +430,9 @@ std::string MatterController::readDeviceState(const std::string& rawDeviceId, bo
     }
     return "UNKNOWN";
 }
-// 값 해석 규칙: "UNKNOWN"/빈 문자열은 0, 그 외 숫자가 아니면 실패
+// 값 해석 규칙: 실시간 전력은 "UNKNOWN"/빈 값이면 0(표시용, 통계에 안 쓰임).
+// 누적 전력은 "UNKNOWN"/빈 값이면 실패 — 0으로 넘기면 통계의 마지막 값이 0이 되어 다음 조회 때 누적값 전체가 다시 더해진다.
+// 그 외 숫자가 아니면 둘 다 실패
 Result<EnergyReading> MatterController::readEnergy(const std::string& deviceId){
     const std::string activePowerText = getPowerUsage(deviceId);
     const std::string cumulativeText = getCumulativeEnergy(deviceId);
@@ -445,13 +447,14 @@ Result<EnergyReading> MatterController::readEnergy(const std::string& deviceId){
         }
         reading.activePower_mW = *parsedPower.value;
     }
-    if (cumulativeText != "UNKNOWN" && !cumulativeText.empty()) {
-        const auto parsedEnergy = ChipToolOutputParser::parseInteger(cumulativeText);
-        if (!parsedEnergy.ok()) {
-            return Result<EnergyReading>::failure(ErrorCode::Internal, "누적 전력 값 해석 실패");
-        }
-        reading.cumulative_mWh = *parsedEnergy.value;
+    if (cumulativeText == "UNKNOWN" || cumulativeText.empty()) {
+        return Result<EnergyReading>::failure(ErrorCode::DeviceUnreachable, "누적 전력 값 없음");
     }
+    const auto parsedEnergy = ChipToolOutputParser::parseInteger(cumulativeText);
+    if (!parsedEnergy.ok()) {
+        return Result<EnergyReading>::failure(ErrorCode::Internal, "누적 전력 값 해석 실패");
+    }
+    reading.cumulative_mWh = *parsedEnergy.value;
     return Result<EnergyReading>::success(reading);
 }
 std::string MatterController::getPowerUsage(std::string deviceId, bool isManualRequest){

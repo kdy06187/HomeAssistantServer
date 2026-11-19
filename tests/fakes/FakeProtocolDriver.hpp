@@ -36,6 +36,7 @@ public:
     std::vector<std::unordered_set<std::string>> commissionActiveIds;
     std::vector<std::string> unpairedIds;
     std::vector<std::pair<std::string, std::string>> sentMessages;   // (target, payload)
+    std::vector<std::string> energyReadIds;
 
     bool sendCommand(const std::string& deviceId, const std::string& command) override {
         if (onSendCommand) onSendCommand(deviceId);
@@ -63,8 +64,10 @@ public:
         if (throwOnReadState) throw std::runtime_error("fake readDeviceState failure");
         return stateToReturn;
     }
-    Result<EnergyReading> readEnergy(const std::string&) override {
+    Result<EnergyReading> readEnergy(const std::string& deviceId) override {
         if (throwOnReadEnergy) throw std::runtime_error("fake readEnergy failure");
+        std::lock_guard<std::mutex> lock(recordMutex);
+        energyReadIds.push_back(deviceId);
         return energyResult;
     }
 

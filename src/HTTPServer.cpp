@@ -299,57 +299,41 @@ std::string HTTPServer::handleDeleteDevice(const std::string& requestBody) {
 std::string HTTPServer::handleGetDeviceEnergy(const std::string& deviceId) {
     std::cout << "[HTTPServer] 기기 전력량(실시간/누적) GET 요청 수신 Device ID: " << deviceId << std::endl;
 
-    try{
-        int activePower_mW = 0;
-        long real_total_mWh = 0;
-
-        bool isEnergyReadOk = mDeviceManager.getDeviceEnergyInfo(deviceId, activePower_mW, real_total_mWh);
-        if (!isEnergyReadOk) {
-            return R"({"error": "서버 내부 데이터 처리 오류입니다."})";
-        }
-        Device device;
-        if (!mDeviceManager.getDevice(deviceId, device)) {
+    // 존재 확인을 먼저 하므로, 없는 기기는 DB에 아무것도 남기지 않는다
+    const auto energy = mDeviceManager.readEnergy(deviceId);
+    if (!energy.ok()) {
+        if (energy.error.code == ErrorCode::DeviceNotFound) {
             return R"({"error": "등록되지 않은 기기입니다."})";
         }
-        json response;
-        response["device_status"] = device.state;
-        response["activePower_mW"] = activePower_mW;
-        response["totalEnergy_mWh"] = real_total_mWh; // DB 보정이 끝난 진짜 데이터
-
-        return response.dump();
-    } catch (const json::exception& e) {
-        std::cerr << "[HTTPServer] ❌ 데이터 처리 에러: " << e.what() << std::endl;
         return R"({"error": "서버 내부 데이터 처리 오류입니다."})";
     }
+    json response;
+    response["device_status"] = energy.value->deviceState;
+    response["activePower_mW"] = energy.value->activePower_mW;
+    response["totalEnergy_mWh"] = energy.value->totalEnergy_mWh; // DB 보정이 끝난 진짜 데이터
+    return response.dump();
 }
 
 std::string HTTPServer::handleGetDeviceEnergyHistory(const std::string& deviceId) {
     std::cout << "[HTTPServer] 시계열 데이터 GET 요청 수신 Device ID: " << deviceId << std::endl;
 
-    try {
-        // 1. DeviceManager를 통해 시계열 배열 받아오기
-        std::vector<EnergyLog> logs = mDeviceManager.getDeviceEnergyHistory(deviceId);
-        
-        Device device;
-        if (!mDeviceManager.getDevice(deviceId, device)) {
+    // v1.0 계약: E7의 오류는 HTTP 200 + {"error"}. DB 오류도 빈 목록(성공)으로 숨기지 않는다
+    const auto history = mDeviceManager.getEnergyHistory(deviceId);
+    if (!history.ok()) {
+        if (history.error.code == ErrorCode::DeviceNotFound) {
             return R"({"error": "등록되지 않은 기기입니다."})";
         }
-        // 2. nlohmann/json을 사용해 JSON 배열(Array) 생성
-        json response; 
-        response["device_status"] = device.state;
-        json logsArray = json::array();
-        for (const auto& log : logs) {
-            json item;
-
-            item["timestamp"] = log.timestamp; 
-            item["totalEnergy_mWh"] = log.total_mwh;
-            logsArray.push_back(item);
-        }
-        response["logs"] = logsArray;
-        return response.dump();
-        
-    } catch (const std::exception& e) {
-        std::cerr << "[HTTPServer] ❌ 시계열 데이터 처리 에러: " << e.what() << std::endl;
         return R"({"error": "서버 내부 데이터 처리 오류입니다."})";
     }
+    json response;
+    response["device_status"] = history.value->deviceState;
+    json logsArray = json::array();
+    for (const auto& log : history.value->logs) {
+        json item;
+        item["timestamp"] = log.timestamp;
+        item["totalEnergy_mWh"] = log.total_mwh;
+        logsArray.push_back(item);
+    }
+    response["logs"] = logsArray;
+    return response.dump();
 }

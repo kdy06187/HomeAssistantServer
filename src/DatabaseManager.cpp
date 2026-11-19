@@ -52,7 +52,7 @@ void pruneOldBackups(const std::filesystem::path& dbPath, const std::string& kee
 bool backupPassesIntegrityCheck(const std::string& backupPath) {
     sqlite3* conn = nullptr;
     if (sqlite3_open_v2(backupPath.c_str(), &conn, SQLITE_OPEN_READONLY, nullptr) != SQLITE_OK) {
-        sqlite3_close(conn);
+        sqlite3_close_v2(conn);
         return false;
     }
     sqlite3_stmt* stmt = nullptr;
@@ -63,7 +63,7 @@ bool backupPassesIntegrityCheck(const std::string& backupPath) {
         ok = text && std::string(reinterpret_cast<const char*>(text)) == "ok";
     }
     sqlite3_finalize(stmt);
-    sqlite3_close(conn);
+    sqlite3_close_v2(conn);
     return ok;
 }
 
@@ -123,10 +123,15 @@ void DatabaseManager::close() {
 }
 
 void DatabaseManager::closeLocked() {
-    if (db_) { sqlite3_close(db_); db_ = nullptr; }
+    // close_v2: 정리 안 된 문장이 남아도 연결을 "좀비"로 두었다가 마지막 finalize 때 닫는다(close는 BUSY로 실패)
+    if (db_) { sqlite3_close_v2(db_); db_ = nullptr; }
 }
 
 bool DatabaseManager::execLocked(const char* sql, const char* failLogPrefix) {
+    if (!db_) {
+        std::cerr << failLogPrefix << "DB가 열려 있지 않음" << std::endl;
+        return false;
+    }
     char* errMsg = nullptr;
     int rc = sqlite3_exec(db_, sql, nullptr, nullptr, &errMsg);
     if (rc != SQLITE_OK) {
@@ -221,11 +226,20 @@ bool DatabaseManager::migrateToV1Locked() {
 
 // 기기 저장하기 (INSERT)
 bool DatabaseManager::insertDevice(const Device& device) {
-    const char* sql = "INSERT OR REPLACE INTO devices (device_id, display_name, protocol_type, is_active, driverTypes) VALUES (?, ?, ?, ?, ?);";
+    // INSERT OR REPLACE는 행을 지우고 다시 넣어 ip 등 다른 열을 NULL로 되돌리므로 UPSERT로 갱신한다.
+    // 다시 등록된 기기는 활성이므로 deleted_at은 지운다.
+    const char* sql = "INSERT INTO devices (device_id, display_name, protocol_type, is_active, driverTypes) VALUES (?, ?, ?, ?, ?) "
+                      "ON CONFLICT(device_id) DO UPDATE SET display_name = excluded.display_name, "
+                      "protocol_type = excluded.protocol_type, is_active = excluded.is_active, "
+                      "driverTypes = excluded.driverTypes, deleted_at = NULL;";
     std::lock_guard<std::mutex> lock(mutex_);
+    if (!db_) return false;
     sqlite3_stmt* stmt;
     std::cout << "[DB] 기기 저장: " << device.id << std::endl;
-    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "[DB 에러] 기기 저장 준비 실패: " << sqlite3_errmsg(db_) << "\n";
+        return false;
+    }
 
     // Device 객체의 데이터를 SQL 문장에 바인딩
     sqlite3_bind_text(stmt, 1, device.id.c_str(), -1, SQLITE_STATIC);
@@ -257,6 +271,7 @@ bool DatabaseManager::insertDevice(const Device& device) {
 std::vector<Device> DatabaseManager::loadAllDevices() {
     std::lock_guard<std::mutex> lock(mutex_);
     std::vector<Device> devices;
+    if (!db_) return devices;
     const char* sql = "SELECT device_id, display_name, protocol_type, is_active, driverTypes FROM devices;";
     sqlite3_stmt* stmt;
 
@@ -266,9 +281,16 @@ std::vector<Device> DatabaseManager::loadAllDevices() {
     }
 
     while (sqlite3_step(stmt) == SQLITE_ROW) {
+        // NULL 열을 std::string에 그대로 넣으면 널 포인터 역참조가 된다
+        const unsigned char* idText = sqlite3_column_text(stmt, 0);
+        if (idText == nullptr) {
+            std::cerr << "[DB] device_id가 NULL인 행을 건너뜁니다" << std::endl;
+            continue;
+        }
+        const unsigned char* nameText = sqlite3_column_text(stmt, 1);
         Device dev;
-        dev.id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-        dev.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        dev.id = reinterpret_cast<const char*>(idText);
+        dev.name = nameText ? reinterpret_cast<const char*>(nameText) : "";
         dev.protocol_type = static_cast<ProtocolType>(sqlite3_column_int(stmt, 2));
         
         int isActive = sqlite3_column_int(stmt, 3);
@@ -304,6 +326,7 @@ std::vector<Device> DatabaseManager::loadAllDevices() {
 // 기기 켜고 끌 때 DB 상태 업데이트 (UPDATE)
 bool DatabaseManager::updateDeviceState(const std::string& device_id, int is_active) {
     std::lock_guard<std::mutex> lock(mutex_);
+    if (!db_) return false;
     const char* sql = "UPDATE devices SET is_active = ? WHERE device_id = ?;";
     sqlite3_stmt* stmt;
 
@@ -318,6 +341,7 @@ bool DatabaseManager::updateDeviceState(const std::string& device_id, int is_act
 }
 bool DatabaseManager::removeDevice(const std::string& device_id) {
     std::lock_guard<std::mutex> lock(mutex_);
+    if (!db_) return false;
     const char* sql = "DELETE FROM devices WHERE device_id = ?;";
     sqlite3_stmt* stmt;
 
@@ -342,26 +366,33 @@ bool DatabaseManager::initEnergyTableLocked() {
                       "last_plug_mwh BIGINT DEFAULT 0);", "전력량 테이블 생성 에러: ");
 }
 
-bool DatabaseManager::updateEnergyStat(const std::string& deviceId, long current_mwh, long& out_real_total) {
+bool DatabaseManager::updateEnergyStat(const std::string& deviceId, int64_t current_mwh, int64_t& out_real_total) {
     std::lock_guard<std::mutex> lock(mutex_);
     // 조회→계산→저장을 한 트랜잭션으로 묶어 중간 상태가 보이지 않게 한다
     if (!execLocked("BEGIN IMMEDIATE;", "[DB] 전력량 트랜잭션 시작 실패: ")) return false;
+    auto rollback = [this](const char* reason) {
+        std::cerr << "[DB] 전력량 저장 실패(" << reason << "), 롤백합니다: " << sqlite3_errmsg(db_) << std::endl;
+        sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
+        return false;
+    };
 
-    long db_real_total = 0;
-    long db_last_plug = 0;
+    int64_t db_real_total = 0;
+    int64_t db_last_plug = 0;
     bool exists = false;
 
-    std::string selectSql = "SELECT real_total_mwh, last_plug_mwh FROM device_energy_stats WHERE device_id = ?;";
-    sqlite3_stmt* stmt;
-    if (sqlite3_prepare_v2(db_, selectSql.c_str(), -1, &stmt, nullptr) == SQLITE_OK) {
-        sqlite3_bind_text(stmt, 1, deviceId.c_str(), -1, SQLITE_TRANSIENT);
-        if (sqlite3_step(stmt) == SQLITE_ROW) {
-            db_real_total = sqlite3_column_int64(stmt, 0);
-            db_last_plug = sqlite3_column_int64(stmt, 1);
-            exists = true;
-        }
-        sqlite3_finalize(stmt);
+    const char* selectSql = "SELECT real_total_mwh, last_plug_mwh FROM device_energy_stats WHERE device_id = ?;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, selectSql, -1, &stmt, nullptr) != SQLITE_OK) return rollback("조회 준비");
+    sqlite3_bind_text(stmt, 1, deviceId.c_str(), -1, SQLITE_TRANSIENT);
+    // 행 없음(DONE)만 "최초 등록"이다. 그 밖의 결과를 최초로 보면 누적값을 잃는다
+    const int stepResult = sqlite3_step(stmt);
+    if (stepResult == SQLITE_ROW) {
+        db_real_total = sqlite3_column_int64(stmt, 0);
+        db_last_plug = sqlite3_column_int64(stmt, 1);
+        exists = true;
     }
+    sqlite3_finalize(stmt);
+    if (stepResult != SQLITE_ROW && stepResult != SQLITE_DONE) return rollback("조회");
 
     // 보정 알고리즘 (Delta 계산)
     if (exists) {
@@ -376,21 +407,16 @@ bool DatabaseManager::updateEnergyStat(const std::string& deviceId, long current
         db_real_total = current_mwh; // 최초 등록
     }
 
-    std::string upsertSql = "INSERT OR REPLACE INTO device_energy_stats (device_id, real_total_mwh, last_plug_mwh) VALUES (?, ?, ?);";
-    bool saved = false;
-    if (sqlite3_prepare_v2(db_, upsertSql.c_str(), -1, &stmt, nullptr) == SQLITE_OK) {
-        sqlite3_bind_text(stmt, 1, deviceId.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_int64(stmt, 2, db_real_total);
-        sqlite3_bind_int64(stmt, 3, current_mwh);
-        saved = (sqlite3_step(stmt) == SQLITE_DONE);
-        sqlite3_finalize(stmt);
-    }
+    const char* upsertSql = "INSERT OR REPLACE INTO device_energy_stats (device_id, real_total_mwh, last_plug_mwh) VALUES (?, ?, ?);";
+    if (sqlite3_prepare_v2(db_, upsertSql, -1, &stmt, nullptr) != SQLITE_OK) return rollback("저장 준비");
+    sqlite3_bind_text(stmt, 1, deviceId.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt, 2, db_real_total);
+    sqlite3_bind_int64(stmt, 3, current_mwh);
+    const bool saved = (sqlite3_step(stmt) == SQLITE_DONE);
+    sqlite3_finalize(stmt);
 
-    if (!saved || !execLocked("COMMIT;", "[DB] 전력량 커밋 실패: ")) {
-        std::cerr << "[DB] 전력량 저장 실패, 롤백합니다" << std::endl;
-        sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
-        return false;
-    }
+    if (!saved) return rollback("저장");
+    if (!execLocked("COMMIT;", "[DB] 전력량 커밋 실패: ")) return rollback("커밋");
 
     out_real_total = db_real_total; // 안드로이드로 보낼 최종 누적량
     return true;
@@ -410,45 +436,53 @@ bool DatabaseManager::initHistoryTableLocked() {
     if (ok) std::cout << "[DatabaseManager] ✅ 시계열 로그 테이블(state_history_logs) 준비 완료!" << std::endl;
     return ok;
 }
-bool DatabaseManager::insertEnergyLog(const std::string& deviceId, long total_mwh) {
+bool DatabaseManager::insertEnergyLog(const std::string& deviceId, int64_t total_mwh) {
     std::lock_guard<std::mutex> lock(mutex_);
-    std::string sql = "INSERT INTO state_history_logs (device_id, total_mwh) VALUES (?, ?);";
-    sqlite3_stmt* stmt;
-    
-    if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) == SQLITE_OK) {
-        sqlite3_bind_text(stmt, 1, deviceId.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_int64(stmt, 2, total_mwh);
-        
-        if (sqlite3_step(stmt) != SQLITE_DONE) {
-            std::cerr << "[DatabaseManager] ❌ 시계열 데이터 저장 실패" << std::endl;
-        }
-        sqlite3_finalize(stmt);
-        return true;
+    if (!db_) return false;
+    const char* sql = "INSERT INTO state_history_logs (device_id, total_mwh) VALUES (?, ?);";
+    sqlite3_stmt* stmt = nullptr;
+
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "[DatabaseManager] ❌ 시계열 데이터 저장 준비 실패: " << sqlite3_errmsg(db_) << std::endl;
+        return false;
     }
-    return false;
+    sqlite3_bind_text(stmt, 1, deviceId.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt, 2, total_mwh);
+    const bool saved = (sqlite3_step(stmt) == SQLITE_DONE);
+    if (!saved) {
+        std::cerr << "[DatabaseManager] ❌ 시계열 데이터 저장 실패: " << sqlite3_errmsg(db_) << std::endl;
+    }
+    sqlite3_finalize(stmt);
+    return saved;
 }
-std::vector<EnergyLog> DatabaseManager::getEnergyHistory(const std::string& deviceId, int limit) {
+Result<std::vector<EnergyLog>> DatabaseManager::getEnergyHistory(const std::string& deviceId, int limit) {
     std::lock_guard<std::mutex> lock(mutex_);
+    if (!db_) return Result<std::vector<EnergyLog>>::failure(ErrorCode::Internal, "DB가 열려 있지 않음");
     std::vector<EnergyLog> logs;
-    
-    std::string sql = "SELECT timestamp, total_mwh FROM state_history_logs "
+
+    const char* sql = "SELECT timestamp, total_mwh FROM state_history_logs "
                       "WHERE device_id = ? ORDER BY timestamp DESC LIMIT ?;";
-    sqlite3_stmt* stmt;
+    sqlite3_stmt* stmt = nullptr;
 
-    if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) == SQLITE_OK) {
-        sqlite3_bind_text(stmt, 1, deviceId.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_int(stmt, 2, limit);
-
-        while (sqlite3_step(stmt) == SQLITE_ROW) {
-            EnergyLog log;
-            const char* ts = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-            log.timestamp = ts ? ts : ""; // null 방어
-            log.total_mwh = sqlite3_column_int64(stmt, 1);
-            logs.push_back(log);
-        }
-        sqlite3_finalize(stmt);
-    } else {
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
         std::cerr << "[DatabaseManager] ❌ 시계열 데이터 조회 실패: " << sqlite3_errmsg(db_) << std::endl;
+        return Result<std::vector<EnergyLog>>::failure(ErrorCode::Internal, "시계열 조회 준비 실패");
+    }
+    sqlite3_bind_text(stmt, 1, deviceId.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 2, limit);
+
+    int stepResult = SQLITE_DONE;
+    while ((stepResult = sqlite3_step(stmt)) == SQLITE_ROW) {
+        EnergyLog log;
+        const char* ts = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        log.timestamp = ts ? ts : ""; // null 방어
+        log.total_mwh = sqlite3_column_int64(stmt, 1);
+        logs.push_back(log);
+    }
+    sqlite3_finalize(stmt);
+    if (stepResult != SQLITE_DONE) {
+        std::cerr << "[DatabaseManager] ❌ 시계열 데이터 읽기 중 오류: " << sqlite3_errmsg(db_) << std::endl;
+        return Result<std::vector<EnergyLog>>::failure(ErrorCode::Internal, "시계열 읽기 실패");
     }
 
     std::reverse(logs.begin(), logs.end());
@@ -456,5 +490,5 @@ std::vector<EnergyLog> DatabaseManager::getEnergyHistory(const std::string& devi
     if (logs.empty()) {
         std::cout << "[DatabaseManager] 기기(" << deviceId << ")의 저장된 시계열 데이터가 없습니다." << std::endl;
     }
-    return logs;
+    return Result<std::vector<EnergyLog>>::success(std::move(logs));
 }

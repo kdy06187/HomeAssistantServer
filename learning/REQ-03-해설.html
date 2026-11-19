@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>REQ-03 해설 - 에너지 경로</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--fg:#1d2330;--sub:#5b6477;--ac:#2f6fed;--code:#0f1523;--codefg:#e6edf7;--add:#12391f;--del:#4a1620;--bd:#dde1e8}
+@media (prefers-color-scheme:dark){:root{--bg:#10131a;--card:#181d28;--fg:#e6e9ef;--sub:#9aa4b8;--ac:#6b9cff;--code:#0a0d14;--bd:#2a3142}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.65 -apple-system,"Noto Sans KR",sans-serif}
+main{max-width:920px;margin:0 auto;padding:20px 14px 60px}
+h1{font-size:2rem;margin:.4em 0 .1em}
+h2{font-size:1.3rem;margin:0 0 .6em;color:var(--ac)}
+h3{font-size:1.05rem;margin:1em 0 .3em}
+.lead{color:var(--sub);margin-bottom:20px}
+section{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:18px 20px;margin:16px 0}
+table{border-collapse:collapse;width:100%;font-size:.92rem;display:block;overflow-x:auto}
+th,td{border:1px solid var(--bd);padding:6px 10px;text-align:left;vertical-align:top}
+th{background:rgba(127,127,127,.12)}
+pre{background:var(--code);color:var(--codefg);padding:12px 14px;border-radius:8px;overflow-x:auto;font-size:.85rem;line-height:1.5;margin:8px 0}
+code{font-family:ui-monospace,Consolas,monospace}
+p code,li code,td code{background:rgba(127,127,127,.18);padding:1px 5px;border-radius:4px;font-size:.88em}
+.add{background:var(--add);display:block}.del{background:var(--del);display:block}
+.three{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+.three div{border:1px dashed var(--bd);border-radius:8px;padding:8px 10px;font-size:.92rem}
+.three b{display:block;color:var(--ac)}
+details{border:1px solid var(--bd);border-radius:8px;padding:6px 12px;margin:8px 0}
+summary{cursor:pointer;font-weight:600}
+svg{width:100%;height:auto;max-width:860px}
+svg text{fill:var(--fg);font-size:13px}
+svg .b{fill:var(--card);stroke:var(--ac);stroke-width:1.5}
+svg .w{fill:rgba(240,160,40,.15);stroke:#e0a030;stroke-width:1.5}
+svg .r{fill:rgba(220,60,60,.12);stroke:#d04040;stroke-width:1.5}
+svg .l{stroke:var(--sub);stroke-width:1.5;fill:none}
+svg .rl{stroke:#d04040;stroke-width:1.5;fill:none}
+</style>
+</head>
+<body>
+<main>
+<h1>REQ-07 해설</h1>
+<p class="lead">싱글톤을 없애고 생성자 주입으로 바꾼 변경 (3단계 4a, 학습 강도: 균형). 4b가 끝나면 아래에 "4b" 절을 덧붙인다.</p>
+
+<h1>REQ-03 · REQ-04 해설</h1>
+<p class="lead">에너지 조회를 "확인 → 조회 → 성공할 때만 저장"으로 바꾸고 DB 오류 처리를 다듬은 변경 (3단계 6번, 학습 강도: 균형).</p>
+
+<section>
+<h2>1. 한눈에 보기</h2>
+<ul>
+<li><b>B-02 이중 집계</b>: 조회 실패를 0으로 저장하면, 다음 정상 조회 때 플러그 누적값 <i>전체</i>가 "증가분"으로 다시 더해졌다. 이제 실패는 저장하지 않는다.</li>
+<li><b>REQ-04 / H6</b>: 없는 ID나 TCP 기기로 E6를 부르면 통계 행이 생기고, TCP 기기는 Matter 드라이버에 물었다. 이제 존재를 먼저 확인하고 <b>기기 자신의</b> 드라이버에 묻는다.</li>
+<li><b>DB 함수</b>: 실패를 성공처럼 보이게 하던 곳(D4·D5·E7)을 고치고, NULL 열·닫힌 DB에도 죽지 않게 했다(D3·D6).</li>
+</ul>
+<table>
+<tr><th>파일</th><th>변경 요약</th></tr>
+<tr><td><code>src/DeviceManager.cpp</code>·<code>.hpp</code></td><td><code>readEnergy</code>·<code>getEnergyHistory</code>가 <code>Result</code>를 돌려줌. <code>EnergySnapshot</code>·<code>HistoryResult</code> 추가</td></tr>
+<tr><td><code>src/MatterController.cpp</code></td><td>누적값 UNKNOWN·빈 값은 실패(실시간 전력 UNKNOWN은 0)</td></tr>
+<tr><td><code>src/HTTPServer.cpp</code></td><td>E6·E7이 결과 코드로 응답을 고름. 모양은 v1.0 그대로</td></tr>
+<tr><td><code>src/DatabaseManager.cpp</code>·<code>.hpp</code></td><td>UPSERT, NULL·null 가드, 롤백, <code>int64_t</code>, <code>sqlite3_close_v2</code></td></tr>
+</table>
+</section>
+
+<section>
+<h2>2. 흐름 그림: E6 전/후</h2>
+<svg viewBox="0 0 860 360" role="img" aria-label="E6 흐름 전후">
+  <text x="20" y="24" font-weight="700">수정 전</text>
+  <rect class="b" x="20" y="40" width="390" height="36" rx="6"/><text x="32" y="63">① Matter 드라이버를 고름 (기기 종류와 무관)</text>
+  <rect class="r" x="20" y="92" width="390" height="36" rx="6"/><text x="32" y="115">② 없는 기기·실패여도 값 = 0</text>
+  <rect class="r" x="20" y="144" width="390" height="36" rx="6"/><text x="32" y="167">③ updateEnergyStat(id, 0) → 행 생성 · 마지막 값 0</text>
+  <rect class="w" x="20" y="196" width="390" height="36" rx="6"/><text x="32" y="219">④ 그제서야 기기 존재 확인 → 400</text>
+  <path class="rl" d="M215 76 V92"/><path class="rl" d="M215 128 V144"/><path class="l" d="M215 180 V196"/>
+
+  <text x="450" y="24" font-weight="700">수정 후</text>
+  <rect class="b" x="450" y="40" width="390" height="36" rx="6"/><text x="462" y="63">① [락] 존재 확인 + 그 기기의 드라이버 복사</text>
+  <rect class="b" x="450" y="92" width="390" height="36" rx="6"/><text x="462" y="115">② 락 밖에서 readEnergy (TCP는 "미지원")</text>
+  <rect class="b" x="450" y="144" width="390" height="36" rx="6"/><text x="462" y="167">③ 성공일 때만 updateEnergyStat (한 트랜잭션)</text>
+  <rect class="b" x="450" y="196" width="390" height="36" rx="6"/><text x="462" y="219">④ [락] 현재 상태 읽어 응답</text>
+  <path class="l" d="M645 76 V92"/><path class="l" d="M645 128 V144"/><path class="l" d="M645 180 V196"/>
+  <text x="470" y="262">실패 경로: ① 없음 → 400 "등록되지 않은 기기"</text>
+  <text x="470" y="284">②·③ 실패 → 400 "서버 내부 데이터 처리 오류" (DB 불변)</text>
+
+  <text x="20" y="262">B-02 예: 100 → (실패, 0 저장) → 110</text>
+  <text x="20" y="284">증가분 = 110 − 0 = 110 → 합계 210 (정답 110)</text>
+  <text x="20" y="320" font-weight="700">핵심: 실패는 "값 0"이 아니라 "값 없음"이다. 없음을 0으로 바꾸는 순간 데이터가 오염된다.</text>
+</svg>
+</section>
+
+<section>
+<h2>3. 코드 해설</h2>
+<h3>3-1. 성공한 값만 통계에</h3>
+<pre><code>const auto reading = protocolDriver-&gt;readEnergy(deviceId);   // 락 밖
+if (!reading.ok()) return Result&lt;EnergySnapshot&gt;::failure(reading.error.code, ...);
+if (!db_.updateEnergyStat(deviceId, reading.value-&gt;cumulative_mWh, snapshot.totalEnergy_mWh))
+    return Result&lt;EnergySnapshot&gt;::failure(ErrorCode::Internal, ...);</code></pre>
+<p><code>Result</code>가 "값이 있다/없다"를 타입으로 구분하므로, 호출자가 0을 넣어 계속 진행하는 실수를 할 수 없다.</p>
+
+<h3>3-2. D4: "행 없음"과 "조회 실패"를 구분</h3>
+<pre><code>const int stepResult = sqlite3_step(stmt);
+if (stepResult == SQLITE_ROW) { ... exists = true; }
+if (stepResult != SQLITE_ROW &amp;&amp; stepResult != SQLITE_DONE) return rollback("조회");</code></pre>
+<p>예전에는 SELECT가 실패해도 "행 없음 = 최초 등록"으로 보고 <code>real_total</code>을 지금 값으로 덮었다. 누적값이 통째로 사라지는 오류다. <code>SQLITE_DONE</code>만이 진짜 "행 없음"이다.</p>
+
+<h3>3-3. D2: REPLACE 대신 UPSERT</h3>
+<pre><code>INSERT INTO devices (...) VALUES (...)
+ON CONFLICT(device_id) DO UPDATE SET display_name = excluded.display_name, ..., deleted_at = NULL;</code></pre>
+<p><code>INSERT OR REPLACE</code>는 "지우고 새로 넣기"라 목록에 없는 열(<code>ip</code>)이 NULL이 된다. UPSERT는 적은 열만 바꾼다. <code>excluded</code>는 넣으려던 새 행을 가리킨다.</p>
+
+<h3>3-4. E7: 빈 목록과 오류를 구분</h3>
+<p><code>getEnergyHistory</code>가 <code>Result&lt;vector&gt;</code>를 돌려준다. "기록이 0건"은 성공(빈 배열), "DB를 읽지 못함"은 실패다. v1.0 계약대로 실패도 HTTP 200 + <code>{"error"}</code>로 답하지만, 적어도 앱이 "기록 없음"으로 오해하지 않는다.</p>
+</section>
+
+<section>
+<h2>4. 용어 풀이</h2>
+<table>
+<tr><th>용어</th><th>뜻</th></tr>
+<tr><td>센티널 값(sentinel)</td><td>"없음"을 0, -1 같은 특별한 값으로 표시하는 방식. 정상 값과 겹치면(전력 0) 구분이 안 돼 B-02 같은 버그가 생긴다. <code>Result</code>/<code>optional</code>이 대안.</td></tr>
+<tr><td>UPSERT</td><td>INSERT + UPDATE. 키가 겹치면 넣지 않고 기존 행을 갱신한다(SQLite 3.24+).</td></tr>
+<tr><td>트랜잭션 롤백</td><td><code>BEGIN</code> 이후 바꾼 것을 모두 취소. 실패 경로마다 롤백해야 다음 <code>BEGIN</code>이 "이미 트랜잭션 중" 오류 없이 시작된다.</td></tr>
+<tr><td><code>sqlite3_close_v2</code></td><td>정리 안 된 문장이 남아 있어도 실패하지 않고, 마지막 문장이 정리될 때 연결을 닫는다.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>5. 이해도 질문</h2>
+<p><b>Q1.</b> 실시간 전력이 UNKNOWN일 때는 왜 0으로 보여 줘도 괜찮은가?</p>
+<details><summary>정답</summary>실시간 전력은 화면 표시용이고 DB 통계에 쓰이지 않는다. 틀려도 다음 조회 때 바로 바뀌고 누적되지 않는다. 반면 누적값은 <code>last_plug_mwh</code>에 저장돼 다음 증가분 계산의 기준이 되므로 0이 들어가면 오염이 남는다.</details>
+<p><b>Q2.</b> 존재 확인(①)과 통계 저장(③) 사이에 다른 스레드가 기기를 지우면 어떻게 되나?</p>
+<details><summary>정답</summary>저장은 이미 일어나 그 ID의 stats 행이 남을 수 있고, ④에서 기기가 없으므로 응답은 "등록되지 않은 기기"가 된다. 확인과 저장을 한 락으로 묶으면 막을 수 있지만 상태 락 안에서 DB를 부르게 되어 락 규칙(L-2)을 어긴다. 드물고 무해한 행이라 2차 정리(REQ-13)에서 지운다.</details>
+<p><b>Q3.</b> D4 테스트는 SELECT 실패를 어떻게 만들었나?</p>
+<details><summary>정답</summary>임시 파일 DB를 별도 연결로 열어 <code>last_plug_mwh</code> 열 이름을 바꿨다. 그러면 <code>DatabaseManager</code>의 SELECT 준비가 "no such column"으로 실패한다. 테스트 후 이름을 되돌려 롤백이 제대로 끝나 다음 트랜잭션이 성공하는지도 확인한다.</details>
+</section>
+
+<section>
+<h2>6. 응용 실습</h2>
+<p><b>과제 1 (빈칸).</b> <code>insertEnergyLog</code>가 저장 실패를 정확히 돌려주도록 완성하세요.</p>
+<pre><code>bool DatabaseManager::insertEnergyLog(const std::string&amp; deviceId, int64_t total_mwh) {
+    std::lock_guard&lt;std::mutex&gt; lock(mutex_);
+    // (1) db_가 없으면?
+    // (2) prepare 실패면?
+    // (3) bind 후 step 결과를 저장하고, finalize 뒤에 그 결과를 돌려준다
+}</code></pre>
+<details><summary>힌트</summary>예전 코드는 step이 실패해도 <code>return true</code>였다. finalize 전에 결과를 변수에 담아 두어야 한다.</details>
+<details><summary>정답</summary>현재 <code>src/DatabaseManager.cpp</code>의 <code>insertEnergyLog</code>를 보세요.</details>
+<p><b>과제 2 (응용).</b> 2차에서 E6 오류를 v2.0 규약(없는 기기 404, 미지원 409 등)으로 바꾼다면, <code>HTTPServer</code>에서 어느 부분만 바꾸면 될까요? 왜 <code>DeviceManager</code>는 그대로 둬도 되나요?</p>
+<details><summary>정답 예시</summary><code>handleGetDeviceEnergy</code>의 <code>energy.error.code</code> → 응답 매핑만 바꾸면 된다. <code>DeviceManager</code>는 이미 DeviceNotFound / UnsupportedOperation / Internal을 구분해 돌려주므로, "무슨 일이 있었나"(도메인)와 "어떻게 답하나"(HTTP)가 분리돼 있다(ADR-003).</details>
+</section>
+</main>
+</body>
+</html>

@@ -16,6 +16,19 @@
 #include "Command.hpp"
 #include <unordered_set>
 
+// E6 응답에 쓰는 값. totalEnergy_mWh는 DB 보정이 끝난 누적값
+struct EnergySnapshot {
+    std::string deviceState;
+    int64_t activePower_mW = 0;
+    int64_t totalEnergy_mWh = 0;
+};
+
+// E7 응답에 쓰는 값. logs는 오래된 것부터
+struct HistoryResult {
+    std::string deviceState;
+    std::vector<EnergyLog> logs;
+};
+
 class DeviceManager {
 public:
     DeviceManager(DatabaseManager& db, DriverManager& deviceDrivers, Clock& clock);
@@ -43,8 +56,10 @@ public:
     // 모든 기기를 한 번 점검한다. 주기 호출은 PeriodicTasks가 맡는다
     void runHealthCheck();
 
-    bool getDeviceEnergyInfo(const std::string& deviceId, int& out_activePower_mW,long& out_real_total_mWh);
-    std::vector<EnergyLog> getDeviceEnergyHistory(const std::string& deviceId, int limit = 50);
+    // 존재·드라이버 확인 → 락 밖에서 조회 → 성공할 때만 통계 반영. 실패하면 DB는 그대로다
+    // (미등록 DeviceNotFound, 전력 조회 미지원 UnsupportedOperation, 조회·저장 실패 그 밖의 코드)
+    Result<EnergySnapshot> readEnergy(const std::string& deviceId);
+    Result<HistoryResult> getEnergyHistory(const std::string& deviceId, int limit = 50);
 
 private:
     std::unordered_map<ProtocolType, ProtocolDriver*> protocolDriversSnapshot();

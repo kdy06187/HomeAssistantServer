@@ -264,20 +264,24 @@ TEST_F(DatabaseMigrationTest, EnergyHistoryReturnsOldestFirstWithLimit) {
     ASSERT_TRUE(db.init(dbPath_, "20260101T000000Z"));
 
     auto all = db.getEnergyHistory("SN-MATTER-1");
-    ASSERT_EQ(all.size(), 3u);
-    EXPECT_EQ(all[0].total_mwh, 100);
-    EXPECT_EQ(all[2].total_mwh, 300);
+    ASSERT_TRUE(all.ok());
+    ASSERT_EQ(all.value->size(), 3u);
+    EXPECT_EQ((*all.value)[0].total_mwh, 100);
+    EXPECT_EQ((*all.value)[2].total_mwh, 300);
 
     auto latestTwo = db.getEnergyHistory("SN-MATTER-1", 2);
-    ASSERT_EQ(latestTwo.size(), 2u);
-    EXPECT_EQ(latestTwo[0].total_mwh, 200);
-    EXPECT_TRUE(db.getEnergyHistory("none").empty());
+    ASSERT_TRUE(latestTwo.ok());
+    ASSERT_EQ(latestTwo.value->size(), 2u);
+    EXPECT_EQ((*latestTwo.value)[0].total_mwh, 200);
+    auto none = db.getEnergyHistory("none");
+    ASSERT_TRUE(none.ok());
+    EXPECT_TRUE(none.value->empty());
 }
 
 TEST_F(DatabaseMigrationTest, EnergyStatAccumulatesDeltaAndHandlesReset) {
     DatabaseManager db;
     ASSERT_TRUE(db.init(dbPath_));
-    long total = 0;
+    int64_t total = 0;
     ASSERT_TRUE(db.updateEnergyStat("p", 100, total));
     EXPECT_EQ(total, 100);
     ASSERT_TRUE(db.updateEnergyStat("p", 150, total));
@@ -298,7 +302,7 @@ TEST_F(DatabaseMigrationTest, ConcurrentEnergyUpdatesAreConsistent) {
         workers.emplace_back([&, t] {
             const std::string own = "dev" + std::to_string(t);
             for (int i = 1; i <= kCalls; ++i) {
-                long total = 0;
+                int64_t total = 0;
                 if (!db.updateEnergyStat(own, i * 10, total)) ++failures;
                 if (!db.updateEnergyStat("shared", 500, total)) ++failures;  // 같은 값 반복이면 증가분 0
             }
@@ -307,7 +311,7 @@ TEST_F(DatabaseMigrationTest, ConcurrentEnergyUpdatesAreConsistent) {
     for (auto& w : workers) w.join();
 
     EXPECT_EQ(failures.load(), 0);
-    long total = 0;
+    int64_t total = 0;
     for (int t = 0; t < kThreads; ++t) {
         ASSERT_TRUE(db.updateEnergyStat("dev" + std::to_string(t), kCalls * 10, total));
         EXPECT_EQ(total, kCalls * 10);

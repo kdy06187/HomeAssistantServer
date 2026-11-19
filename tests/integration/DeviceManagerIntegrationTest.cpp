@@ -189,36 +189,35 @@ TEST_F(DeviceManagerIntegrationTest, HealthCheckSurvivesDriverExceptionsAndKeeps
 
     matterFake.energyResult = Result<EnergyReading>::success(EnergyReading{5, 300});
     EXPECT_NO_THROW(manager.runHealthCheck());
-    EXPECT_EQ(database.getEnergyHistory("FAKE_1").size(), 1u);
+    EXPECT_EQ(database.getEnergyHistory("FAKE_1").value->size(), 1u);
 }
 
 TEST_F(DeviceManagerIntegrationTest, EnergySuccessAccumulatesInDatabase) {
     manager.startCommissioning(ProtocolType::MATTER, "plug", "");
-    int power = -1;
-    long total = -1;
 
     matterFake.energyResult = Result<EnergyReading>::success(EnergyReading{1500, 100});
-    ASSERT_TRUE(manager.getDeviceEnergyInfo("FAKE_1", power, total));
-    EXPECT_EQ(power, 1500);
-    EXPECT_EQ(total, 100);
+    auto first = manager.readEnergy("FAKE_1");
+    ASSERT_TRUE(first.ok());
+    EXPECT_EQ(first.value->activePower_mW, 1500);
+    EXPECT_EQ(first.value->totalEnergy_mWh, 100);
 
     matterFake.energyResult = Result<EnergyReading>::success(EnergyReading{1600, 150});
-    ASSERT_TRUE(manager.getDeviceEnergyInfo("FAKE_1", power, total));
-    EXPECT_EQ(total, 150);
+    auto second = manager.readEnergy("FAKE_1");
+    ASSERT_TRUE(second.ok());
+    EXPECT_EQ(second.value->totalEnergy_mWh, 150);
 }
 
 TEST_F(DeviceManagerIntegrationTest, EnergyFailureReturnsFalseAndKeepsStats) {
     manager.startCommissioning(ProtocolType::MATTER, "plug", "");
-    int power = 0;
-    long total = 0;
     matterFake.energyResult = Result<EnergyReading>::failure(ErrorCode::Internal, "bad");
 
-    EXPECT_FALSE(manager.getDeviceEnergyInfo("FAKE_1", power, total));
+    EXPECT_FALSE(manager.readEnergy("FAKE_1").ok());
 
     // 통계가 갱신되지 않았다면 첫 기록으로 취급되어 값이 그대로 합계가 된다
     matterFake.energyResult = Result<EnergyReading>::success(EnergyReading{0, 70});
-    ASSERT_TRUE(manager.getDeviceEnergyInfo("FAKE_1", power, total));
-    EXPECT_EQ(total, 70);
+    auto energy = manager.readEnergy("FAKE_1");
+    ASSERT_TRUE(energy.ok());
+    EXPECT_EQ(energy.value->totalEnergy_mWh, 70);
 }
 
 TEST_F(DeviceManagerIntegrationTest, InitFromDatabaseLoadsDevicesAndAttachesDrivers) {

@@ -160,10 +160,12 @@ bool DeviceManager::startCommissioning(ProtocolType type, std::string name, std:
         , const std::string& ssid, const std::string& password, const std::vector<DriverType>& driverTypes){
     std::cout << "[DeviceManager] 커미셔닝 시작: " << getProtocolString(type) << ", " << name << std::endl;
     ProtocolDriver* driver = nullptr;
+    std::unordered_set<std::string> idsSnapshot;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         auto driverIt = drivers_.find(type);
         if (driverIt != drivers_.end()) driver = driverIt->second;
+        for (const auto& pair : devices_) idsSnapshot.insert(pair.first);
     }
     if (!driver) {
         std::cerr << "[DeviceManager] 에러 : " << getProtocolString(type) << " 드라이버를 찾을 수 없습니다 " << std::endl;
@@ -171,7 +173,7 @@ bool DeviceManager::startCommissioning(ProtocolType type, std::string name, std:
     }
 
     // 커미셔닝은 수십 초 걸리므로 락 밖에서 하고, 드라이버에는 활성 ID 사본만 넘긴다
-    const auto outcome = driver->commission(CommissionRequest{name, payload, ssid, password}, activeDeviceIds());
+    const auto outcome = driver->commission(CommissionRequest{name, payload, ssid, password}, idsSnapshot);
     const bool isCommissioned = outcome.ok();
     if (isCommissioned && !outcome.value->deviceId.empty()) {
         addDevice(outcome.value->deviceId, name, type, driverTypes, dynamic_cast<IMessageSender*>(driver));
@@ -239,13 +241,7 @@ std::string DeviceManager::getDeviceState(std::string id, bool isManualRefresh) 
 void DeviceManager::runHealthCheck() {
     std::cout << "\n[DeviceManager] 모든 기기의 상태 점검 시작..." << std::endl;
 
-    std::vector<Device> devices;
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        for (const auto& pair : devices_) {
-            devices.push_back(pair.second);
-        }
-    }
+    const std::vector<Device> devices = getAllDevices();
 
     for (const auto& device : devices) {
         try {
@@ -258,12 +254,9 @@ void DeviceManager::runHealthCheck() {
                 db_.updateDeviceState(id, 0); // 오프라인 상태로 DB 업데이트
             }
             if (device.protocol_type == ProtocolType::MATTER && state != "UNKNOWN" && state != "OFFLINE") {
-                int activePower_mW = 0;
-                long real_total_mWh = 0;
-
-                if (getDeviceEnergyInfo(id, activePower_mW, real_total_mWh)) {
-                    db_.insertEnergyLog(id, real_total_mWh);
-                    std::cout << "[DeviceManager] 📊 기기(" << id << ") 시계열 데이터 기록: " << real_total_mWh << " mWh" << std::endl;
+                const auto energy = readEnergy(id);
+                if (energy.ok() && db_.insertEnergyLog(id, energy.value->totalEnergy_mWh)) {
+                    std::cout << "[DeviceManager] 📊 기기(" << id << ") 시계열 데이터 기록: " << energy.value->totalEnergy_mWh << " mWh" << std::endl;
                 }
             }
         } catch (const std::exception& e) {
@@ -282,37 +275,61 @@ std::unordered_set<std::string> DeviceManager::activeDeviceIds() {
     return ids;
 }
 
-// 미등록 기기는 값이 없는(UNKNOWN) 것으로 보고 0을 기록한다(기존 동작 유지)
-bool DeviceManager::getDeviceEnergyInfo(const std::string& deviceId, int& out_activePower_mW,long& out_real_total_mWh) {
-    ProtocolDriver* energyDriver = nullptr;
+Result<EnergySnapshot> DeviceManager::readEnergy(const std::string& deviceId) {
+    ProtocolDriver* protocolDriver = nullptr;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (devices_.find(deviceId) == devices_.end()) {
+        auto it = devices_.find(deviceId);
+        if (it == devices_.end()) {
             std::cerr << "[DeviceManager] 전력 조회 실패: 등록되지 않은 기기 (" << deviceId << ")" << std::endl;
-        } else {
-            auto it = drivers_.find(ProtocolType::MATTER);
-            if (it != drivers_.end()) energyDriver = it->second;
+            return Result<EnergySnapshot>::failure(ErrorCode::DeviceNotFound, "device not found");
         }
+        // 기기 자신의 프로토콜 드라이버에 묻는다. 전력 조회를 지원하지 않는 드라이버는 실패를 돌려준다
+        auto driverIt = drivers_.find(it->second.protocol_type);
+        if (driverIt != drivers_.end()) protocolDriver = driverIt->second;
+    }
+    if (!protocolDriver) {
+        std::cerr << "[DeviceManager] 전력 조회 실패: 프로토콜 드라이버 없음 (" << deviceId << ")" << std::endl;
+        return Result<EnergySnapshot>::failure(ErrorCode::Internal, "protocol driver not found");
     }
 
-    out_activePower_mW = 0;
-    long hardware_total_mWh = 0;
-    if (energyDriver) {
-        const auto reading = energyDriver->readEnergy(deviceId); // chip-tool 실행 중이므로 락 밖
-        if (!reading.ok()) {
-            std::cerr << "[DeviceManager] 기기(" << deviceId << ") 전력 조회 실패: " << reading.error.message << std::endl;
-            return false;
-        }
-        out_activePower_mW = static_cast<int>(reading.value->activePower_mW);
-        hardware_total_mWh = static_cast<long>(reading.value->cumulative_mWh);
+    const auto reading = protocolDriver->readEnergy(deviceId); // chip-tool 실행 중이므로 락 밖
+    if (!reading.ok()) {
+        std::cerr << "[DeviceManager] 기기(" << deviceId << ") 전력 조회 실패: " << reading.error.message << std::endl;
+        return Result<EnergySnapshot>::failure(reading.error.code, reading.error.message);
     }
 
-    db_.updateEnergyStat(deviceId, hardware_total_mWh, out_real_total_mWh);
+    // 조회에 성공한 값만 통계에 반영한다. 실패를 0으로 저장하면 다음 정상 조회 때 누적값 전체가 더해진다
+    EnergySnapshot snapshot;
+    snapshot.activePower_mW = reading.value->activePower_mW;
+    if (!db_.updateEnergyStat(deviceId, reading.value->cumulative_mWh, snapshot.totalEnergy_mWh)) {
+        return Result<EnergySnapshot>::failure(ErrorCode::Internal, "energy stat update failed");
+    }
 
-    return true;
+    // 응답의 상태는 조회가 끝난 뒤의 값을 쓴다(그동안 지워졌으면 없는 기기)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto it = devices_.find(deviceId);
+        if (it == devices_.end()) return Result<EnergySnapshot>::failure(ErrorCode::DeviceNotFound, "device removed");
+        snapshot.deviceState = it->second.state;
+    }
+    return Result<EnergySnapshot>::success(snapshot);
 }
-std::vector<EnergyLog> DeviceManager::getDeviceEnergyHistory(const std::string& deviceId, int limit) {
-    return db_.getEnergyHistory(deviceId, limit);
+
+Result<HistoryResult> DeviceManager::getEnergyHistory(const std::string& deviceId, int limit) {
+    HistoryResult history;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto it = devices_.find(deviceId);
+        if (it == devices_.end()) {
+            return Result<HistoryResult>::failure(ErrorCode::DeviceNotFound, "device not found");
+        }
+        history.deviceState = it->second.state;
+    }
+    auto logs = db_.getEnergyHistory(deviceId, limit);
+    if (!logs.ok()) return Result<HistoryResult>::failure(ErrorCode::Internal, logs.error.message);
+    history.logs = std::move(*logs.value);
+    return Result<HistoryResult>::success(std::move(history));
 }
 
 std::unordered_map<ProtocolType, ProtocolDriver*> DeviceManager::protocolDriversSnapshot() {

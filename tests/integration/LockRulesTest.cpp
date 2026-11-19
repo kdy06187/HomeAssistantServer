@@ -175,11 +175,9 @@ TEST_F(LockRulesTest, ConcurrentOperationsFinishWithoutDeadlock) {
     });
     workers.emplace_back([&] {
         waitStart();
-        int power = 0;
-        long total = 0;
         for (int i = 0; i < kIterations; ++i) {
             manager.updateDeviceState(ids[i % ids.size()], i % 3 ? "ON" : "OFFLINE");
-            manager.getDeviceEnergyInfo("M0", power, total);
+            manager.readEnergy("M0");
         }
     });
     startFlag = true;
