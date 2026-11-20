@@ -69,6 +69,9 @@ public:
     }
     void broadcast(const std::string& /*jsonLine*/) override {}
 private:
+    // 노드 번호를 받는 전력 조회. readEnergy가 매핑을 한 번만 읽어 두 조회에 같은 번호를 쓰게 한다
+    std::string readActivePowerText(uint64_t nodeId, bool isManualRequest);
+    std::string readCumulativeEnergyText(uint64_t nodeId, bool isManualRequest);
     std::string mChipToolPath;
     Result<CommissionOutcome> commissionDevice(uint64_t nodeId, const std::string& name, const std::string& manualPincode,
                           const std::string& wifiSsid, const std::string& wifiPassword,

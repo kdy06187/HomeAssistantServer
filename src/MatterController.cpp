@@ -413,21 +413,26 @@ std::string MatterController::readDeviceState(const std::string& rawDeviceId, bo
 }
 // 값 해석 규칙은 ChipToolOutputParser::parseEnergyReading에 있다
 Result<EnergyReading> MatterController::readEnergy(const std::string& deviceId){
-    // 매핑이 없으면 노드 0에 chip-tool을 실행하게 되므로 바로 실패한다
-    if (getNodeId(deviceId) == 0) {
+    // 매핑을 한 번만 읽는다. 두 조회 사이에 삭제돼도 노드 0에 chip-tool을 실행하지 않는다
+    const uint64_t nodeId = getNodeId(deviceId);
+    if (nodeId == 0) {
         return Result<EnergyReading>::failure(ErrorCode::DeviceNotFound, "시리얼 매핑 없음");
     }
-    const std::string activePowerText = getPowerUsage(deviceId);
+    const std::string activePowerText = readActivePowerText(nodeId, false);
     // 첫 조회에서 닿지 못했으면 두 번째 chip-tool 실행(최대 5초)을 생략한다
     if (ChipToolOutputParser::isUnreachableMarker(activePowerText)) {
         return ChipToolOutputParser::parseEnergyReading(activePowerText, "");
     }
-    const std::string cumulativeText = getCumulativeEnergy(deviceId);
+    const std::string cumulativeText = readCumulativeEnergyText(nodeId, false);
     return ChipToolOutputParser::parseEnergyReading(activePowerText, cumulativeText);
 }
 std::string MatterController::getPowerUsage(std::string deviceId, bool isManualRequest){
-    uint64_t nodeId = getNodeId(deviceId);
-
+    return readActivePowerText(getNodeId(deviceId), isManualRequest);
+}
+std::string MatterController::getCumulativeEnergy(std::string deviceId, bool isManualRequest){
+    return readCumulativeEnergyText(getNodeId(deviceId), isManualRequest);
+}
+std::string MatterController::readActivePowerText(uint64_t nodeId, bool isManualRequest){
     // 기기가 현재 페어링 중이면 스킵
     if (isPairing(nodeId)) return "PAIRING";
 
@@ -449,8 +454,7 @@ std::string MatterController::getPowerUsage(std::string deviceId, bool isManualR
     }
     return result;
 }
-std::string MatterController::getCumulativeEnergy(std::string deviceId, bool isManualRequest){
-    const uint64_t nodeIdValue = getNodeId(deviceId);
+std::string MatterController::readCumulativeEnergyText(uint64_t nodeIdValue, bool isManualRequest){
     std::string nodeId = std::to_string(nodeIdValue);
 
     // getPowerUsage와 같은 건너뛰기 규칙

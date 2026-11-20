@@ -58,6 +58,10 @@ if(HAC_BUILD_SERVER)
         "${MATTER_OUT_DIR}/obj/*.a"
     )
 
+    # hac_drivers 링크에 GLIB2_LIBRARIES를 쓰므로 타깃 정의보다 먼저 찾는다(Matter BLE 계층이 GIO를 씀)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(GLIB2 REQUIRED glib-2.0 gio-2.0)
+
     # CHIP·SimpleBLE에 의존하는 프로토콜 드라이버
     add_library(hac_drivers OBJECT
         src/TCPDriver.cpp
@@ -107,10 +111,6 @@ if(HAC_BUILD_SERVER)
     target_link_libraries(HomeAssistantCore PRIVATE hac_core hac_drivers)
     hac_apply_target_options(HomeAssistantCore)
 
-    # 아래 호출은 위 타깃 정의보다 뒤에 있어 GLIB2_* 변수가 위에서는 비어 있다.
-    # 기존 빌드와 동일한 결과를 유지하려고 순서를 그대로 둔다.
-    find_package(PkgConfig REQUIRED)
-    pkg_check_modules(GLIB2 REQUIRED glib-2.0 gio-2.0) # Matter Device Layer에서 종종 사용함
 endif()
 
 # ---- 테스트 ----
