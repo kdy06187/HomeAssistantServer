@@ -79,7 +79,7 @@ svg .l{stroke:var(--sub);stroke-width:1.5;fill:none}
 <details><summary>Q2. 삭제에서 unpair가 <i>예외</i>를 던지면 지금은 어떻게 되나? 바꾼다면 장단점은?</summary>
 <p>지금은 DB 삭제 뒤 예외가 위로 올라가 HTTP 500이 된다(실제로는 지워짐 — V3와 같은 불일치가 예외 경로에 남음). try/catch로 로그 후 true를 돌려주면 응답이 실제 상태와 맞지만, 예상 못 한 예외를 삼켜 버그를 감출 수 있다. 실무에서는 "알려진 실패는 결과값, 예외는 정말 예외"로 나누고, 삼킬 때는 반드시 로그·지표를 남긴다.</p></details>
 <details><summary>Q3. 직접 해 보기: umask(077)이 자식 chip-tool에도 적용되는 이유는?</summary>
-<p>umask는 프로세스 속성이고 <code>fork</code>로 상속되며 <code>execv</code>로 바뀌지 않는다. 그래서 서버 첫 줄에 한 번만 두면 서버가 만드는 DB·등록 파일과 chip-tool이 만드는 <code>/tmp/chip_tool_*</code>가 모두 600이 된다. 확인: 서버를 띄운 뒤 <code>grep Umask /proc/$(pgrep -n HomeAssistantCore)/status</code> → <code>0077</code>.</p></details>
+<p>umask는 프로세스 속성이고 <code>fork</code>로 상속되며 <code>execv</code>로 바뀌지 않는다. 그래서 서버 첫 줄에 한 번만 두면 서버가 만드는 DB·등록 파일과 chip-tool이 만드는 <code>/tmp/chip_tool_*</code>가 모두 600이 된다. 확인: 서버를 띄운 뒤 <code>grep Umask /proc/$(pgrep -f '^./HomeAssistantCore')/status</code> → <code>0077</code>.</p></details>
 </section>
 </main>
 </body>
