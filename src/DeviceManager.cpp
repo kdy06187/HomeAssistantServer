@@ -221,13 +221,13 @@ bool DeviceManager::removeDevice(std::string id){
         devices_.emplace(id, std::move(removedDevice));
         return false;
     }
-    // 드라이버 해제는 자기 락(소켓·파일)을 잡으므로 맵 락을 쥔 채 부르면 교착 위험이 있다
-    bool success = false;
-    if (protocolDriver) {
-        success = protocolDriver->unpairDevice(id);
+    // 드라이버 해제는 자기 락(소켓·파일)을 잡으므로 맵 락을 쥔 채 부르면 교착 위험이 있다.
+    // DB에서 지웠으면 삭제는 끝난 것이다. 오프라인 기기는 해제가 실패하는 게 보통이라 로그만 남긴다
+    if (protocolDriver && !protocolDriver->unpairDevice(id)) {
+        std::cerr << "[DeviceManager] 경고 : 드라이버 해제 실패, 등록 정보는 삭제됨 (" << id << ")" << std::endl;
     }
     std::cout << "[DeviceManager] 기기 삭제 완료 : "<< id << std::endl;
-    return success;
+    return true;
 }
 std::string DeviceManager::getDeviceState(std::string id, bool isManualRefresh) {
     ProtocolDriver* protocolDriver = nullptr;
@@ -264,8 +264,8 @@ void DeviceManager::runHealthCheck() {
             std::string state = this->getDeviceState(id);
             std::cout << "[DeviceManager] 기기 상태 점검 : " << id << " 현재 상태 ➔ [" << state << "]" << std::endl;
             if (state == "UNKNOWN" || state == "OFFLINE") {
+                // OFFLINE 저장은 getDeviceState가 이미 했다. UNKNOWN은 "모름"이라 저장된 상태를 바꾸지 않는다
                 std::cerr << "[DeviceManager] 기기 오프라인 : " << id << std::endl;
-                db_.updateDeviceState(id, 0); // 오프라인 상태로 DB 업데이트
             }
             // 상태를 확인하지 못한 기기(UNKNOWN·OFFLINE·PAIRING·ERROR)는 전력 조회도 건너뛴다
             const bool stateConfirmed = state != "UNKNOWN" && state != "OFFLINE" && state != "PAIRING" && state != "ERROR";
@@ -349,7 +349,7 @@ Result<HistoryResult> DeviceManager::getEnergyHistory(const std::string& deviceI
         history.deviceState = it->second.state;
     }
     auto logs = db_.getEnergyHistory(deviceId, limit);
-    if (!logs.ok()) return Result<HistoryResult>::failure(ErrorCode::Internal, logs.error.message);
+    if (!logs.ok()) return Result<HistoryResult>::failure(logs.error.code, logs.error.message);
     history.logs = std::move(*logs.value);
     return Result<HistoryResult>::success(std::move(history));
 }

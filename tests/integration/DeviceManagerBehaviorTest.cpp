@@ -118,7 +118,8 @@ TEST_F(DeviceManagerBehaviorTest, HealthCheckRecordsEnergyOnlyForOnlineMatterDev
     EXPECT_EQ(database.getEnergyHistory("M_1").value->size(), 1u);
 }
 
-TEST_F(DeviceManagerBehaviorTest, HealthCheckUnknownStateZeroesDatabaseState) {
+// 예전에는 UNKNOWN이면 DB를 OFF(0)로 덮었다. 이제 "모름"은 저장된 상태를 바꾸지 않는다
+TEST_F(DeviceManagerBehaviorTest, HealthCheckUnknownStateKeepsDatabaseState) {
     manager.startCommissioning(ProtocolType::TCP_DIY, "lamp", "");
     manager.executeCommand("FAKE_1", "ON");
     ASSERT_EQ(dbState("FAKE_1"), "ON");
@@ -126,7 +127,7 @@ TEST_F(DeviceManagerBehaviorTest, HealthCheckUnknownStateZeroesDatabaseState) {
 
     manager.runHealthCheck();
 
-    EXPECT_EQ(dbState("FAKE_1"), "OFF");
+    EXPECT_EQ(dbState("FAKE_1"), "ON");
 }
 
 TEST_F(DeviceManagerBehaviorTest, HealthCheckExceptionOnOneDeviceDoesNotSkipTheOthers) {
@@ -158,6 +159,43 @@ TEST_F(DeviceManagerBehaviorTest, ActiveDeviceIdsReflectsRegistrationAndRemoval)
 
 TEST_F(DeviceManagerBehaviorTest, RemoveUnknownDeviceReturnsFalse) {
     EXPECT_FALSE(manager.removeDevice("NOPE"));
+}
+
+// 오프라인 기기는 해제가 실패하지만 DB·메모리에서 지웠으면 삭제 성공이다
+TEST_F(DeviceManagerBehaviorTest, RemoveSucceedsWhenUnpairFails) {
+    manager.addDevice("ARD_1", "lamp", ProtocolType::TCP_DIY, {}, &tcpFake);
+    tcpFake.unpairResult = false;
+
+    EXPECT_TRUE(manager.removeDevice("ARD_1"));
+
+    Device device;
+    EXPECT_FALSE(manager.getDevice("ARD_1", device));
+    EXPECT_EQ(dbState("ARD_1"), "(none)");
+    ASSERT_EQ(tcpFake.unpairedIds.size(), 1u);
+}
+
+// OFFLINE은 getDeviceState 경로에서 한 번 저장된다(재시작 뒤 OFF로 보임)
+TEST_F(DeviceManagerBehaviorTest, HealthCheckOfflineStoresInactiveOnce) {
+    manager.addDevice("ARD_1", "lamp", ProtocolType::TCP_DIY, {}, &tcpFake);
+    ASSERT_TRUE(manager.updateDeviceState("ARD_1", "ON"));
+    tcpFake.stateToReturn = "OFFLINE";
+
+    manager.runHealthCheck();
+
+    EXPECT_EQ(dbState("ARD_1"), "OFF");
+    Device device;
+    ASSERT_TRUE(manager.getDevice("ARD_1", device));
+    EXPECT_EQ(device.state, "OFFLINE");
+}
+
+// 이력 조회의 DB 오류 코드(limit<=0 → InvalidRequest)를 Internal로 바꾸지 않는다
+TEST_F(DeviceManagerBehaviorTest, EnergyHistoryKeepsDbErrorCode) {
+    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {}, &matterFake);
+
+    const auto history = manager.getEnergyHistory("PLUG", 0);
+
+    ASSERT_FALSE(history.ok());
+    EXPECT_EQ(history.error.code, ErrorCode::InvalidRequest);
 }
 
 } // namespace
