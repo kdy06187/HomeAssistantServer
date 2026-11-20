@@ -16,9 +16,12 @@ class MatterController : public ProtocolDriver, public IMessageSender {
 public:
     // chip-tool은 모두 runner로 실행한다(셸 없음). runner는 이 객체보다 오래 살아야 한다.
     // parseSetupPin: 설정 코드 → PIN(실제는 parseManualSetupPin, 테스트는 가짜). 경로는 build/ 기준 기본값
+    // storageDirectory: chip-tool 저장소(fabric 키·KVS). 기본값 /tmp는 tmpfs라 재부팅하면 페어링이 사라지므로
+    // 영구 폴더를 모든 chip-tool 실행에 --storage-directory로 넘긴다. Initialize가 0700으로 만든다
     MatterController(ChipToolRunner& runner, SetupPinParser parseSetupPin,
                      std::string chipToolPath = "../third_party/connectedhomeip/out/host/chip-tool",
-                     std::string configFilePath = "../config/registered_devices.txt");
+                     std::string configFilePath = "../config/registered_devices.txt",
+                     std::string storageDirectory = "../config/chip-tool");
     ~MatterController();
 
     // chip-tool 제한 시간(9번 실기에서 확인)
@@ -112,6 +115,7 @@ private:
     std::vector<std::string> readRegistrationLinesLocked();
     bool writeRegistrationLinesLocked(const std::vector<std::string>& lines);
     std::string mConfigFilePath;
+    std::string mStorageDirectory;
 
     // 페어링 중인 기기의 NodeId를 저장
     std::unordered_set<uint64_t> mPairingNodes;

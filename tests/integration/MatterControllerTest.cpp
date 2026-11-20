@@ -82,7 +82,8 @@ protected:
         fs::create_directories(dir_);
         configPath_ = (dir_ / "registered_devices.txt").string();
         std::ofstream(configPath_) << "SN-1,101\nSN-2,102\n";
-        controller = std::make_unique<MatterController>(runner, fakePinParser, kChipTool, configPath_);
+        storagePath_ = (dir_ / "chip-tool").string();
+        controller = std::make_unique<MatterController>(runner, fakePinParser, kChipTool, configPath_, storagePath_);
         ASSERT_TRUE(controller->Initialize());
     }
     void TearDown() override {
@@ -110,6 +111,8 @@ protected:
 
     fs::path dir_;
     std::string configPath_;
+    std::string storagePath_;
+    std::vector<std::string> storageArgs() const { return {"--storage-directory", storagePath_}; }
     FakeChipToolRunner runner;
     std::unique_ptr<MatterController> controller;
 };
@@ -120,7 +123,7 @@ TEST_F(MatterControllerTest, ControlPassesArgumentArrayWithConfiguredPathAndTime
     EXPECT_TRUE(controller->sendCommand("SN-1", "ON"));
     const auto calls = runner.callsSnapshot();
     ASSERT_EQ(calls.size(), 1u);
-    EXPECT_EQ(calls[0].args, (std::vector<std::string>{kChipTool, "onoff", "on", "101", "1"}));
+    EXPECT_EQ(calls[0].args, (std::vector<std::string>{kChipTool, "onoff", "on", "101", "1", "--storage-directory", storagePath_}));
     EXPECT_EQ(calls[0].timeout, MatterController::kCommandTimeout);
     EXPECT_TRUE(calls[0].stdinText.empty());
 }
@@ -169,6 +172,57 @@ TEST_F(MatterControllerTest, ReadEnergyForUnknownSerialRunsNothing) {
     EXPECT_TRUE(runner.callsSnapshot().empty());
 }
 
+// ---- chip-tool 저장소 ----
+
+// 모든 chip-tool 실행(제어·상태·전력 2종·페어링·시리얼·해제)이 같은 저장소 옵션으로 끝난다
+TEST_F(MatterControllerTest, EveryChipToolCallUsesStorageDirectory) {
+    runner.respond = [](const std::vector<std::string>& sub) {
+        if (startsWith(sub, {"pairing", "ble-wifi"})) return FakeChipToolOutput::ok("Device commissioning completed with success");
+        if (startsWith(sub, {"basicinformation"})) return FakeChipToolOutput::ok("SerialNumber: SN-NEW");
+        if (startsWith(sub, {"onoff", "read"})) return FakeChipToolOutput::ok("Data = true");
+        if (startsWith(sub, {"electricalpowermeasurement"})) return FakeChipToolOutput::ok("ActivePower: 1500");
+        if (startsWith(sub, {"electricalenergymeasurement"})) return FakeChipToolOutput::ok("Energy: 2000");
+        return FakeChipToolOutput::ok("");
+    };
+    EXPECT_TRUE(controller->sendCommand("SN-1", "ON"));
+    EXPECT_TRUE(controller->sendCommand("SN-1", "OFF"));
+    controller->readDeviceState("SN-1", true);
+    controller->readEnergy("SN-1");
+    ASSERT_TRUE(controller->commission(CommissionRequest{"plug", kGoodCode, "wifi", "pw"}, {}).ok());
+    expectedUnpairs_ = 1;
+    EXPECT_TRUE(controller->unpairDevice("SN-2"));
+    waitForRunnerIdle();
+
+    std::set<std::string> kinds;
+    for (const auto& call : runner.callsSnapshot()) {
+        ASSERT_GE(call.args.size(), 4u);
+        EXPECT_EQ(std::vector<std::string>(call.args.end() - 2, call.args.end()), storageArgs()) << call.args[1];
+        kinds.insert(call.args[1] + " " + call.args[2]);
+    }
+    EXPECT_EQ(kinds, (std::set<std::string>{"onoff on", "onoff off", "onoff read", "electricalpowermeasurement read",
+                                            "electricalenergymeasurement read", "pairing ble-wifi",
+                                            "basicinformation read", "pairing unpair"}));
+}
+
+// 저장소 폴더는 Initialize가 0700으로 만들고, 이미 있으면 권한을 0700으로 맞춘다
+TEST_F(MatterControllerTest, InitializeCreatesPrivateStorageDirectory) {
+    ASSERT_TRUE(fs::is_directory(storagePath_));
+    EXPECT_EQ(fs::status(storagePath_).permissions() & fs::perms::all, fs::perms::owner_all);
+
+    fs::permissions(storagePath_, fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read);
+    MatterController again(runner, fakePinParser, kChipTool, configPath_, storagePath_);
+    ASSERT_TRUE(again.Initialize());
+    EXPECT_EQ(fs::status(storagePath_).permissions() & fs::perms::all, fs::perms::owner_all);
+}
+
+// 저장소 자리에 파일이 있으면 초기화 실패(chip-tool이 엉뚱한 곳을 쓰지 않게)
+TEST_F(MatterControllerTest, InitializeFailsWhenStoragePathIsAFile) {
+    const std::string filePath = (dir_ / "not-a-dir").string();
+    std::ofstream(filePath) << "x";
+    MatterController broken(runner, fakePinParser, kChipTool, configPath_, filePath);
+    EXPECT_FALSE(broken.Initialize());
+}
+
 // ---- 커미셔닝 ----
 
 TEST_F(MatterControllerTest, CommissionPairsReadsSerialAndSavesMapping) {
@@ -188,7 +242,7 @@ TEST_F(MatterControllerTest, CommissionPairsReadsSerialAndSavesMapping) {
     // 셸 없이 인자 하나씩: 공백이 든 SSID·비밀번호도 한 인자
     EXPECT_EQ(pairing.args, (std::vector<std::string>{kChipTool, "pairing", "ble-wifi", nodeId, "str:home wifi", "str:p@ss w0rd",
                                                       std::to_string(kGoodPin), "3830", "--paa-trust-store-path",
-                                                      "../paa_certs/paa-root-certs"}));
+                                                      "../paa_certs/paa-root-certs", "--storage-directory", storagePath_}));
     EXPECT_EQ(pairing.timeout, MatterController::kPairingTimeout);
     EXPECT_NE(std::find(pairing.secretsToMask.begin(), pairing.secretsToMask.end(), "p@ss w0rd"), pairing.secretsToMask.end());
     EXPECT_NE(std::find(pairing.secretsToMask.begin(), pairing.secretsToMask.end(), kGoodCode), pairing.secretsToMask.end());
@@ -260,7 +314,7 @@ TEST_F(MatterControllerTest, UnpairRemovesMappingAndFileLineThenRunsUnpairWithSl
     EXPECT_EQ(readConfig(), "SN-2,102\n");
     const auto calls = runner.callsSnapshot();
     ASSERT_EQ(calls.size(), 1u);
-    EXPECT_EQ(calls[0].args, (std::vector<std::string>{kChipTool, "pairing", "unpair", "101"}));
+    EXPECT_EQ(calls[0].args, (std::vector<std::string>{kChipTool, "pairing", "unpair", "101", "--storage-directory", storagePath_}));
     EXPECT_EQ(calls[0].timeout, MatterController::kSlowCommandTimeout);
     EXPECT_EQ(controller->readEnergy("SN-1").error.code, ErrorCode::DeviceNotFound);  // 매핑도 사라짐
 }

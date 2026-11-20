@@ -15,15 +15,18 @@
 #include <cerrno>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
 
 MatterController::MatterController(ChipToolRunner& runner, SetupPinParser parseSetupPin,
-                                   std::string chipToolPath, std::string configFilePath)
+                                   std::string chipToolPath, std::string configFilePath,
+                                   std::string storageDirectory)
     : mChipToolPath(std::move(chipToolPath)),
       mRunner(runner),
       mParseSetupPin(std::move(parseSetupPin)),
-      mConfigFilePath(std::move(configFilePath)) {
+      mConfigFilePath(std::move(configFilePath)),
+      mStorageDirectory(std::move(storageDirectory)) {
 }
 
 MatterController::~MatterController() {
@@ -32,6 +35,17 @@ MatterController::~MatterController() {
 
 // 초기화
 bool MatterController::Initialize(){
+    // chip-tool 저장소 폴더: 없으면 만들고, 있으면 권한을 소유자 전용으로 맞춘다(fabric 키가 들어 있다)
+    if (::mkdir(mStorageDirectory.c_str(), 0700) != 0 && errno != EEXIST) {
+        std::cerr << "[MatterController] chip-tool 저장소 폴더 생성 실패: " << mStorageDirectory
+                  << " (" << std::strerror(errno) << ")" << std::endl;
+        return false;
+    }
+    std::error_code ec;
+    if (!std::filesystem::is_directory(mStorageDirectory, ec) || ::chmod(mStorageDirectory.c_str(), 0700) != 0) {
+        std::cerr << "[MatterController] chip-tool 저장소가 폴더가 아니거나 권한 설정 실패: " << mStorageDirectory << std::endl;
+        return false;
+    }
     std::vector<std::string> fileLines;
     {
         std::lock_guard<std::mutex> fileLock(fileMutex_);
@@ -68,9 +82,12 @@ MatterController::ChipToolOutcome MatterController::runChipTool(const std::vecto
                                                                 const std::vector<std::string>& secretsToMask) {
     // 셸 없이 인자 배열 그대로 실행한다
     std::vector<std::string> args;
-    args.reserve(subcommand.size() + 1);
+    args.reserve(subcommand.size() + 3);
     args.push_back(mChipToolPath);
     args.insert(args.end(), subcommand.begin(), subcommand.end());
+    // 모든 실행이 같은 저장소를 써야 한다. 하나라도 빠지면 그 명령은 /tmp의 다른 fabric을 본다
+    args.push_back("--storage-directory");
+    args.push_back(mStorageDirectory);
     ProcessResult result = mRunner.run(args, "", timeout, secretsToMask);
 
     ChipToolOutcome outcome;
