@@ -128,12 +128,13 @@ Result<CommissionOutcome> TCPDriver::commission(const CommissionRequest& request
     return Result<CommissionOutcome>::failure(ErrorCode::CommissionTimeout, "기기 접속 타임아웃");
 }
 
-void TCPDriver::startServer(int port){
+bool TCPDriver::startServer(int port){
     if (!server_.start(port)) {
         std::cerr << "[TCPDriver] TCP 서버 시작 실패 ( 포트 : " << port << ")" << std::endl;
-        return;
+        return false;
     }
     std::cout << "[TCPDriver] TCP 서버 시작 ( 포트 : " << port << ")" << std::endl;
+    return true;
 }
 
 void TCPDriver::stopServer(){
@@ -150,7 +151,7 @@ bool TCPDriver::unpairDevice(const std::string& deviceId){
     std::cout << "[TCPDriver] 아두이노 연결 해제 완료: " << deviceId << std::endl;
     return true;
 }
-std::string TCPDriver::readDeviceState(const std::string& deviceId, bool isManualRequest){
+std::string TCPDriver::readDeviceState(const std::string& deviceId, bool /*isManualRequest*/){
     // 상태 요청 패킷 생성
     json res = server_.sendAndReceive(deviceId, TcpProtocol::buildGetStateRequest());
     // state가 없거나 문자열이 아니면(숫자 등) 기존 "응답 오류" 경로와 같게 처리한다

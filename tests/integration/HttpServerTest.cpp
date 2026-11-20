@@ -522,6 +522,47 @@ TEST_F(HttpServerTest, E4DeleteSuccessAndMissing) {
     EXPECT_EQ(bad->status, 400);
 }
 
+// 오프라인 TCP 기기(연결 없음 → 해제 실패)도 삭제는 성공으로 답한다
+TEST_F(HttpServerTest, E4DeleteOfflineDeviceStillSucceeds) {
+    addDevice(ProtocolType::TCP_DIY, "ARD_9", "switch");
+    tcpFake.unpairResult = false;
+
+    auto res = post("/api/devices/delete", R"({"deviceId":"ARD_9"})");
+
+    ASSERT_TRUE(res);
+    EXPECT_EQ(res->status, 200);
+    EXPECT_EQ(json::parse(res->body), json::parse(R"({"result":"success","message":"기기 삭제 성공!"})"));
+    Device device;
+    EXPECT_FALSE(manager.getDevice("ARD_9", device));
+}
+
+// 포트를 이미 다른 소켓이 쓰고 있으면 준비되지 않는다(main은 이때 종료한다)
+TEST(HttpServerStartTest, PortInUseIsNotReady) {
+    const int holder = socket(AF_INET, SOCK_STREAM, 0);
+    ASSERT_GE(holder, 0);
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_ANY);  // 서버는 0.0.0.0에 바인드하므로 같은 주소를 막는다
+    addr.sin_port = 0;
+    ASSERT_EQ(bind(holder, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)), 0);
+    ASSERT_EQ(listen(holder, 1), 0);
+    socklen_t len = sizeof(addr);
+    getsockname(holder, reinterpret_cast<sockaddr*>(&addr), &len);
+    const int busyPort = ntohs(addr.sin_port);
+
+    DatabaseManager db;
+    ASSERT_TRUE(db.init(":memory:"));
+    DriverManager drivers;
+    FakeClock clock;
+    DeviceManager manager(db, drivers, clock);
+    HTTPServer server(manager, kToken, busyPort);
+    ASSERT_TRUE(server.start());
+
+    EXPECT_FALSE(server.waitUntilReady(std::chrono::seconds(2)));
+    server.stop();
+    close(holder);
+}
+
 // ---- E5 ----
 
 TEST_F(HttpServerTest, E5StateOfKnownAndUnknownDevice) {

@@ -16,7 +16,10 @@
 #include "Clock.hpp"
 #include <csignal>
 #include <unistd.h>
+#include <sys/stat.h>  // umask
 int main() {
+    // 서버와 자식 chip-tool이 만드는 파일(DB·등록 파일·/tmp의 chip-tool 저장소)을 소유자만 읽게 한다
+    umask(077);
     signal(SIGPIPE, SIG_IGN);
     std::cout << "=== 🏠 홈 어시스턴트 코어 부팅 ===" << std::endl;
 
@@ -40,7 +43,11 @@ int main() {
     DeviceManager manager(database, deviceDrivers, clock);
     // 2. TCP 드라이버 생성 및 포트 8080으로 서버 시작
     TCPDriver tcpDriver;
-    tcpDriver.startServer(8080);
+    // 포트를 못 열면(이전 프로세스가 남아 있는 등) 반쯤 켜진 채 돌지 않고 바로 끝낸다
+    if (!tcpDriver.startServer(8080)) {
+        std::cerr << "❌ TCP 포트 8080을 열 수 없습니다. 서버를 종료합니다." << std::endl;
+        return 1;
+    }
     
     // 3. DeviceManager에 드라이버 등록
     manager.registerDriver(ProtocolType::TCP_DIY, &tcpDriver);
@@ -65,6 +72,11 @@ int main() {
     manager.initFromDatabase();
     HTTPServer httpServer(manager, *apiToken, 8000);
     httpServer.start();
+    // start()는 스레드만 띄운다. listen이 실패하면 run()이 바로 끝나므로 준비 여부로 판단한다
+    if (!httpServer.waitUntilReady(std::chrono::seconds(5))) {
+        std::cerr << "❌ HTTP 포트 8000을 열 수 없습니다. 서버를 종료합니다." << std::endl;
+        return 1;
+    }
 
 
     //  관리 대상 기기 임시 등록
