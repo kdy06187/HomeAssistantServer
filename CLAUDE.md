@@ -37,7 +37,7 @@ cd build && ./HomeAssistantCore
 ### MatterController
 - chip-tool은 `ChipToolRunner`(`ProcessChipToolRunner`)로만 실행합니다: 셸 없이 fork+execv, 인자 배열(`str:` 접두사), 새 프로세스 그룹, 제한 시간(제어·상태·전력 5초, 시리얼·unpair 10초, 페어링 180초) 뒤 SIGTERM→SIGKILL, 출력 1MiB 상한, 비밀값 마스킹.
 - 성공 판정은 **종료 코드 0 + 출력 성공 문구**(실기 2026-11-20에서 모든 명령이 성공 때 0 확인).
-- 시리얼↔nodeId는 `config/registered_devices.txt`(`serial,nodeId`, 임시 파일+fsync+rename). chip-tool 저장소는 `/tmp/chip_tool_*`(공용).
+- 시리얼↔nodeId는 `config/registered_devices.txt`(`serial,nodeId`, 임시 파일+fsync+rename). chip-tool 저장소(fabric 키·KVS)는 모든 실행에 `--storage-directory ../config/chip-tool`(0700, 시작 때 생성)로 넘깁니다. `/tmp`는 tmpfs라 재부팅하면 지워지므로 쓰지 않습니다(SDK 고정 플랫폼 ini 3개만 `/tmp`에 남음).
 
 ### TCP
 - `TcpServer`(수락·연결 맵·상한 32·재접속 교체) + `TcpConnection`(요청·응답 1쌍 락, 1초 마감, 한 줄 4KiB, 마지막 유효 JSON 객체 줄 사용, 무응답이면 연결 닫음). 기기 메시지 바이트는 기존과 같아야 합니다(펌웨어 호환).
