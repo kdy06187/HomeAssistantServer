@@ -6,6 +6,7 @@ build/
 db/home_assistant.db
 config/registered_devices.txt
 config/api_token
+config/chip-tool/
 
 # 로컬 도구 데이터
 .ua/
