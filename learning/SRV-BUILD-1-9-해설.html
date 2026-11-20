@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>실기 시험 해설</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--fg:#1d2330;--sub:#5b6477;--ac:#2f6fed;--code:#0f1523;--codefg:#e6edf7;--bd:#dde1e8;--warn:#e0a030}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#10131a;--card:#181d28;--fg:#e6e9ef;--sub:#9aa4b8;--ac:#6b9cff;--code:#0a0d14;--bd:#2a3142}}
+:root[data-theme="dark"]{--bg:#10131a;--card:#181d28;--fg:#e6e9ef;--sub:#9aa4b8;--ac:#6b9cff;--code:#0a0d14;--bd:#2a3142}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.65 -apple-system,"Noto Sans KR",sans-serif}
+main{max-width:920px;margin:0 auto;padding:20px 16px 60px}
+h1{font-size:1.8rem;margin:.4em 0 .1em}
+h2{font-size:1.25rem;margin:0 0 .6em;color:var(--ac)}
+.lead{color:var(--sub);margin-bottom:20px}
+section{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:18px 20px;margin:16px 0}
+table{border-collapse:collapse;width:100%;font-size:.92rem;display:block;overflow-x:auto}
+th,td{border:1px solid var(--bd);padding:6px 10px;text-align:left;vertical-align:top}
+th{background:rgba(127,127,127,.12)}
+pre{background:var(--code);color:var(--codefg);padding:12px 14px;border-radius:8px;overflow-x:auto;font-size:.85rem;line-height:1.5}
+code{font-family:ui-monospace,Consolas,monospace}
+p code,li code,td code{background:rgba(127,127,127,.18);padding:1px 5px;border-radius:4px;font-size:.88em}
+details{border:1px solid var(--bd);border-radius:8px;padding:6px 12px;margin:8px 0}
+summary{cursor:pointer;font-weight:600}
+svg{width:100%;height:auto;max-width:860px}
+svg text{fill:var(--fg);font-size:13px}
+svg .b{fill:var(--card);stroke:var(--ac);stroke-width:1.5}
+svg .w{fill:rgba(240,160,40,.15);stroke:var(--warn);stroke-width:1.5}
+svg .l{stroke:var(--sub);stroke-width:1.5;fill:none}
+</style>
+</head>
+<body>
+<main>
+<h1>SRV-BUILD-1 9번 해설 — 실기 시험</h1>
+<p class="lead">자동 테스트 237개가 다 통과했는데 왜 실제 기기로 또 시험하나 (3단계 9번, 학습 강도: 균형). 절차서: <code>docs/07_실기시험-1차.md</code></p>
+
+<section>
+<h2>1. 왜 필요한가 — 가짜는 "우리가 믿은 것"만 흉내 낸다</h2>
+<p>8번까지의 테스트는 <b>가짜 러너</b>(<code>FakeChipToolRunner</code>)와 <b>루프백 가짜 스위치</b>를 썼다. 가짜는 우리가 정한 대로만 답한다. 그래서 다음은 테스트로 알 수 없다.</p>
+<table>
+<tr><th>우리가 가정한 것</th><th>틀리면</th><th>절차서 항목</th></tr>
+<tr><td>chip-tool은 성공하면 종료 코드 0</td><td>멀쩡한 기기가 전부 OFFLINE으로 보임 → 결정 25로 그 명령만 출력 문구 판정 복귀</td><td>2.1~2.6</td></tr>
+<tr><td>5초·10초·180초면 충분</td><td>느린 기기가 시간 초과로 실패</td><td>2.0 걸린 시간</td></tr>
+<tr><td>스위치는 모르는 메시지에도 답하거나, 서버가 닫으면 다시 접속</td><td>PC 끄기 한 번에 스위치가 영영 오프라인</td><td>4.1~4.3</td></tr>
+<tr><td>스위치 MAC은 바뀌지 않음</td><td>2차 12번 <code>TCP_&lt;MAC&gt;</code> ID 설계가 무너짐</td><td>5.1</td></tr>
+</table>
+<p>이것을 <b>계약 테스트의 빈칸</b>이라고 한다. 가짜와 진짜가 같은 계약을 지키는지는 진짜로만 확인할 수 있다. 실무에서는 이 결과를 다시 가짜에 반영해(예: "chip-tool은 성공해도 코드 1을 낸다") 자동 테스트를 현실에 맞춘다.</p>
+</section>
+
+<section>
+<h2>2. 어떻게 — 운영을 건드리지 않는 "그림자 환경"</h2>
+<p>서버는 파일을 <code>../config</code>, <code>../db</code>처럼 <b>실행 위치 기준</b>으로 연다. 실행 위치만 바꾸면 코드 수정 없이 다른 파일 세트를 쓰게 된다.</p>
+<svg viewBox="0 0 860 300" role="img" aria-label="운영 환경과 시험 환경 분리 그림">
+  <rect class="b" x="20" y="20" width="370" height="180" rx="10"/>
+  <text x="36" y="44" font-weight="700">운영 (읽기만)</text>
+  <text x="36" y="72">build/HomeAssistantCore  (예전 바이너리)</text>
+  <text x="36" y="96">db/home_assistant.db  (v0, 해시로 불변 확인)</text>
+  <text x="36" y="120">config/api_token, registered_devices.txt</text>
+  <text x="36" y="150">third_party/…/chip-tool, paa_certs</text>
+  <rect class="b" x="470" y="20" width="370" height="180" rx="10"/>
+  <text x="486" y="44" font-weight="700">시험 ~/hac-field (실행 위치 run/)</text>
+  <text x="486" y="72">build-field/HomeAssistantCore  (94a375f)</text>
+  <text x="486" y="96">db/ ← .backup 사본 → 첫 실행에 .bak-v0 + v1</text>
+  <text x="486" y="120">config/ ← 사본(권한 600)</text>
+  <text x="486" y="150">third_party, paa_certs ← 링크</text>
+  <path class="l" d="M390 96 H470" marker-end="url(#a)"/>
+  <text x="400" y="88" font-size="11">복사</text>
+  <path class="l" d="M390 150 H470" marker-end="url(#a)" stroke-dasharray="4 3"/>
+  <text x="400" y="142" font-size="11">링크</text>
+  <rect class="w" x="20" y="225" width="820" height="60" rx="10"/>
+  <text x="36" y="250" font-weight="700">공용이라 주의할 것</text>
+  <text x="36" y="272">포트 8000·8080(동시 실행 불가) · chip-tool KVS /tmp/chip_tool_* (사본 후 되돌림) · 실제 기기·PC</text>
+  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10z" fill="currentColor"/></marker></defs>
+</svg>
+<p>항목마다 <b>준비 → 실행 → 기대 결과 → 확인 → 실패 시 → 결과 칸</b>으로 쓴 이유: 다른 사람이 해도 같은 결과가 나와야(재현성) 시험이 증거가 된다. 기대 결과를 <i>먼저</i> 적어 두면 결과를 보고 해석을 바꾸는 일을 막는다.</p>
+</section>
+
+<section>
+<h2>3. 종료 코드는 어디서 보나</h2>
+<pre><code>chip-tool 끝남 → ProcessResult{exitCode, timedOut, …}
+  ok = 시작 성공 &amp;&amp; 시간 초과 아님 &amp;&amp; 취소 아님 &amp;&amp; exitCode == 0
+  exitCode != 0 이면 로그: [MatterController] chip-tool 비정상 종료 (코드 N)</code></pre>
+<p>서버는 <b>0이 아닐 때만</b> 로그를 남긴다. 그래서 "명령은 성공 + 그 로그 없음" = 0. 정확한 숫자와 시간이 필요하면 서버를 끄고 같은 인자로 직접 돌려 <code>echo $?</code>를 본다(KVS를 두 프로세스가 동시에 쓰지 않게).</p>
+</section>
+
+<section>
+<h2>4. 응용 실습</h2>
+<details><summary>Q1. 2.1에서 켜기는 성공했는데 로그에 "비정상 종료 (코드 1)"이 있다. 무엇을 바꾸고, 무엇은 바꾸지 말아야 하나?</summary>
+<p>결정 25: <b>그 명령(onoff)만</b> 종료 코드 대신 출력 문구 판정으로 되돌린다. 다른 명령(시리얼·페어링)은 실기에서 0이 확인됐으면 그대로 둔다. 그리고 <code>FakeChipToolRunner</code> 테스트에 "성공 출력 + 코드 1 → 성공" 경우를 추가해 현실을 고정한다.</p></details>
+<details><summary>Q2. 포트를 환경 변수로 바꿀 수 있게 하면 이 절차서의 무엇이 달라지나?</summary>
+<p>운영 서버를 끄지 않고 시험 서버를 8001·8081에 띄울 수 있다(승인 명령 하나가 줄어든다). 대신 스위치·앱이 시험 포트로 붙도록 설정을 바꿔야 해서 "실기와 운영이 같은 경로"라는 장점이 줄어든다 — 트레이드오프.</p></details>
+<details><summary>Q3. 직접 해 보기: 1번 마이그레이션 확인 SQL 중 "행 수 비교"가 왜 백업과 새 DB 두 파일에 같은 쿼리를 돌리는가?</summary>
+<p>마이그레이션은 열·인덱스만 추가해야 하고 데이터를 잃으면 안 된다. 백업(이전 상태)과 결과(이후 상태)를 같은 잣대로 재야 "줄어들지 않았다"를 보일 수 있다 — 이전/이후 비교(before/after diff)의 기본형.</p></details>
+</section>
+</main>
+</body>
+</html>
