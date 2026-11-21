@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>2차 10a~10d·10h 해설 — 오류 규약·연결 상한·생명주기·인증 강화</title>
+<title>2차 10a~10h 해설 — 오류 규약·연결 상한·생명주기·인증 강화</title>
 <style>
 :root{--bg:#f6f7f9;--card:#fff;--fg:#1d2330;--sub:#5b6477;--ac:#2f6fed;--code:#0f1523;--codefg:#e6edf7;--bd:#dde1e8;--ok:#2f9e5b;--bad:#d04040;--warn:#c27b12}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#10131a;--card:#181d28;--fg:#e6e9ef;--sub:#9aa4b8;--ac:#6b9cff;--code:#0a0d14;--bd:#2a3142}}
@@ -42,8 +42,8 @@ svg .arrow{color:var(--sub)}
 </head>
 <body>
 <main>
-<h1>2차 10a~10d 해설 — HTTP 서버를 "튼튼하게"</h1>
-<p class="lead">커밋 5b4f352(10a) · a76e6ed(10b) · 7932854(10c) · 0642c27(10d) · b3b3c1d(10h 보완, 7절). 학습 강도: 균형. 설계 근거: <code>docs/02_설계.md</code> 3.5(오류 규약)·3.7(HTTP 보안 규칙).</p>
+<h1>2차 10a~10h 해설 — HTTP 서버를 "튼튼하게"</h1>
+<p class="lead">커밋 5b4f352(10a) · a76e6ed(10b) · 7932854(10c) · 0642c27(10d) · b3b3c1d(10h 보완, 7절) · f70fcb9(10e) · c31f431(10f) · de94827(10g) (8절). 학습 강도: 균형. 설계 근거: <code>docs/02_설계.md</code> 3.5(오류 규약)·3.7(HTTP 보안 규칙).</p>
 
 <section>
 <h2>1. 한눈에 보기</h2>
@@ -186,6 +186,7 @@ void HTTPServer::stop(){
 <div><b>왜</b><br>G6(시작·종료 중복 호출 시 <code>std::thread</code> 예외·종료)와 T6(<code>stop</code>이 bind 전에 불려 무시되는 경합)을 막는다. <code>mServer-&gt;stop()</code>은 listen 전에 부르면 아무 효과가 없어서, run이 끝날 때까지 5ms마다 반복 호출한다. 시험: <code>ConcurrentStartsLetExactlyOneWin</code>, <code>StopRightAfterStartRepeatedlyNeverHangs</code>.</div>
 <div><b>빼면</b><br>드물게 터지는 크래시나 영원히 안 끝나는 종료. 시험으로 재현해야만 보이는 "경합 조건" 버그다.</div>
 </div>
+<div class="warn"><b>10e(H15) 이후 사실(8-7)</b>: <code>start()</code>가 <code>bind_to_port</code>를 직접 호출해 바인딩 결과를 바로 반환하고, <code>stop()</code>은 <code>server.stop()</code>+<code>join</code> 한 번이다(위 반복 루프는 없어짐).</div>
 <div class="warn"><b>10h에서 바뀐 점(7절)</b>: 위 코드는 10c 시점이다. 지금은 <code>mServer</code>·<code>mHasRunFinished</code> 대신 <code>shared_ptr&lt;RunState&gt;</code>를 쓰고(H2), 이미 실행 중이거나 포트가 범위 밖이면 <code>false</code>, 반환값은 <code>mServerThread.joinable()</code>이다. <code>TcpServer::start</code>도 재호출 시 <code>true</code>가 아니라 <code>false</code>를 돌려준다(H12). 시작 로그는 <code>start()</code>가 아니라 <code>run()</code>의 bind 성공 직후에 찍힌다(H9).</div>
 <p>락 안에서 <code>join</code>까지 하므로 설계 주석대로 <b>다른 락과 겹쳐 잡지 않는다</b>(교착 방지). <code>TcpServer</code>(8080)도 같은 패턴을 적용했다(<code>lifecycleMutex_</code>, 스레드 생성 실패 시 <code>running_</code> 되돌리기). 실패 로그는 <code>errno</code>를 <code>close</code> 호출 전에 <code>cause</code>로 저장한다(close가 errno를 덮어쓰기 때문). httplib는 실패 원인을 안 알려 주므로 <code>diagnoseBindErrno</code>가 같은 조건으로 소켓을 한 번 더 bind해 본다.</p>
 
@@ -242,8 +243,8 @@ bool recordFailure() {                                 // AuthFailureMonitor
 <details><summary>정답</summary>읽기·쓰기 타임아웃은 소켓에서 바이트를 기다리는 시간만 센다. 요청을 다 받은 뒤 핸들러가 도는 동안은 소켓 대기가 아니므로 시계가 안 돈다. 핸들러 전체 제한은 이 설정으로 안 되고, 핸들러 안에서 별도 제한(예: 기기 호출 타임아웃)을 걸어야 한다.</details></div>
 <div class="q"><b>Q2.</b> 풀이 8개인데 느린 연결 8개가 헤더만 보내고 멈추면 어떻게 되나? 무엇이 이 상태를 풀어 주고, 얼마나 걸리나?
 <details><summary>정답</summary>모든 작업 스레드가 묶여 새 요청이 대기한다. 읽기 타임아웃 5초에 연결이 400으로 응답되고, keep-alive 대기까지 합쳐 약 10초에 소켓이 닫혀 스레드가 풀린다. 그동안은 서비스가 막히므로 이 설정은 "완전한 방어"가 아니라 "피해 시간 상한"이다(그래서 풀 크기와 타임아웃을 함께 정한다).</details></div>
-<div class="q"><b>Q3.</b> <code>stop()</code>이 서버의 <code>stop()</code>(10h 이후 <code>state-&gt;server.stop()</code>)을 한 번만 부르지 않고 <code>mHasRunFinished</code>가 될 때까지 반복하는 이유는? 락(<code>mLifecycleMutex</code>)을 빼면 어떤 호출 조합이 위험한가?
-<details><summary>정답</summary>run()이 bind·listen에 들어가기 전에 stop이 불리면 httplib의 stop이 무시되어 신호를 놓치고 join이 영원히 대기한다(T6). 락이 없으면 start 동시 2회(스레드 대입 중복 → 비정상 종료), stop 동시 2회(같은 스레드 이중 join), start와 stop이 겹치는 경우가 위험하다(G6).</details></div>
+<div class="q"><b>Q3.</b> <code>stop()</code>이 서버의 <code>stop()</code>(10h 이후 <code>state-&gt;server.stop()</code>)을 10c 시점에는 <code>mHasRunFinished</code>가 될 때까지 반복했는데, 지금은 왜 한 번이면 되나(H15)? 락(<code>mLifecycleMutex</code>)을 빼면 어떤 호출 조합이 위험한가?
+<details><summary>정답</summary>10c 때는 run()이 bind·listen에 들어가기 전에 stop이 불리면 httplib의 stop이 무시되어 join이 영원히 대기할 수 있었다(T6). 지금은 <code>start()</code>가 bind를 끝낸 뒤에야 스레드를 만들어 소켓이 이미 열려 있으므로 stop 한 번이 항상 듣는다. 락이 없으면 start 동시 2회(스레드 대입 중복 → 비정상 종료), stop 동시 2회(같은 스레드 이중 join), start와 stop이 겹치는 경우가 위험하다(G6).</details></div>
 <div class="q"><b>Q4.</b> <code>AuthFailureMonitor</code>가 "10회까지는 false, 11번째 true, 이후 false"인데 <code>mWarned = false</code>로 되돌리는 코드는 어디서, 왜 필요한가? 이 줄을 빼면 어떤 시험이 깨지나?
 <details><summary>정답</summary>실패 수가 10 이하로 내려간 호출(<code>size() &lt;= kThreshold</code> 분기)에서 되돌린다. 안 그러면 한 번 경고한 뒤 영원히 경고가 없어서 "조용해진 뒤 다시 공격"을 알릴 수 없다. <code>WarnsAgainAfterCalmingDown</code> 시험이 깨진다.</details></div>
 </section>
@@ -285,16 +286,16 @@ return true;</pre>경계 질문: <code>&gt;= kWindow</code>를 <code>&gt; kWindo
 <h3>실습 B (응용): "같은 포트 두 인스턴스" 시험을 직접 설계하기</h3>
 <p><b>목표</b>: 10b의 포트 옵션 결정을 시험으로 증명하는 법을 익힌다.<br>
 <b>할 일</b>: 새 시험 파일 사본(<code>learning/exercise-port/</code>)에 아래 세 가지를 설계해서 써 본다(원본 <code>HttpServerLimitsTest.cpp</code>는 보기만 한다).<br>
-<b>완료 기준</b>: (1) 서버 A 실행 중 같은 포트에 서버 B <code>start()</code> 후 <code>waitUntilReady</code>가 false (2) A <code>stop()</code> 직후 B가 같은 포트에서 ready=true (3) 두 서버를 한 번 더 시도해도 매번 같은 결과(반복성 확인).<br>
+<b>완료 기준</b>: (1) 서버 A 실행 중 같은 포트에 서버 B <code>start()</code>가 false이고 <code>waitUntilReady</code>도 false (2) A <code>stop()</code> 직후 B가 같은 포트에서 ready=true (3) 두 서버를 한 번 더 시도해도 매번 같은 결과(반복성 확인).<br>
 <b>실행</b>: build-dev에서 해당 시험만 필터로 실행한다. 포트는 <code>findFreePort()</code>로 얻고 8000·8080은 쓰지 않는다.</p>
-<details><summary>힌트</summary>원본 <code>SecondServerOnSamePortFailsToBecomeReady</code>를 읽어 보면 서버 두 개를 같은 <code>port</code>로 만들고 두 번째의 <code>start()</code>/<code>waitUntilReady</code> 결과를 본다. 두 번째 <code>start()</code> 자체는 true일 수 있다(스레드는 만들어지고 bind가 실패하므로). 실패는 <code>waitUntilReady</code>가 알려 준다는 점이 포인트다.</details>
+<details><summary>힌트</summary>원본 <code>SecondServerOnSamePortFailsToBecomeReady</code>를 읽어 보면 서버 두 개를 같은 <code>port</code>로 만들고 두 번째의 <code>start()</code>/<code>waitUntilReady</code> 결과를 본다. 10c~10h 시점에는 두 번째 <code>start()</code>가 true일 수 있었고 실패는 <code>waitUntilReady</code>로 알았다. 10e(H15) 이후로는 <code>start()</code>가 바로 false를 돌려준다.</details>
 <details><summary>정답 스케치</summary><pre>port = findFreePort();
 HTTPServer a(manager, kToken, port), b(manager, kToken, port);
 ASSERT_TRUE(a.start());  ASSERT_TRUE(a.waitUntilReady(3s));
-b.start();
-EXPECT_FALSE(b.waitUntilReady(1s));   // SO_REUSEADDR만이라 bind 실패
+EXPECT_FALSE(b.start());              // 10e 이후: bind 실패를 start()가 바로 false로 알림
+EXPECT_FALSE(b.waitUntilReady(1s));   // 시작 성공한 적 없음
 a.stop();
-ASSERT_TRUE(b.start());               // 바인딩 실패로 끝난 b를 다음 start가 정리 후 재시작
+ASSERT_TRUE(b.start());               // 실패했던 b도 다시 start 가능
 EXPECT_TRUE(b.waitUntilReady(3s));    // 중지 직후 재사용 가능(SO_REUSEADDR)
 b.stop();</pre>생각해 볼 질문: 만약 <code>SO_REUSEPORT</code>를 다시 켜면 (1)번 결과가 어떻게 바뀌나? (둘 다 ready=true가 되어 시험이 실패해야 정상. 이게 "시험이 설계 결정을 지킨다"는 뜻이다.)</details>
 </section>
@@ -387,7 +388,7 @@ bool HTTPServer::waitUntilReady(std::chrono::milliseconds timeout){
 <div><b>왜</b><br>대기 루프(최대 수 초)를 락 안에서 돌리면 그동안 start가 막히고, 락 없이 돌리면 start가 객체를 바꿀 때 경쟁이 난다. <code>shared_ptr</code>는 "내가 쥐고 있는 동안은 안 사라진다"를 보장해 둘 다 피한다. 원칙: <b>락은 짧게, 오래 걸리는 대기·join은 락 밖</b>(설계 락 표의 <code>mRunStateMutex</code> 행). <code>stop()</code>은 생명주기 락을 쥔 쪽만 <code>mRunState</code>를 바꾸므로 락 없이 읽는다.</div>
 <div><b>빼면</b><br>start와 waitUntilReady가 겹칠 때 해제된 객체 접근(드물게 크래시)이나, 락으로 막으면 대기 중 start 지연. 시험: <code>HttpServerLifecycleTest</code>.</div>
 </div>
-<p>같은 변경으로 <b>H9</b>(시작 로그 위치)도 바뀌었다. "HTTP 서버 시작 ..." 로그를 <code>start()</code>가 아니라 <code>run()</code>에서 <code>bind</code>가 성공한 뒤·<code>listen</code> 직전에 찍는다. 이제 바인딩이 실패하면 "시작" 로그가 아예 안 나오고(전에는 start()에서 무조건 찍혀 거짓말이었다), 로그는 항상 <code>waitUntilReady</code>가 true가 되기보다 앞선다. 또 <code>logBindFailure</code>는 "바인딩/리슨 실패"로 문구를 고쳐, 진단 bind가 성공해도 원인이 listen 단계일 수 있음을 밝힌다.</p>
+<p>같은 변경으로 <b>H9</b>(시작 로그 위치)도 바뀌었다. "HTTP 서버 시작 ..." 로그를 <code>start()</code>가 아니라 <code>bind</code>가 성공한 뒤에 찍는다(10h 때는 <code>run()</code>, 10e 이후로는 <code>start()</code> 안, 스레드 생성 직전). 이제 바인딩이 실패하면 "시작" 로그가 아예 안 나오고(전에는 start()에서 무조건 찍혀 거짓말이었다), 로그는 항상 <code>waitUntilReady</code>가 true가 되기보다 앞선다. 또 <code>logBindFailure</code>는 "바인딩/리슨 실패"로 문구를 고쳐, 진단 bind가 성공해도 원인이 listen 단계일 수 있음을 밝힌다.</p>
 
 <h3>7-5. H12 — <code>start</code> 재호출 규약 통일</h3>
 <pre class="before">// TcpServer::start
@@ -397,7 +398,7 @@ if (!mHasRunFinished) return false;   // 이미 실행 중이면 false  -> 두 �
 <pre class="after">// TcpServer::start
 if (running_) return false;     // 이미 실행 중: 이번 호출이 시작한 것이 아니다
 // 규약(설계 3.4): true = "이번 호출이 시작했다". 동시 호출 중 정확히 하나만 true</pre>
-<p>왜: 규약이 다르면 호출하는 쪽이 서버마다 다른 의미를 외워야 하고, "동시에 여러 번 start해도 한 번만 시작" 같은 성질을 시험하기도 어렵다. <code>false</code>를 "이미 실행 중이거나 시작 실패"로 뭉뚱그려도 main은 start를 한 번만 부르므로 <code>false</code>는 곧 실패로 읽으면 된다. 같은 변경에서 포트 범위 검사(HTTP 1~65535, TCP 0~65535, 0은 시험용 임의 포트)를 넣고, <code>TcpServer::boundPort_</code>를 <code>atomic</code>으로 바꿔 stop 후 0이 되게 했다(다른 스레드가 읽어도 안전). HTTPServer의 <code>start()</code>는 마지막에 <code>mServerThread.joinable()</code>을 반환해 스레드 생성 실패도 false가 된다. 이 페이지 3-3의 코드 조각은 10c 시점이라 이 반환값 규칙 이전의 모습이다.</p>
+<p>왜: 규약이 다르면 호출하는 쪽이 서버마다 다른 의미를 외워야 하고, "동시에 여러 번 start해도 한 번만 시작" 같은 성질을 시험하기도 어렵다. <code>false</code>를 "이미 실행 중이거나 시작 실패"로 뭉뚱그려도 main은 start를 한 번만 부르므로 <code>false</code>는 곧 실패로 읽으면 된다. 같은 변경에서 포트 범위 검사(HTTP 1~65535, TCP 0~65535, 0은 시험용 임의 포트)를 넣고, <code>TcpServer::boundPort_</code>를 <code>atomic</code>으로 바꿔 stop 후 0이 되게 했다(다른 스레드가 읽어도 안전). HTTPServer의 <code>start()</code>는 10e 이후 바인딩 성공·스레드 생성 성공일 때만 true를 돌려준다. 이 페이지 3-3의 코드 조각은 10c 시점이라 이 반환값 규칙 이전의 모습이다.</p>
 
 <h3>7-6. H7 — 토큰 파일 권한 비트 (0600, 07177, <code>S_ISREG</code>)</h3>
 <pre class="after">if (!S_ISREG(fileInfo.st_mode)) { ... return std::nullopt; }          // 일반 파일만(디렉터리·FIFO·장치 거부)
@@ -437,6 +438,157 @@ TEST(Practice, OverlongAndSurrogateDeviceNameRejected) {
         EXPECT_FALSE(parseCommission(body).ok());
     }
 }</pre>생각해 볼 질문: <code>"\xC1\xBF"</code>는 유효 시작 바이트 검사 단계에서, <code>"\xED\xBF\xBF"</code>는 두 번째 바이트 범위(<code>ED</code> 뒤는 <code>80..9F</code>) 검사 단계에서 각각 걸린다. 왜 둘이 다른 단계에서 걸리는가? 앞의 가운데 위치 시험(<code>"10.0.\0" "0.5"</code>)에서 문자열 리터럴을 둘로 쪼갠 이유는? (<code>\0</code> 바로 뒤에 숫자가 오면 8진수 이스케이프로 이어 읽히기 때문)</details>
+</section>
+<section id="e10">
+<h2>8. 10e~10g — 응답을 "값"으로, 오류를 한 표로, 바인딩 주소를 한 함수로 (커밋 f70fcb9 · c31f431 · de94827)</h2>
+<div class="warn"><b>14번 전 배포 금지</b>: 응답 모양이 v2.0으로 바뀌어 앱(v1.0 기대)과 맞지 않는다. 앱 쪽 수정이 끝나기 전에는 운영(8000)에 올리지 않는다.</div>
+
+<h3>8-1. 한눈에 보기</h3>
+<ul>
+<li><b>무엇을</b>: 핸들러가 <b>문자열 대신 값(<code>ApiResponse</code> = 상태 코드 + JSON)</b>을 돌려준다. 직렬화·401·예외→500·Content-Type은 <code>addRoute</code> 래퍼 한 곳이 맡는다. 오류는 <code>ErrorCode</code> → 상태 코드 한 표(I-05)로 정한다.</li>
+<li><b>왜</b>: 전에는 핸들러가 JSON 문자열을 만들고, 본문에 <code>"error"</code>라는 글자가 있으면 400으로 바꿨다. 기기 이름이 <code>error</code>여도 오류로 보이고, 오류인데 글자가 다르면 200이 나가는 취약한 판정이었다.</li>
+<li><b>덤</b>: 10g에서 <code>HAC_TCP_BIND</code>(8080 쪽 바인딩 주소)를 HTTP와 같은 해석 함수로 읽는다.</li>
+</ul>
+<table>
+<tr><th>파일</th><th>역할</th><th>변경 요약</th></tr>
+<tr><td><code>include/ApiResponse.hpp</code></td><td>핸들러 반환값</td><td>신규. <code>ok(json, status)</code> / <code>error(ErrorCode)</code></td></tr>
+<tr><td><code>src/ErrorMapping.cpp</code></td><td>오류 표</td><td><code>ErrorCode</code> → 상태·코드·문구. <code>buildErrorJson</code> 추가</td></tr>
+<tr><td><code>src/HTTPServer.cpp</code></td><td>라우트·래퍼</td><td>핸들러 전부 <code>ApiResponse</code> 반환, <code>controlResponseFor</code>, 래퍼가 401·예외 처리, <code>start()</code>가 <code>bind_to_port</code> 직접 호출(H15), 없는 경로 404·413 봉투</td></tr>
+<tr><td><code>src/DeviceManager.cpp</code></td><td>전력 조회</td><td><code>readEnergy</code>에 TCP 기기 분기(<code>UnsupportedOperation</code>)와 실패 코드 정리(<code>DeviceUnreachable</code>)</td></tr>
+<tr><td><code>src/RequestValidation.cpp</code></td><td>입력 검증</td><td><code>parseBindAddress</code>: 환경 변수 문자열 → IPv4(빈 값=0.0.0.0), HTTP·TCP 공용</td></tr>
+<tr><td><code>src/main.cpp</code></td><td>시작</td><td><code>HAC_TCP_BIND</code>를 읽어 <code>TCPDriver</code> → <code>TcpServer::start</code>로 전달</td></tr>
+<tr><td><code>tests/integration/HttpServerTest.cpp</code> 외</td><td>시험</td><td>E1~E7 상태·키 확인, 도우미를 <code>tests/support</code>로(H16)</td></tr>
+</table>
+
+<h3>8-2. 흐름 그림 — 요청이 지나가는 길</h3>
+<svg viewBox="0 0 880 300" role="img" aria-label="요청이 인증 래퍼, 핸들러, 직렬화 단계를 거쳐 응답이 되는 흐름">
+  <defs><marker id="e1a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10z" fill="currentColor"/></marker></defs>
+  <g class="arrow">
+  <rect class="b" x="10" y="100" width="100" height="56" rx="8"/><text x="28" y="125">HTTP 요청</text><text x="28" y="144" font-size="12">+ 토큰</text>
+  <rect class="y" x="160" y="100" width="150" height="56" rx="8"/><text x="172" y="123" font-weight="700">addRoute 래퍼</text><text x="172" y="143" font-size="12">① 인증 확인</text>
+  <rect class="g" x="370" y="100" width="170" height="56" rx="8"/><text x="382" y="123" font-weight="700">핸들러</text><text x="382" y="143" font-size="12">ApiResponse{status, json}</text>
+  <rect class="y" x="600" y="100" width="150" height="56" rx="8"/><text x="612" y="123" font-weight="700">래퍼(뒷부분)</text><text x="612" y="143" font-size="12">dump + Content-Type</text>
+  <rect class="b" x="780" y="100" width="90" height="56" rx="8"/><text x="800" y="132">응답</text>
+  <path class="l" d="M110 128H158" marker-end="url(#e1a)"/><path class="l" d="M310 128H368" marker-end="url(#e1a)"/>
+  <path class="l" d="M540 128H598" marker-end="url(#e1a)"/><path class="l" d="M750 128H778" marker-end="url(#e1a)"/>
+  <rect class="r" x="160" y="200" width="150" height="46" rx="8"/><text x="172" y="221">401 UNAUTHORIZED</text><text x="172" y="238" font-size="12">+ WWW-Authenticate</text>
+  <path class="ld" d="M235 156V198" marker-end="url(#e1a)"/><text x="245" y="182" font-size="12">토큰 틀림</text>
+  <rect class="r" x="440" y="200" width="150" height="46" rx="8"/><text x="452" y="221">500 INTERNAL_ERROR</text><text x="452" y="238" font-size="12">고정 문구(내부 정보 없음)</text>
+  <path class="ld" d="M455 156V198" marker-end="url(#e1a)"/><text x="300" y="182" font-size="12" >예외 발생</text>
+  <path class="ld" d="M310 223H438"/><path class="ld" d="M590 223H675V158" marker-end="url(#e1a)"/>
+  <text x="10" y="40" font-weight="700">핸들러는 "무엇을 답할지"만, 래퍼는 "어떻게 내보낼지"만</text>
+  <text x="10" y="62" font-size="12">오류 응답도 같은 출구(직렬화)를 지난다 → 모든 응답의 모양과 Content-Type이 한 곳에서 정해진다</text>
+  </g>
+</svg>
+
+<h3>8-3. 코드 해설 — ApiResponse 전후</h3>
+<pre class="before">// before(10d까지): 문자열을 만들고, 본문 글자로 오류를 "추측"
+addRoute(server, Get, "/api/devices/.../energy", [this](const httplib::Request&amp; req) {
+    std::string jsonResponse = handleGetEnergy(req.matches[1]);          // 문자열 본문
+    if (jsonResponse.find("\"error\"") != std::string::npos) {           // 글자 검색으로 오류 판정
+        res.status = 400;
+    }
+    res.set_content(jsonResponse, "application/json");                  // 핸들러마다 반복
+});
+// 핸들러: return R"({"error": "등록되지 않은 기기입니다."})";            // 오류도 상태 코드 정보가 없음</pre>
+<pre class="after">// after(10e): 핸들러는 값을 돌려준다
+struct ApiResponse {
+    int httpStatus = 200;
+    nlohmann::json body;
+    static ApiResponse ok(nlohmann::json body, int httpStatus = 200);
+    static ApiResponse error(ErrorCode code) {      // 상태·본문은 ErrorMapping이 정한다
+        return {ErrorMapping::describe(code).httpStatus, ErrorMapping::buildErrorJson(code)};
+    }
+};
+// 핸들러:  return ApiResponse::error(ErrorCode::DeviceNotFound);        // 404 + {"error":{"code","message"}}
+// 래퍼(addRoute 안, 한 번만):
+if (!mAuthenticator-&gt;isAuthorized(...)) { writeApiResponse(res, ApiResponse::error(ErrorCode::Unauthorized)); ...return; }
+try { writeApiResponse(res, handler(req)); }
+catch (const std::exception&amp; e) { /* 로그(정제) */ respondInternalError(res); }   // 500 고정 문구</pre>
+<div class="wwb">
+<div><b>무엇을</b><br>핸들러가 <b>값</b>(상태 코드 + JSON)을 돌려주고, 래퍼 한 곳이 <code>dump()</code>·Content-Type·401·예외→500을 처리한다.</div>
+<div><b>왜</b><br>문자열 판정은 "본문에 <code>error</code>가 들어 있나"를 보므로 정상 데이터에 그 글자가 있으면 오판하고, 오류 종류(404/409/502)를 구분할 길도 없다. 값으로 돌려주면 상태 코드가 타입에 담겨 컴파일러·시험이 확인한다. 반복 코드가 사라지고 예외 문구(내부 정보 비노출)가 한 곳에서 보장된다.</div>
+<div><b>빼면</b><br>래퍼를 빼면 핸들러마다 인증·예외 처리를 복사해야 하고, 하나만 빠뜨려도 그 라우트가 인증 없이 열리거나 예외 메시지가 샌다. 시험: <code>EveryRouteRejectsMissingOrWrongToken</code>.</div>
+</div>
+
+<h3>8-4. ErrorCode → 상태 코드 한 표 (I-05)</h3>
+<table>
+<tr><th>ErrorCode</th><th>상태</th><th>code 문자열</th><th>쓰이는 곳</th></tr>
+<tr><td>InvalidRequest · UnsupportedOperation</td><td>400</td><td>INVALID_REQUEST · UNSUPPORTED_OPERATION</td><td>JSON·필드 오류, 허용 안 된 명령 / TCP 기기 전력 조회</td></tr>
+<tr><td>Unauthorized</td><td>401</td><td>UNAUTHORIZED</td><td>래퍼의 인증 실패</td></tr>
+<tr><td>NotFound · DeviceNotFound · JobNotFound</td><td>404</td><td>NOT_FOUND · DEVICE_NOT_FOUND · JOB_NOT_FOUND</td><td>없는 경로·형식 틀린 deviceId / 없는 기기 / 없는 작업</td></tr>
+<tr><td>CommandBlocked · CommissionBusy</td><td>409</td><td>COMMAND_BLOCKED · COMMISSION_BUSY</td><td>드라이버가 명령을 막음 / 다른 등록 진행 중</td></tr>
+<tr><td>DeviceUnreachable</td><td>502</td><td>DEVICE_UNREACHABLE</td><td>기기가 응답하지 않음, 전력 읽기 실패</td></tr>
+<tr><td>Internal(·None)</td><td>500</td><td>INTERNAL_ERROR</td><td>예외, 내부 불일치</td></tr>
+<tr><td>CommissionFailed · Timeout · Cancelled · AlreadyRegistered</td><td>200</td><td>(각 이름)</td><td>등록 "작업 결과"를 담는 값(13번 비동기 등록에서 사용)</td></tr>
+</table>
+<p>표가 <code>switch</code> 하나라서 새 <code>ErrorCode</code>를 추가하면 컴파일러가 "처리 안 한 값"을 경고한다. 413은 <code>ErrorCode</code>에 없는 httplib 전용 오류라 예외로 <code>kPayloadTooLargeBody</code> 상수를 쓴다(오류 핸들러가 빈 본문을 채움).</p>
+
+<h3>8-5. E2 — <code>controlResponseFor</code>: 결과를 200/202/409/502로</h3>
+<pre class="after">ApiResponse controlResponseFor(const CommandResult&amp; result, const std::string&amp; deviceId, const std::string&amp; command) {
+    switch (result.outcome) {
+        case CommandOutcome::Succeeded:  // 200 {deviceId, state}
+            return ApiResponse::ok(json{{"deviceId", deviceId}, {"state", result.state}});
+        case CommandOutcome::Accepted:   // 202: 지연 수락, state는 "바뀌기 전" 상태
+            return ApiResponse::ok(json{{"deviceId", deviceId}, {"state", result.state},
+                       {"pendingCommand", command}, {"delaySeconds", result.delaySeconds}}, 202);
+        case CommandOutcome::Failed: break;
+    }
+    return ApiResponse::error(result.error.code);   // 409 COMMAND_BLOCKED / 502 DEVICE_UNREACHABLE / 404 ...
+}</pre>
+<div class="wwb">
+<div><b>무엇을</b><br>DeviceManager가 돌려준 <code>CommandResult</code>(성공/수락/실패)를 상태 코드로 번역한다. 실패는 따로 분기하지 않고 8-4의 표에 맡긴다.</div>
+<div><b>왜</b><br>"기기가 곧 바꿀 예정"(202)과 "이미 바꿈"(200)을 앱이 구분해야 화면에 대기 표시를 할 수 있다. 번역을 함수 하나로 모으면 시험이 <code>CommandResult</code>만 만들어 넣어 보면 된다. <code>switch</code>에 <code>default</code>가 없어 새 outcome이 생기면 컴파일러가 알려 준다.</div>
+<div><b>빼면</b><br>모든 결과가 200으로 나가 "명령이 막혔는데 성공으로 보임"이 된다. 시험: <code>E2SuccessReturns200WithDeviceIdAndNewState</code>, <code>E2UnreachableDeviceReturns502</code>.</div>
+</div>
+
+<h3>8-6. E3·E4는 왜 v1.0 본문을 남겼나, 그리고 10g</h3>
+<ul>
+<li><b>E3(등록)·E4(삭제)</b>: 입력 오류(JSON·필드·검증)만 400 오류 봉투로 바꿨고, <b>성공·실패 본문은 v1.0 그대로</b>다. 이유: <code>DeviceManager::startCommissioning</code>·<code>removeDevice</code>가 <b>bool만</b> 돌려줘서 "왜 실패했나(이미 등록됨 / 기기 응답 없음 / DB 오류)"를 핸들러가 모른다. 모르는 채로 상태 코드를 지어내면 거짓 응답이 된다. 반환 타입을 <code>Result</code>로 바꾸는 일은 12a(삭제)·13번(비동기 등록)에서 한다. "모르는 것은 추측하지 않는다"가 이유다.</li>
+<li><b>10g <code>parseBindAddress</code></b>: 환경 변수 값(<code>nullptr</code>·빈 문자열 = 미설정 → <code>0.0.0.0</code>, 값이 있는데 IPv4가 아니면 실패)을 해석하는 함수가 <code>RequestValidation</code>에 하나 있고, <code>HAC_HTTP_BIND</code>와 <code>HAC_TCP_BIND</code>가 함께 쓴다. 형식 오류면 main이 서버를 시작하지 않는다(조용히 0.0.0.0으로 열면 의도보다 넓게 노출되므로 "실패가 안전한 쪽"). 시험은 <code>127.0.0.1</code>로 열었을 때 <code>127.0.0.2</code> 접속이 안 되는 것까지 확인한다.</li>
+</ul>
+<div class="warn"><b>주의 — 점이 들어간 deviceId</b>: 새 라우트는 경로의 deviceId를 <code>isValidDeviceId</code>(영문·숫자·<code>_</code>·<code>-</code>, 64자 이하)로 먼저 검사하고 틀리면 404 <code>NOT_FOUND</code>를 돌려준다. 그런데 TCP 기기 ID는 <code>"ARD_" + 클라이언트 IP</code>(예 <code>ARD_192.168.0.7</code>)라 <b>점(.)이 들어 있어 이 검사에 걸린다</b>. 12b에서 ID 규칙을 정리하기 전까지 TCP 기기의 state·energy 경로는 404가 될 수 있다(알려진 임시 상태).</div>
+
+<h3>8-7. 앞 절 사실 정정 (H15)</h3>
+<p>3-3·7-4·7-5·Q3의 일부가 f70fcb9로 바뀌었다. 지금은 <code>start()</code>가 생명주기 락 안에서 <code>bind_to_port</code>를 <b>직접 호출</b>해 바인딩 결과를 바로 반환하고(실패면 <code>false</code>, 서버 스레드는 만들지 않음), 이후 스레드는 <code>listen_after_bind</code>만 한다. 그래서 <code>stop()</code>은 listen 진입 전에도 효과가 있어 <b>한 번의 <code>server.stop()</code> + <code>join</code></b>이면 충분하다.</p>
+
+<h3>8-8. 용어 풀이</h3>
+<ul>
+<li><b>오류 봉투(envelope)</b>: 오류 응답의 고정 모양 <code>{"error":{"code","message"}}</code>. 앱이 모양 하나만 해석하면 된다.</li>
+<li><b>래퍼(wrapper)</b>: 핸들러를 감싸 공통 일(인증·직렬화·예외)을 대신하는 얇은 함수. 중복 제거와 누락 방지가 목적.</li>
+<li><b>202 Accepted</b>: "받았고 아직 처리 중"이라는 상태. 지연 명령처럼 결과가 나중에 반영될 때 쓴다.</li>
+<li><b>409 Conflict / 502 Bad Gateway</b>: 요청은 올바르나 현재 상태와 충돌(명령 차단) / 서버가 뒤쪽 기기와 통신하지 못함.</li>
+<li><b>바인딩(bind)</b>: 서버가 "이 주소·포트로 들어오는 연결을 내가 받겠다"고 운영체제에 등록하는 일.</li>
+</ul>
+
+<h3>8-9. 이해도 질문</h3>
+<div class="q"><b>Q1.</b> 본문에 <code>"error"</code>가 있으면 400으로 바꾸던 방식이 틀리는 입력을 하나 들어 보라. <code>ApiResponse</code> 방식은 이를 어떻게 피하나?
+<details><summary>정답</summary>기기 이름이 <code>"error"</code>인 정상 목록(<code>{"devices":[{"name":"error"}]}</code>)이 400으로 바뀐다. 반대로 오류인데 다른 글자로 쓰면 200이 나간다. <code>ApiResponse</code>는 상태 코드를 핸들러가 값으로 명시하고 래퍼는 본문 내용을 해석하지 않으므로 글자와 무관하다.</details></div>
+<div class="q"><b>Q2.</b> 핸들러 안에서 <code>std::runtime_error</code>가 던져지면 사용자는 무엇을 받고, 서버 로그에는 무엇이 남나? 왜 예외 메시지를 응답에 넣지 않나?
+<details><summary>정답</summary>사용자: 500 + <code>INTERNAL_ERROR</code> 고정 문구. 로그: 정제한 메서드·경로와 <code>e.what()</code>. 예외 메시지에는 파일 경로·SQL·내부 구조가 들어 있을 수 있어 외부에 주면 공격자에게 정보를 준다.</details></div>
+<div class="q"><b>Q3.</b> E3·E4의 성공·실패 본문을 이번에 v2.0으로 바꾸지 않은 이유는? 바꾸려면 먼저 어느 계층의 무엇이 바뀌어야 하나?
+<details><summary>정답</summary><code>DeviceManager</code>가 bool만 반환해 실패 원인을 핸들러가 알 수 없다(추측 금지). <code>startCommissioning</code>·<code>removeDevice</code>가 <code>Result</code>(ErrorCode 포함)를 돌려주도록 DeviceManager부터 바꾼 뒤(12a·13번) 핸들러를 <code>ApiResponse::error(code)</code>로 잇는다.</details></div>
+
+<h3>8-10. 빈칸 과제 — <code>controlResponseFor</code> 본문 직접 쓰기</h3>
+<div class="warn"><b>안전 규칙</b>: 원본 <code>src/HTTPServer.cpp</code>는 건드리지 않는다. 새 브랜치나 <code>learning/exercise-control/</code> 사본에서만 한다. 시험은 <b>build-dev에서 <code>ctest</code>만</b> 실행한다(필터 예: <code>ctest -R E2</code>). 서버 실행 파일을 직접 실행하지 않고, 운영 8000·8080 포트는 절대 쓰지 않는다. 실제 토큰은 쓰지 않는다. 채점은 tester에게 요청하도록 총괄에게 알린다.</div>
+<p><b>목표</b>: <code>CommandResult</code>를 응답으로 번역하는 규칙을 스스로 구현한다.<br>
+<b>고칠 파일</b>: <code>learning/exercise-control/controlResponseFor.cpp</code>(원본 함수만 복사해 본문을 비운 사본).<br>
+<b>완료 기준</b>: 성공 200, 수락 202(<code>pendingCommand</code>·<code>delaySeconds</code> 포함), 실패는 <code>ErrorMapping</code> 표대로. 원본 함수와 같은 입력에서 같은 출력(<code>E2*</code> 시험 기대와 일치).</p>
+<pre class="after">ApiResponse controlResponseFor(const CommandResult&amp; result, const std::string&amp; deviceId, const std::string&amp; command) {
+    // TODO 1: Succeeded이면?        (키: deviceId, state)
+    // TODO 2: Accepted이면?         (상태 코드는? state는 바뀌기 전 값, 추가 키 2개)
+    // TODO 3: Failed이면?           (직접 상태 코드를 쓰지 말고 표에 맡긴다)
+}</pre>
+<details><summary>힌트</summary><code>ApiResponse::ok(json, 상태)</code>의 두 번째 인자가 상태 코드다. 실패 쪽은 한 줄이면 된다: <code>result.error.code</code>를 <code>ApiResponse::error</code>에 넘긴다.</details>
+<details><summary>정답(부분)</summary>실패: <code>return ApiResponse::error(result.error.code);</code></details>
+<details><summary>정답(전체)</summary>8-5의 코드와 같다. 확인 질문: <code>Failed</code>에서 <code>CommandBlocked</code>는 몇 번인가? (409)</details>
+
+<h3>8-11. 응용 과제 — E7 TCP 기기에 UNSUPPORTED_OPERATION을 넣는다면 (설계만)</h3>
+<p><b>상황</b>: 지금 E6(전력)은 TCP 기기를 <code>DeviceManager::readEnergy</code>에서 <code>UnsupportedOperation</code>(400)으로 막는다. 전력 <b>이력</b>(E7, <code>/energy/history</code>)도 TCP 기기는 같은 400으로 답하게 하고 싶다.<br>
+<b>할 일</b>: 코드를 고치기 전에 "어느 계층의 어느 파일을 어떤 순서로 바꾸고, 어떤 시험을 먼저 쓸지"를 글로 설계해 본다(실제 수정은 사본 브랜치에서, 시험은 build-dev <code>ctest</code>만).<br>
+<b>완료 기준</b>: (1) 판정 위치를 한 곳으로 정했고 이유가 있다 (2) 새 <code>ErrorCode</code>·표 변경이 필요 없는 이유를 설명했다 (3) 먼저 실패하는 시험 1개를 적었다.</p>
+<details><summary>힌트</summary>E6은 판정을 핸들러가 아니라 <code>DeviceManager</code>에 두었다. 판정이 두 곳(핸들러·매니저)에 흩어지면 어떤 경로가 한쪽을 빼먹을까? <code>UnsupportedOperation</code>은 이미 8-4 표에 400으로 있다.</details>
+<details><summary>정답 스케치</summary>이력 조회를 하는 <code>DeviceManager</code> 함수에서 <code>protocol_type == TCP_DIY</code>이면 <code>Result::failure(ErrorCode::UnsupportedOperation, ...)</code>를 돌려준다(없는 기기 404 검사 뒤). 핸들러는 이미 <code>result.error.code</code>를 <code>ApiResponse::error</code>로 넘기므로 <b>핸들러·표는 안 바꾼다</b>. 먼저 쓸 시험: TCP 기기를 등록해 두고 <code>/energy/history</code>가 400 <code>UNSUPPORTED_OPERATION</code>을 돌려주는지(E6의 TCP 시험을 본뜸). 주의: TCP 기기 ID에 점이 있어 12b 전까지는 deviceId 검사에서 먼저 404가 날 수 있으니, 시험은 점 없는 ID로 등록하거나 12b 이후로 미룬다.</details>
 </section>
 </main>
 </body>
