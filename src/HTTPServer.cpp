@@ -20,6 +20,24 @@ namespace {
         return command == "ON" || command == "OFF";
     }
 
+    // 느린 연결이 작업 풀을 오래 잡지 못하게 하는 상한. 읽기·쓰기 타임아웃은 소켓 대기 시간만 세므로
+    // 핸들러가 오래 걸리는 요청(수동 새로고침 등)은 영향받지 않는다.
+    constexpr time_t kSocketTimeoutSeconds = 5;
+    constexpr time_t kKeepAliveTimeoutSeconds = 5;
+    constexpr size_t kKeepAliveMaxRequests = 20;
+    constexpr size_t kWorkerThreadCount = 8;
+
+    void applyConnectionLimits(httplib::Server& server) {
+        server.set_read_timeout(kSocketTimeoutSeconds);
+        server.set_write_timeout(kSocketTimeoutSeconds);
+        server.set_keep_alive_timeout(kKeepAliveTimeoutSeconds);
+        server.set_keep_alive_max_count(kKeepAliveMaxRequests);
+        // 고정 크기 풀. 기본 풀은 요청이 몰리면 스레드를 늘린다
+        server.new_task_queue = [] { return new httplib::ThreadPool(kWorkerThreadCount); };
+        // 기본값은 SO_REUSEPORT라 같은 포트를 두 프로세스가 함께 열 수 있다. SO_REUSEADDR만 켜서 재시작은 허용하고 중복 실행은 막는다
+        server.set_socket_options([](socket_t sock) { httplib::set_socket_opt(sock, SOL_SOCKET, SO_REUSEADDR, 1); });
+    }
+
     void respondInternalError(httplib::Response& res) {
         res.status = 500;
         res.set_content(R"({"error": "서버 내부 오류입니다."})", "application/json");
@@ -70,6 +88,7 @@ void HTTPServer::run(){
     httplib::Server& svr = *mServer;
 
     svr.set_payload_max_length(16 * 1024);
+    applyConnectionLimits(svr);
 
     addRoute(HttpMethod::Get, "/api/devices", [this](const httplib::Request&, httplib::Response& res) {
         std::string jsonResponse = this->handleGetDevices();
