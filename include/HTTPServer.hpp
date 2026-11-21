@@ -14,9 +14,6 @@
 class DeviceManager;
 namespace httplib { class Server; struct Request; struct Response; }
 
-// /api/control 응답의 message 문구. 차단은 v1.0 호환을 위해 성공 문구를 쓴다.
-std::string controlMessageFor(const CommandResult& result);
-
 // HAC_HTTP_BIND 환경 변수 값을 바인딩 주소로 바꾼다. 없거나 빈 값이면 기본 0.0.0.0, IPv4 형식이 아니면 실패.
 Result<std::string> parseHttpBindAddress(const char* environmentValue);
 

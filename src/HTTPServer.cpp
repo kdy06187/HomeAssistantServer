@@ -20,15 +20,24 @@
 
 using json = nlohmann::json;
 
-std::string controlMessageFor(const CommandResult& result) {
-    if (result.outcome != CommandOutcome::Failed) return "명령 성공!";
-    return result.error.code == ErrorCode::CommandBlocked ? "명령 성공!" : "명령 실패!";
-}
-
 namespace {
     // REST로 받을 수 있는 명령. PCDriver의 종료 메시지는 이 경로를 거치지 않아 영향이 없다.
     bool isAllowedControlCommand(const std::string& command) {
         return command == "ON" || command == "OFF";
+    }
+
+    // 명령 결과를 응답으로 바꾼다. 성공 200, 지연 수락 202(state는 바뀌기 전 상태), 실패는 오류 코드대로
+    ApiResponse controlResponseFor(const CommandResult& result, const std::string& deviceId, const std::string& command) {
+        switch (result.outcome) {
+            case CommandOutcome::Succeeded:
+                return ApiResponse::ok(json{{"deviceId", deviceId}, {"state", result.state}});
+            case CommandOutcome::Accepted:
+                return ApiResponse::ok(json{{"deviceId", deviceId}, {"state", result.state},
+                                            {"pendingCommand", command}, {"delaySeconds", result.delaySeconds}}, 202);
+            case CommandOutcome::Failed:
+                break;
+        }
+        return ApiResponse::error(result.error.code);
     }
 
     // 느린 연결이 작업 풀을 오래 잡지 못하게 하는 상한. 읽기·쓰기 타임아웃은 소켓 대기 시간만 세므로
@@ -37,6 +46,9 @@ namespace {
     constexpr time_t kKeepAliveTimeoutSeconds = 5;
     constexpr size_t kKeepAliveMaxRequests = 20;
     constexpr size_t kWorkerThreadCount = 8;
+    // ErrorCode에 없는 httplib 전용 오류라 ErrorMapping을 거치지 않는다
+    constexpr const char* kPayloadTooLargeBody =
+        R"({"error":{"code":"PAYLOAD_TOO_LARGE","message":"요청 본문이 너무 큽니다."}})";
 
     void applyConnectionLimits(httplib::Server& server) {
         server.set_read_timeout(kSocketTimeoutSeconds);
@@ -47,6 +59,12 @@ namespace {
         server.new_task_queue = [] { return new httplib::ThreadPool(kWorkerThreadCount); };
         // 기본값은 SO_REUSEPORT라 같은 포트를 두 프로세스가 함께 열 수 있다. SO_REUSEADDR만 켜서 재시작은 허용하고 중복 실행은 막는다
         server.set_socket_options([](socket_t sock) { httplib::set_socket_opt(sock, SOL_SOCKET, SO_REUSEADDR, 1); });
+        // 16KiB 초과(413)는 httplib가 본문 없이 응답하므로, 여기서 같은 오류 봉투를 채운다
+        server.set_error_handler([](const httplib::Request&, httplib::Response& res) {
+            if (res.status != 413 || !res.body.empty()) return httplib::Server::HandlerResponse::Unhandled;
+            res.set_content(kPayloadTooLargeBody, "application/json");
+            return httplib::Server::HandlerResponse::Handled;
+        });
     }
 
     // httplib는 바인딩 실패 원인(errno)을 알려 주지 않는다. 같은 조건으로 소켓을 한 번 직접 bind해 원인을 얻는다.
@@ -245,7 +263,7 @@ void HTTPServer::registerRoutes(httplib::Server& server){
     });
 
     // 없는 경로도 토큰이 틀리면 401이어야 하므로, 마지막에 전체 매칭 라우트를 둔다(앞선 라우트가 먼저 매칭된다).
-    const auto notFound = [](const httplib::Request&) { return ApiResponse{404, json()}; };
+    const auto notFound = [](const httplib::Request&) { return ApiResponse::error(ErrorCode::NotFound); };
     for (HttpMethod method : {HttpMethod::Get, HttpMethod::Post, HttpMethod::Put,
                               HttpMethod::Delete, HttpMethod::Patch, HttpMethod::Options}) {
         addRoute(server, method, ".*", notFound);
@@ -268,19 +286,13 @@ void HTTPServer::addRoute(httplib::Server& svr, HttpMethod method, const std::st
                 std::cerr << "[HTTPServer] ⚠ 인증 실패가 1분에 " << AuthFailureMonitor::kThreshold
                           << "회를 넘었습니다. 토큰 추측 시도일 수 있습니다." << std::endl;
             }
-            res.status = 401;
+            writeApiResponse(res, ApiResponse::error(ErrorCode::Unauthorized));
             res.set_header("WWW-Authenticate", "Bearer");
-            res.set_content(R"({"error": "인증이 필요합니다."})", "application/json");
             return;
         }
         // 핸들러가 처리하지 못한 예외는 내부 정보 없이 500으로 바꾼다(로그에도 메시지만 남긴다)
         try {
-            const ApiResponse response = handler(req);
-            if (response.body.is_null()) {
-                res.status = response.httpStatus; // 본문 없는 응답(10f에서 오류 봉투로 교체)
-            } else {
-                writeApiResponse(res, response);
-            }
+            writeApiResponse(res, handler(req));
         } catch (const std::exception& e) {
             std::cerr << "[HTTPServer] 처리 중 예외: " << RequestValidation::sanitizeForLog(req.method) << " "
                       << RequestValidation::sanitizeForLog(req.path) << " (" << e.what() << ")" << std::endl;
@@ -319,71 +331,45 @@ ApiResponse HTTPServer::handleGetDevices(){
     return ApiResponse::ok(std::move(response));
 }
 
-// 10f에서 v2.0으로 바꾸기 전까지 v1.0 본문을 그대로 낸다
 ApiResponse HTTPServer::handleControlDevice(const std::string& requestBody){
     const auto body = parseJsonObject(requestBody);
     const auto deviceId = body ? readStringField(*body, "deviceId") : std::nullopt;
     const auto command = body ? readStringField(*body, "command") : std::nullopt;
-    if (!deviceId || !command) {
-        return ApiResponse::ok(json{{"result", "error"}, {"message", "잘못된 JSON 형식입니다."}}, 400);
-    }
+    if (!deviceId || !command) return ApiResponse::error(ErrorCode::InvalidRequest);
     if (!isAllowedControlCommand(*command)) {
         std::cerr << "[HTTPServer] 허용되지 않은 명령 거부: " << RequestValidation::sanitizeForLog(*deviceId) << std::endl;
-        return ApiResponse::ok(json{{"result", "error"}, {"message", "허용되지 않은 명령입니다."}}, 400);
+        return ApiResponse::error(ErrorCode::InvalidRequest);
     }
     std::cout << "[HTTPServer] 제어(POST) 요청: 기기 " << RequestValidation::sanitizeForLog(*deviceId)
               << ", 명령 " << *command << std::endl;
     const CommandResult result = mDeviceManager.executeCommand(*deviceId, *command);
-    return ApiResponse::ok(json{{"status", result.state}, {"message", controlMessageFor(result)}});
+    return controlResponseFor(result, *deviceId, *command);
 }
 
+// 성공·실패 본문은 v1.0 그대로다(비동기 전환은 13번). 입력 검증 오류만 새 오류 봉투를 쓴다
 ApiResponse HTTPServer::handleCommissionDevice(const std::string& requestBody){
     // Body에 Wi-Fi 비밀번호와 페어링 코드가 있으므로 내용을 출력하지 않는다.
     std::cout << "[HTTPServer] 기기 등록(POST) 요청 수신" << std::endl;
-    const json badJson = {{"result", "error"}, {"message", "잘못된 JSON 형식입니다."}};
     const auto body = parseJsonObject(requestBody);
-    if (!body) return ApiResponse::ok(badJson, 400);
+    if (!body) return ApiResponse::error(ErrorCode::InvalidRequest);
 
-    const auto payload = readStringField(*body, "payload");
-    const auto deviceName = readStringField(*body, "deviceName");
-    const auto protocolTypeText = readStringField(*body, "protocolType");
-    if (!payload || !deviceName || !protocolTypeText) return ApiResponse::ok(badJson, 400);
-
-    ProtocolType protocolType;
-    if (*protocolTypeText == "MATTER") {
-        protocolType = ProtocolType::MATTER;
-    } else if (*protocolTypeText == "TCP_DIY") {
-        protocolType = ProtocolType::TCP_DIY;
-    } else {
-        return ApiResponse::ok(json{{"result", "error"}, {"message", "알 수 없는 프로토콜 타입입니다."}}, 400);
+    const auto input = RequestValidation::parseCommission(*body);
+    if (!input.ok()) {
+        std::cerr << "[HTTPServer] 등록 요청 검증 실패: " << input.error.message << std::endl;
+        return ApiResponse::error(input.error.code);
     }
-    std::vector<DriverType> driverTypes;
-    if (body->contains("driverTypes") && (*body)["driverTypes"].is_array()) {
-        for (const auto& item : (*body)["driverTypes"]) {
-            if (!item.is_number_integer()) return ApiResponse::ok(badJson, 400);
-            driverTypes.push_back(static_cast<DriverType>(item.get<int>()));
-        }
-    }
-    std::string ssid;
-    std::string password;
-    try {
-        ssid = body->value("ssid", "");
-        password = body->value("password", "");
-    } catch (const json::exception&) {
-        return ApiResponse::ok(badJson, 400); // 문자열이 아닌 값
-    }
-
-    const bool isSuccess = mDeviceManager.startCommissioning(protocolType, *deviceName, *payload, ssid, password, driverTypes);
+    const CommissionInput& request = *input.value;
+    const bool isSuccess = mDeviceManager.startCommissioning(request.protocolType, request.deviceName, request.payload,
+                                                             request.ssid, request.password, request.driverTypes);
     if (isSuccess) return ApiResponse::ok(json{{"result", "success"}, {"message", "기기 등록 성공!"}});
     return ApiResponse::ok(json{{"result", "error"}, {"message", "기기 등록 실패!"}}, 400);
 }
 
+// 성공·실패 본문은 v1.0 그대로다(숨김 삭제는 12번). JSON 오류만 새 오류 봉투를 쓴다
 ApiResponse HTTPServer::handleDeleteDevice(const std::string& requestBody) {
     const auto body = parseJsonObject(requestBody);
     const auto deviceId = body ? readStringField(*body, "deviceId") : std::nullopt;
-    if (!deviceId) {
-        return ApiResponse::ok(json{{"result", "error"}, {"message", "잘못된 JSON 형식입니다."}}, 400);
-    }
+    if (!deviceId) return ApiResponse::error(ErrorCode::InvalidRequest);
     std::cout << "[HTTPServer] 기기 삭제(POST) 요청: 기기 " << RequestValidation::sanitizeForLog(*deviceId) << std::endl;
     if (mDeviceManager.removeDevice(*deviceId)) {
         return ApiResponse::ok(json{{"result", "success"}, {"message", "기기 삭제 성공!"}});

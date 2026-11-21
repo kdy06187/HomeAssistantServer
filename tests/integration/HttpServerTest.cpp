@@ -23,7 +23,8 @@ using namespace testsupport;
 namespace {
 
 const std::string kToken = "test-token-0123456789abcdef0123456789";
-const char* kUnauthorizedBody = R"({"error": "인증이 필요합니다."})";
+const char* kUnauthorizedBody = R"({"error":{"code":"UNAUTHORIZED","message":"인증에 실패했습니다."}})";
+const char* kInternalErrorBody = R"({"error":{"code":"INTERNAL_ERROR","message":"서버 내부 오류입니다."}})";
 const char* kDeviceNotFoundBody = R"({"error":{"code":"DEVICE_NOT_FOUND","message":"등록되지 않은 기기입니다."}})";
 const char* kNotFoundBody = R"({"error":{"code":"NOT_FOUND","message":"없는 경로입니다."}})";
 const char* kInvalidRequestBody = R"({"error":{"code":"INVALID_REQUEST","message":"요청 형식이 올바르지 않습니다."}})";
@@ -125,7 +126,7 @@ TEST_F(HttpServerTest, ClientBadTokenWithBodyGets401ThenSameClientWorks) {
                                     makeBody(size), "application/json");
         ASSERT_TRUE(response) << "size " << size << " err=" << httplib::to_string(response.error());
         EXPECT_EQ(response->status, 401);
-        EXPECT_EQ(response->body, kUnauthorizedBody);
+        EXPECT_EQ(json::parse(response->body), json::parse(kUnauthorizedBody));
         auto next = client.Get("/api/devices", authHeaders());
         ASSERT_TRUE(next) << "size " << size << " err=" << httplib::to_string(next.error());
         EXPECT_EQ(next->status, 200);
@@ -157,7 +158,7 @@ TEST_F(HttpServerTest, EveryRouteRejectsMissingOrWrongToken) {
             auto response = send(client, route.method, route.path, headers, "{}");
             ASSERT_TRUE(response) << route.method << " " << route.path;
             EXPECT_EQ(response->status, 401) << route.method << " " << route.path;
-            EXPECT_EQ(response->body, kUnauthorizedBody);
+            EXPECT_EQ(json::parse(response->body), json::parse(kUnauthorizedBody));
             EXPECT_EQ(response->get_header_value("WWW-Authenticate"), "Bearer");
         }
     }
@@ -170,19 +171,20 @@ TEST_F(HttpServerTest, UnknownPathRejectsBadTokenWith401ForEveryMethod) {
             auto response = send(client, method, "/no/such/path", headers, "{}");
             ASSERT_TRUE(response) << method;
             EXPECT_EQ(response->status, 401) << method;
-            EXPECT_EQ(response->body, kUnauthorizedBody) << method;
+            EXPECT_EQ(json::parse(response->body), json::parse(kUnauthorizedBody)) << method;
             EXPECT_EQ(response->get_header_value("WWW-Authenticate"), "Bearer") << method;
         }
     }
 }
 
-TEST_F(HttpServerTest, UnknownPathWithValidTokenReturns404WithoutBody) {
+TEST_F(HttpServerTest, UnknownPathWithValidTokenReturns404WithErrorEnvelope) {
     httplib::Client client("127.0.0.1", port);
     for (const auto& method : kMethods) {
         auto response = send(client, method, "/no/such/path", authHeaders(), "{}");
         ASSERT_TRUE(response) << method;
         EXPECT_EQ(response->status, 404) << method;
-        EXPECT_TRUE(response->body.empty()) << method;
+        EXPECT_EQ(json::parse(response->body), json::parse(kNotFoundBody)) << method;
+        EXPECT_EQ(response->get_header_value("Content-Type"), "application/json") << method;
     }
 }
 
@@ -276,7 +278,7 @@ TEST_F(HttpServerTest, BodyUpTo16KiBIsProcessed) {
     httplib::Client client("127.0.0.1", port);
     auto response = client.Post("/api/control", authHeaders(), makeBody(16 * 1024), "application/json");
     ASSERT_TRUE(response);
-    EXPECT_EQ(response->status, 200);
+    EXPECT_EQ(response->status, 404);  // 본문은 끝까지 읽혀 처리됐고, 등록되지 않은 기기 X라서 404
 }
 
 TEST_F(HttpServerTest, BodyOver16KiBIsRejectedWith413) {
@@ -288,6 +290,8 @@ TEST_F(HttpServerTest, BodyOver16KiBIsRejectedWith413) {
               << " recvErrno=" << connection.receiveErrno << " closedByPeer=" << connection.closedByPeer
               << " response=[" << response.substr(0, 60) << "]" << std::endl;
     EXPECT_EQ(response.rfind("HTTP/1.1 413", 0), 0u) << response;
+    EXPECT_NE(response.find(R"({"error":{"code":"PAYLOAD_TOO_LARGE","message":"요청 본문이 너무 큽니다."}})"), std::string::npos)
+        << response;
 }
 
 // ---- E1 ----
@@ -308,31 +312,33 @@ TEST_F(HttpServerTest, E1ListsDevices) {
 
 // ---- E2 ----
 
-TEST_F(HttpServerTest, E2SuccessReturnsNewStateAndSuccessMessage) {
+TEST_F(HttpServerTest, E2SuccessReturns200WithDeviceIdAndNewState) {
     addDevice(ProtocolType::TCP_DIY, "FAKE_1", "lamp");
     auto response = post("/api/control", R"({"deviceId":"FAKE_1","command":"ON"})");
     ASSERT_TRUE(response);
     EXPECT_EQ(response->status, 200);
-    EXPECT_EQ(json::parse(response->body), json::parse(R"({"status":"ON","message":"명령 성공!"})"));
+    EXPECT_EQ(json::parse(response->body), json::parse(R"({"deviceId":"FAKE_1","state":"ON"})"));
+    EXPECT_EQ(response->get_header_value("Content-Type"), "application/json");
 }
 
-TEST_F(HttpServerTest, E2UnregisteredDeviceReturns200FailureWithUnknown) {
+TEST_F(HttpServerTest, E2UnregisteredDeviceReturns404) {
     auto response = post("/api/control", R"({"deviceId":"NOPE","command":"ON"})");
     ASSERT_TRUE(response);
-    EXPECT_EQ(response->status, 200);
-    EXPECT_EQ(json::parse(response->body), json::parse(R"({"status":"UNKNOWN","message":"명령 실패!"})"));
+    EXPECT_EQ(response->status, 404);
+    EXPECT_EQ(json::parse(response->body), json::parse(kDeviceNotFoundBody));
 }
 
-TEST_F(HttpServerTest, E2UnreachableDeviceReturns200FailureWithOffline) {
+TEST_F(HttpServerTest, E2UnreachableDeviceReturns502) {
     addDevice(ProtocolType::TCP_DIY, "FAKE_1", "lamp");
     tcpFake.sendCommandResult = false;
     auto response = post("/api/control", R"({"deviceId":"FAKE_1","command":"ON"})");
     ASSERT_TRUE(response);
-    EXPECT_EQ(response->status, 200);
-    EXPECT_EQ(json::parse(response->body), json::parse(R"({"status":"OFFLINE","message":"명령 실패!"})"));
+    EXPECT_EQ(response->status, 502);
+    EXPECT_EQ(json::parse(response->body),
+              json::parse(R"({"error":{"code":"DEVICE_UNREACHABLE","message":"기기가 응답하지 않습니다."}})"));
 }
 
-TEST_F(HttpServerTest, E2MissingProtocolDriverReturns200Failure) {
+TEST_F(HttpServerTest, E2MissingProtocolDriverReturns500) {
     DeviceManager bareManager(database, deviceDrivers, clock);
     bareManager.addDevice("BARE_1", "bare", ProtocolType::TCP_DIY, {}, nullptr);
     const int barePort = findFreePort();
@@ -344,53 +350,52 @@ TEST_F(HttpServerTest, E2MissingProtocolDriverReturns200Failure) {
     auto response = client.Post("/api/control", authHeaders(), R"({"deviceId":"BARE_1","command":"ON"})", "application/json");
     bareServer.stop();
     ASSERT_TRUE(response);
-    EXPECT_EQ(response->status, 200);
-    EXPECT_EQ(json::parse(response->body), json::parse(R"({"status":"UNKNOWN","message":"명령 실패!"})"));
+    EXPECT_EQ(response->status, 500);
+    EXPECT_EQ(json::parse(response->body), json::parse(kInternalErrorBody));
 }
 
-TEST_F(HttpServerTest, E2BlockedByDeviceDriverReturns200WithSuccessMessage) {
+TEST_F(HttpServerTest, E2BlockedByDeviceDriverReturns409) {
     registerPcDriver();
     addDevice(ProtocolType::TCP_DIY, "FAKE_1", "pc", {DriverType::PC_DRIVER});
     manager.updateDeviceState("FAKE_1", "OFF");
     auto response = post("/api/control", R"({"deviceId":"FAKE_1","command":"OFF"})");
     ASSERT_TRUE(response);
-    EXPECT_EQ(response->status, 200);
-    EXPECT_EQ(json::parse(response->body), json::parse(R"({"status":"OFF","message":"명령 성공!"})"));
+    EXPECT_EQ(response->status, 409);
+    EXPECT_EQ(json::parse(response->body),
+              json::parse(R"({"error":{"code":"COMMAND_BLOCKED","message":"기기 드라이버가 명령을 막았습니다."}})"));
     EXPECT_TRUE(tcpFake.sentCommands.empty());
 }
 
 // 45초 지연 스레드가 테스트보다 오래 살 수 있지만, 테스트 프로세스는 그 전에 끝난다.
-TEST_F(HttpServerTest, E2DelayedCommandReturns200BeforeStateChanges) {
+TEST_F(HttpServerTest, E2DelayedCommandReturns202WithPendingCommand) {
     registerPcDriver();
     addDevice(ProtocolType::TCP_DIY, "FAKE_1", "pc", {DriverType::PC_DRIVER});
     manager.updateDeviceState("FAKE_1", "ON");
     auto response = post("/api/control", R"({"deviceId":"FAKE_1","command":"OFF"})");
     ASSERT_TRUE(response);
-    EXPECT_EQ(response->status, 200);
-    EXPECT_EQ(json::parse(response->body), json::parse(R"({"status":"ON","message":"명령 성공!"})"));
+    EXPECT_EQ(response->status, 202);
+    EXPECT_EQ(json::parse(response->body),
+              json::parse(R"({"deviceId":"FAKE_1","state":"ON","pendingCommand":"OFF","delaySeconds":45})"));
     EXPECT_TRUE(tcpFake.sentCommands.empty());
 }
 
-TEST_F(HttpServerTest, E2DisallowedCommandReturns400) {
-    auto response = post("/api/control", R"({"deviceId":"FAKE_1","command":"REBOOT"})");
-    ASSERT_TRUE(response);
-    EXPECT_EQ(response->status, 400);
-    EXPECT_EQ(json::parse(response->body),
-              json::parse(R"({"result":"error","message":"허용되지 않은 명령입니다."})"));
-}
-
-TEST_F(HttpServerTest, E2BadJsonOrMissingFieldReturns400) {
-    for (const std::string& body : {std::string("not json"), std::string("{}")}) {
+TEST_F(HttpServerTest, E2InvalidRequestsReturn400Envelope) {
+    const std::vector<std::string> bodies = {
+        R"({"deviceId":"FAKE_1","command":"REBOOT"})",  // 허용되지 않은 명령
+        "not json", "{}", "[]", "null",
+        R"({"deviceId":"FAKE_1"})", R"({"command":"ON"})",
+        R"({"deviceId":1,"command":"ON"})", R"({"deviceId":"FAKE_1","command":true})"};
+    for (const std::string& body : bodies) {
         auto response = post("/api/control", body);
         ASSERT_TRUE(response) << body;
         EXPECT_EQ(response->status, 400) << body;
-        EXPECT_EQ(json::parse(response->body),
-                  json::parse(R"({"result":"error","message":"잘못된 JSON 형식입니다."})")) << body;
+        EXPECT_EQ(json::parse(response->body), json::parse(kInvalidRequestBody)) << body;
     }
 }
 
 // ---- E3 ----
 
+// 성공·등록 실패 본문은 v1.0 그대로(13번에서 비동기로 바뀜). 입력 검증 오류만 새 오류 봉투
 TEST_F(HttpServerTest, E3CommissionSuccess) {
     auto response = post("/api/commission",
         R"({"protocolType":"TCP_DIY","deviceName":"lamp","payload":"10.0.0.1","ssid":"s","password":"p"})");
@@ -399,9 +404,10 @@ TEST_F(HttpServerTest, E3CommissionSuccess) {
     EXPECT_EQ(json::parse(response->body), json::parse(R"({"result":"success","message":"기기 등록 성공!"})"));
     ASSERT_EQ(tcpFake.commissionRequests.size(), 1u);
     EXPECT_EQ(tcpFake.commissionRequests[0].name, "lamp");
+    EXPECT_EQ(tcpFake.commissionRequests[0].ssid, "s");
 }
 
-TEST_F(HttpServerTest, E3CommissionFailureReturns400) {
+TEST_F(HttpServerTest, E3CommissionFailureReturns400WithLegacyBody) {
     tcpFake.commissionResult = Result<CommissionOutcome>::failure(ErrorCode::CommissionFailed, "fail");
     auto response = post("/api/commission", R"({"protocolType":"TCP_DIY","deviceName":"lamp","payload":""})");
     ASSERT_TRUE(response);
@@ -409,21 +415,30 @@ TEST_F(HttpServerTest, E3CommissionFailureReturns400) {
     EXPECT_EQ(json::parse(response->body), json::parse(R"({"result":"error","message":"기기 등록 실패!"})"));
 }
 
-TEST_F(HttpServerTest, E3UnknownProtocolAndBadJsonReturn400) {
-    auto unknown = post("/api/commission", R"({"protocolType":"ZIGBEE","deviceName":"x","payload":""})");
-    ASSERT_TRUE(unknown);
-    EXPECT_EQ(unknown->status, 400);
-    EXPECT_EQ(json::parse(unknown->body),
-              json::parse(R"({"result":"error","message":"알 수 없는 프로토콜 타입입니다."})"));
-    auto bad = post("/api/commission", "{}");
-    ASSERT_TRUE(bad);
-    EXPECT_EQ(bad->status, 400);
-    EXPECT_EQ(json::parse(bad->body), json::parse(R"({"result":"error","message":"잘못된 JSON 형식입니다."})"));
+TEST_F(HttpServerTest, E3ValidationErrorsReturn400EnvelopeWithoutCommissioning) {
+    const std::string longName(65, 'a');
+    const std::vector<std::string> bodies = {
+        "not json", "{}", "[]",
+        R"({"protocolType":"ZIGBEE","deviceName":"x","payload":""})",
+        R"({"protocolType":"MATTER","deviceName":"x","payload":"abc"})",
+        R"({"protocolType":"TCP_DIY","deviceName":"","payload":""})",
+        R"({"protocolType":"TCP_DIY","deviceName":")" + longName + R"(","payload":""})",
+        R"({"protocolType":"TCP_DIY","deviceName":"a\nb","payload":""})",
+        R"({"protocolType":"TCP_DIY","deviceName":"x","payload":"not-an-ip"})",
+        R"({"protocolType":"TCP_DIY","deviceName":"x","payload":"","ssid":null})",
+        R"({"protocolType":"TCP_DIY","deviceName":"x","payload":"","driverTypes":[99]})"};
+    for (const std::string& body : bodies) {
+        auto response = post("/api/commission", body);
+        ASSERT_TRUE(response) << body;
+        EXPECT_EQ(response->status, 400) << body;
+        EXPECT_EQ(json::parse(response->body), json::parse(kInvalidRequestBody)) << body;
+    }
+    EXPECT_TRUE(tcpFake.commissionRequests.empty());
 }
 
 // ---- E4 ----
 
-TEST_F(HttpServerTest, E4DeleteSuccessAndMissing) {
+TEST_F(HttpServerTest, E4DeleteSuccessAndMissingKeepLegacyBodies) {
     addDevice(ProtocolType::TCP_DIY, "FAKE_1", "lamp");
     auto ok = post("/api/devices/delete", R"({"deviceId":"FAKE_1"})");
     ASSERT_TRUE(ok);
@@ -435,10 +450,15 @@ TEST_F(HttpServerTest, E4DeleteSuccessAndMissing) {
     EXPECT_EQ(missing->status, 400);
     EXPECT_EQ(json::parse(missing->body),
               json::parse(R"({"result":"error","message":"기기 삭제 실패 또는 기기 없음"})"));
+}
 
-    auto bad = post("/api/devices/delete", "nope");
-    ASSERT_TRUE(bad);
-    EXPECT_EQ(bad->status, 400);
+TEST_F(HttpServerTest, E4InvalidJsonReturns400Envelope) {
+    for (const std::string body : {"nope", "{}", "[]", R"({"deviceId":5})"}) {
+        auto response = post("/api/devices/delete", body);
+        ASSERT_TRUE(response) << body;
+        EXPECT_EQ(response->status, 400) << body;
+        EXPECT_EQ(json::parse(response->body), json::parse(kInvalidRequestBody)) << body;
+    }
 }
 
 // 오프라인 TCP 기기(연결 없음 → 해제 실패)도 삭제는 성공으로 답한다
@@ -605,26 +625,6 @@ TEST_F(HttpServerTest, E7InvalidQueryDoesNotTouchTheDatabase) {
     auto response = httplib::Client("127.0.0.1", port).Get("/api/devices/NOPE/energy/history?limit=-1", authHeaders());
     ASSERT_TRUE(response);
     EXPECT_EQ(response->status, 400);
-}
-
-// ---- CommandResult -> message 매핑 ----
-
-TEST(ControlMessageTest, MapsOutcomeToMessage) {
-    struct Case { CommandOutcome outcome; ErrorCode code; const char* message; };
-    const Case cases[] = {
-        {CommandOutcome::Succeeded, ErrorCode::None, "명령 성공!"},
-        {CommandOutcome::Accepted, ErrorCode::None, "명령 성공!"},
-        {CommandOutcome::Failed, ErrorCode::CommandBlocked, "명령 성공!"},
-        {CommandOutcome::Failed, ErrorCode::DeviceNotFound, "명령 실패!"},
-        {CommandOutcome::Failed, ErrorCode::DeviceUnreachable, "명령 실패!"},
-        {CommandOutcome::Failed, ErrorCode::Internal, "명령 실패!"},
-    };
-    for (const auto& item : cases) {
-        CommandResult result;
-        result.outcome = item.outcome;
-        result.error.code = item.code;
-        EXPECT_EQ(controlMessageFor(result), item.message);
-    }
 }
 
 }  // namespace
