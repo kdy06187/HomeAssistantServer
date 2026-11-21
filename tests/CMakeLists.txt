@@ -1,6 +1,7 @@
 add_executable(hac_tests
     unit/ApiAuthTest.cpp
     unit/ErrorMappingTest.cpp
+    unit/HttpBindAddressTest.cpp
     unit/RequestValidationTest.cpp
     unit/PCDriverTest.cpp
     unit/ResultTest.cpp
@@ -12,9 +13,11 @@ add_executable(hac_tests
     integration/DeviceManagerBehaviorTest.cpp
     integration/HttpServerTest.cpp
     integration/HttpServerLimitsTest.cpp
+    integration/HttpServerLifecycleTest.cpp
     integration/LockRulesTest.cpp
     integration/EnergyPathTest.cpp
     integration/TcpServerTest.cpp
+    integration/TcpServerLifecycleTest.cpp
     integration/MatterControllerTest.cpp
 )
 # httplib.h(클라이언트)는 src/ 에 있다

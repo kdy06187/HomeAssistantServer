@@ -5,6 +5,7 @@
 #include <iostream>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <system_error>
 #include <unistd.h>
 
 using json = nlohmann::json;
@@ -29,12 +30,13 @@ TcpServer::~TcpServer() {
 }
 
 bool TcpServer::start(int port, const std::string& bindAddress) {
+    std::lock_guard<std::mutex> lock(lifecycleMutex_);
     if (running_) return true;
 
     // CLOEXEC: chip-tool 같은 자식 프로세스가 소켓을 물려받아 계속 열어 두지 않게 한다
     listenFd_ = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (listenFd_ < 0) {
-        std::cerr << "[TCPDriver] 에러 : 서버 소켓 생성 실패" << std::endl;
+        std::cerr << "[TCPDriver] 에러 : 서버 소켓 생성 실패 (" << std::strerror(errno) << ")" << std::endl;
         return false;
     }
     int opt = 1;
@@ -43,43 +45,62 @@ bool TcpServer::start(int port, const std::string& bindAddress) {
     sockaddr_in address{};
     address.sin_family = AF_INET;
     address.sin_port = htons(static_cast<uint16_t>(port));
-    if (inet_pton(AF_INET, bindAddress.c_str(), &address.sin_addr) != 1 ||
-        ::bind(listenFd_, reinterpret_cast<sockaddr*>(&address), sizeof(address)) < 0) {
-        std::cerr << "[TCPDriver] 에러 : 포트 " << port << " 바인딩 실패" << std::endl;
-        ::close(listenFd_);
-        listenFd_ = -1;
+    if (inet_pton(AF_INET, bindAddress.c_str(), &address.sin_addr) != 1) {
+        std::cerr << "[TCPDriver] 에러 : 바인딩 주소 형식 오류 (포트 " << port << ")" << std::endl;
+        closeListenSocket();
+        return false;
+    }
+    if (::bind(listenFd_, reinterpret_cast<sockaddr*>(&address), sizeof(address)) < 0) {
+        const int cause = errno; // close가 errno를 덮어쓰기 전에 보관한다
+        std::cerr << "[TCPDriver] 에러 : 주소 " << bindAddress << " 포트 " << port << " 바인딩 실패 (errno="
+                  << cause << " " << std::strerror(cause) << ")" << std::endl;
+        closeListenSocket();
         return false;
     }
     if (::listen(listenFd_, 10) < 0) {
-        std::cerr << "[TCPDriver] 에러 : 포트 " << port << " 리슨 실패" << std::endl;
-        ::close(listenFd_);
-        listenFd_ = -1;
+        const int cause = errno;
+        std::cerr << "[TCPDriver] 에러 : 포트 " << port << " 리슨 실패 (errno=" << cause << " "
+                  << std::strerror(cause) << ")" << std::endl;
+        closeListenSocket();
         return false;
     }
     socklen_t length = sizeof(address);
     getsockname(listenFd_, reinterpret_cast<sockaddr*>(&address), &length);
     boundPort_ = ntohs(address.sin_port);
 
+    // 스레드를 못 만들면 running_을 켜기 전에 소켓을 정리하고 실패로 돌려준다
     running_ = true;
-    acceptThread_ = std::thread(&TcpServer::acceptLoop, this);
+    try {
+        acceptThread_ = std::thread(&TcpServer::acceptLoop, this);
+    } catch (const std::system_error& e) {
+        running_ = false;
+        std::cerr << "[TCPDriver] 에러 : 수락 스레드 생성 실패 (" << e.what() << ")" << std::endl;
+        closeListenSocket();
+        return false;
+    }
     std::cout << "[TCPDriver] " << boundPort_ << " 포트에서 클라이언트 연결 대기 중..." << std::endl;
     return true;
 }
 
+void TcpServer::closeListenSocket() {
+    if (listenFd_ >= 0) {
+        ::close(listenFd_);
+        listenFd_ = -1;
+    }
+}
+
 void TcpServer::stop() {
+    std::lock_guard<std::mutex> lock(lifecycleMutex_);
     if (running_.exchange(false)) {
         // 막혀 있는 accept를 깨운다(리눅스에서 리슨 소켓 shutdown은 accept를 오류로 돌려보낸다)
         ::shutdown(listenFd_, SHUT_RDWR);
     }
     if (acceptThread_.joinable()) acceptThread_.join();
-    if (listenFd_ >= 0) {
-        ::close(listenFd_);
-        listenFd_ = -1;
-    }
+    closeListenSocket();
 
     std::unordered_map<std::string, std::shared_ptr<TcpConnection>> closing;
     {
-        std::lock_guard<std::mutex> lock(connectionsMutex_);
+        std::lock_guard<std::mutex> mapLock(connectionsMutex_);
         closing.swap(connections_);
     }
     for (auto& pair : closing) pair.second->shutdown();

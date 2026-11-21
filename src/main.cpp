@@ -15,6 +15,7 @@
 #include "PeriodicTasks.hpp"
 #include "Clock.hpp"
 #include <csignal>
+#include <cstdlib>
 #include <unistd.h>
 #include <sys/stat.h>  // umask
 int main() {
@@ -27,6 +28,14 @@ int main() {
     const auto apiToken = ApiAuth::loadToken("../config/api_token");
     if (!apiToken) {
         std::cerr << "❌ API 토큰 로드 실패! 서버를 시작하지 않습니다." << std::endl;
+        return 1;
+    }
+
+    // 잘못된 주소로 조용히 기본값(모든 NIC)에 열리지 않도록, 형식 오류는 시작 실패로 처리한다.
+    // 로그에는 변수 이름만 남긴다.
+    const auto httpBindAddress = parseHttpBindAddress(std::getenv("HAC_HTTP_BIND"));
+    if (!httpBindAddress.ok()) {
+        std::cerr << "❌ 환경 변수 HAC_HTTP_BIND 형식 오류(IPv4 주소 필요). 서버를 시작하지 않습니다." << std::endl;
         return 1;
     }
 
@@ -45,7 +54,7 @@ int main() {
     TCPDriver tcpDriver;
     // 포트를 못 열면(이전 프로세스가 남아 있는 등) 반쯤 켜진 채 돌지 않고 바로 끝낸다
     if (!tcpDriver.startServer(8080)) {
-        std::cerr << "❌ TCP 포트 8080을 열 수 없습니다. 서버를 종료합니다." << std::endl;
+        std::cerr << "❌ TCP 포트 8080을 열 수 없습니다(원인은 위 [TCPDriver] 로그). 서버를 종료합니다." << std::endl;
         return 1;
     }
     
@@ -70,11 +79,11 @@ int main() {
     PeriodicTasks periodicTasks(manager);
     periodicTasks.start();
     manager.initFromDatabase();
-    HTTPServer httpServer(manager, *apiToken, 8000);
+    HTTPServer httpServer(manager, *apiToken, 8000, *httpBindAddress.value);
     httpServer.start();
     // start()는 스레드만 띄운다. listen이 실패하면 run()이 바로 끝나므로 준비 여부로 판단한다
     if (!httpServer.waitUntilReady(std::chrono::seconds(5))) {
-        std::cerr << "❌ HTTP 포트 8000을 열 수 없습니다. 서버를 종료합니다." << std::endl;
+        std::cerr << "❌ HTTP 포트 8000을 열 수 없습니다(원인은 위 [HTTPServer] 로그). 서버를 종료합니다." << std::endl;
         return 1;
     }
 

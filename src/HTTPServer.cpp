@@ -2,9 +2,16 @@
 #include "ApiAuth.hpp"
 #include "DeviceManager.hpp"
 #include "httplib.h"
+#include "RequestValidation.hpp"
 #include "json.hpp"
+#include <arpa/inet.h>
+#include <cerrno>
 #include <chrono>
+#include <cstring>
 #include <iostream>
+#include <sys/socket.h>
+#include <system_error>
+#include <unistd.h>
 #include <utility>
 
 using json = nlohmann::json;
@@ -38,44 +45,96 @@ namespace {
         server.set_socket_options([](socket_t sock) { httplib::set_socket_opt(sock, SOL_SOCKET, SO_REUSEADDR, 1); });
     }
 
+    // httplib는 바인딩 실패 원인(errno)을 알려 주지 않는다. 같은 조건으로 소켓을 한 번 직접 bind해 원인을 얻는다.
+    // 0이면 진단 시점에는 bind가 성공했다는 뜻(그 사이 포트가 비었거나 경합).
+    int diagnoseBindErrno(const std::string& address, int port) {
+        const int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+        if (fd < 0) return errno;
+        int reuse = 1;
+        setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+        sockaddr_in addr{};
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(static_cast<uint16_t>(port));
+        int result = 0;
+        if (inet_pton(AF_INET, address.c_str(), &addr.sin_addr) != 1) {
+            result = EINVAL;
+        } else if (::bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
+            result = errno;
+        }
+        ::close(fd);
+        return result;
+    }
+
+    void logBindFailure(const std::string& address, int port) {
+        const int cause = diagnoseBindErrno(address, port);
+        std::cerr << "[HTTPServer] ❌ 바인딩 실패: 주소 " << address << ", 포트 " << port;
+        if (cause != 0) {
+            std::cerr << " (errno=" << cause << " " << std::strerror(cause) << ")" << std::endl;
+        } else {
+            std::cerr << " (진단 bind는 성공: 시작 직후 포트 경합 가능)" << std::endl;
+        }
+    }
+
     void respondInternalError(httplib::Response& res) {
         res.status = 500;
         res.set_content(R"({"error": "서버 내부 오류입니다."})", "application/json");
     }
 }
 
-HTTPServer::HTTPServer(DeviceManager& deviceManager, std::string apiToken, int port)
-    : mDeviceManager(deviceManager), mApiToken(std::move(apiToken)), mPort(port), mIsRunning(false),
-      mServer(std::make_unique<httplib::Server>()) {
+Result<std::string> parseHttpBindAddress(const char* environmentValue) {
+    if (environmentValue == nullptr || environmentValue[0] == '\0') {
+        return Result<std::string>::success("0.0.0.0");
+    }
+    const std::string address(environmentValue);
+    if (!RequestValidation::isValidIpv4Address(address)) {
+        return Result<std::string>::failure(ErrorCode::InvalidRequest, "IPv4 형식이 아님");
+    }
+    return Result<std::string>::success(address);
+}
+
+HTTPServer::HTTPServer(DeviceManager& deviceManager, std::string apiToken, int port, std::string bindAddress)
+    : mDeviceManager(deviceManager), mApiToken(std::move(apiToken)), mPort(port),
+      mBindAddress(std::move(bindAddress)) {
 }
 HTTPServer::~HTTPServer() {
     stop();
 }
 
 bool HTTPServer::start(){
-    if(mIsRunning) return false; // 이미 서버가 실행 중이면 무시
-    mIsRunning = true;
-    mServerThread = std::thread(&HTTPServer::run, this);
-    std::cout << "[HTTPServer] HTTP 서버 시작 (포트: " << mPort << ")" << std::endl;
+    std::lock_guard<std::mutex> lock(mLifecycleMutex);
+    if (mServerThread.joinable()) {
+        if (!mHasRunFinished) return false; // 이미 실행 중
+        mServerThread.join();               // 바인딩 실패 등으로 끝난 이전 실행을 정리하고 다시 시작
+    }
+    mHasRunFinished = false;
+    buildServer();
+    try {
+        mServerThread = std::thread(&HTTPServer::run, this);
+    } catch (const std::system_error& e) {
+        std::cerr << "[HTTPServer] ❌ 서버 스레드 생성 실패 (" << e.what() << ")" << std::endl;
+        mHasRunFinished = true;
+        return false;
+    }
+    std::cout << "[HTTPServer] HTTP 서버 시작 (주소: " << mBindAddress << ", 포트: " << mPort
+              << ", 평문 HTTP)" << std::endl;
     return true;
 }
 
 void HTTPServer::stop(){
-    if (!mIsRunning) return;
+    std::lock_guard<std::mutex> lock(mLifecycleMutex);
+    if (!mServerThread.joinable()) return; // 시작한 적이 없거나 이미 멈춤
 
-    mIsRunning = false;
-    // listen 진입 전에 stop()이 불리면 무시되므로, run()이 끝날 때까지 반복 호출한다.
+    // run()이 bind·listen에 들어가기 전에 stop()이 불리면 무시되므로, run()이 끝날 때까지 반복 호출한다.
     while (!mHasRunFinished) {
         mServer->stop();
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
-    if(mServerThread.joinable()){
-        mServerThread.join();
-    }
+    mServerThread.join();
     std::cout << "[HTTPServer] HTTP 서버 종료" << std::endl;
 }
 
 bool HTTPServer::waitUntilReady(std::chrono::milliseconds timeout){
+    if (!mServer) return false; // start()를 부르기 전
     const auto deadline = std::chrono::steady_clock::now() + timeout;
     while (!mServer->is_running()) {
         if (mHasRunFinished || std::chrono::steady_clock::now() >= deadline) return false;
@@ -84,12 +143,14 @@ bool HTTPServer::waitUntilReady(std::chrono::milliseconds timeout){
     return true;
 }
 
-void HTTPServer::run(){
-    httplib::Server& svr = *mServer;
+void HTTPServer::buildServer(){
+    mServer = std::make_unique<httplib::Server>();
+    mServer->set_payload_max_length(16 * 1024);
+    applyConnectionLimits(*mServer);
+    registerRoutes();
+}
 
-    svr.set_payload_max_length(16 * 1024);
-    applyConnectionLimits(svr);
-
+void HTTPServer::registerRoutes(){
     addRoute(HttpMethod::Get, "/api/devices", [this](const httplib::Request&, httplib::Response& res) {
         std::string jsonResponse = this->handleGetDevices();
         res.set_content(jsonResponse, "application/json");
@@ -157,8 +218,16 @@ void HTTPServer::run(){
                               HttpMethod::Delete, HttpMethod::Patch, HttpMethod::Options}) {
         addRoute(method, ".*", notFound);
     }
-    std::cout << "[HTTPServer]네트워크 소켓 개방 완료" << std::endl;
-    svr.listen("0.0.0.0", mPort);
+}
+
+void HTTPServer::run(){
+    httplib::Server& svr = *mServer;
+    if (!svr.bind_to_port(mBindAddress, mPort)) {
+        logBindFailure(mBindAddress, mPort);
+    } else {
+        std::cout << "[HTTPServer]네트워크 소켓 개방 완료" << std::endl;
+        svr.listen_after_bind(); // stop()이 부르면 반환한다
+    }
     mHasRunFinished = true;
 }
 

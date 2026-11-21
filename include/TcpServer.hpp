@@ -26,6 +26,7 @@ public:
     TcpServer& operator=(const TcpServer&) = delete;
 
     // 바인드·리슨까지 마치고 수락 스레드를 띄운다. port 0이면 임의 포트(boundPort로 확인)
+    // 이미 실행 중이면 true. start·stop은 여러 스레드가 동시에 불러도 안전하다
     bool start(int port, const std::string& bindAddress = "0.0.0.0");
     // 수락을 멈추고(join) 모든 연결을 닫는다. 여러 번 불러도 안전하다
     void stop();
@@ -44,6 +45,7 @@ public:
 
 private:
     void acceptLoop();
+    void closeListenSocket();
     // 상한 안이면 맵에 넣는다(같은 ID면 교체해 옛 연결을 outReplaced로). 상한이면 false
     bool tryRegister(const std::string& deviceId, const std::shared_ptr<TcpConnection>& connection,
                      std::shared_ptr<TcpConnection>& outReplaced);
@@ -53,6 +55,8 @@ private:
     // 맵의 연결이 아직 같은 객체일 때만 뺀다(그 사이 재접속한 새 연결을 지우지 않는다)
     void removeIfSame(const std::string& deviceId, const std::shared_ptr<TcpConnection>& connection);
 
+    // start·stop 호출끼리만 직렬화한다. 수락 스레드와 연결 맵 락은 이 락을 잡지 않는다
+    std::mutex lifecycleMutex_;
     int listenFd_ = -1;
     int boundPort_ = 0;
     std::thread acceptThread_;
