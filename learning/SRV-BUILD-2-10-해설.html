@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>2차 10a~10d 해설 — 오류 규약·연결 상한·생명주기·인증 강화</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--fg:#1d2330;--sub:#5b6477;--ac:#2f6fed;--code:#0f1523;--codefg:#e6edf7;--bd:#dde1e8;--ok:#2f9e5b;--bad:#d04040;--warn:#c27b12}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#10131a;--card:#181d28;--fg:#e6e9ef;--sub:#9aa4b8;--ac:#6b9cff;--code:#0a0d14;--bd:#2a3142}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.65 -apple-system,"Noto Sans KR",sans-serif}
+main{max-width:940px;margin:0 auto;padding:20px 16px 60px}
+h1{font-size:1.8rem;margin:.4em 0 .1em}
+h2{font-size:1.25rem;margin:0 0 .6em;color:var(--ac)}
+h3{font-size:1.02rem;margin:1.1em 0 .3em}
+.lead{color:var(--sub);margin-bottom:20px}
+section{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:18px 20px;margin:16px 0}
+table{border-collapse:collapse;width:100%;font-size:.92rem;display:block;overflow-x:auto}
+th,td{border:1px solid var(--bd);padding:6px 10px;text-align:left;vertical-align:top}
+th{background:rgba(127,127,127,.12)}
+pre{background:var(--code);color:var(--codefg);padding:12px 14px;border-radius:8px;overflow-x:auto;font-size:.85rem;line-height:1.5}
+pre.before{border-left:4px solid var(--bad)}
+pre.after{border-left:4px solid var(--ok)}
+code{font-family:ui-monospace,Consolas,monospace}
+p code,li code,td code{background:rgba(127,127,127,.18);padding:1px 5px;border-radius:4px;font-size:.88em}
+details{border:1px solid var(--bd);border-radius:8px;padding:6px 12px;margin:8px 0}
+summary{cursor:pointer;font-weight:600}
+.q{border-left:4px solid var(--ac);padding:2px 12px;margin:10px 0}
+.warn{border-left:4px solid var(--warn);background:rgba(194,123,18,.1);padding:6px 12px;border-radius:6px;margin:10px 0}
+.wwb{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin:8px 0}
+.wwb div{border:1px solid var(--bd);border-radius:8px;padding:6px 10px;font-size:.93rem}
+svg{width:100%;height:auto;max-width:880px}
+svg text{fill:var(--fg);font-size:13px}
+svg .b{fill:var(--card);stroke:var(--ac);stroke-width:1.5}
+svg .g{fill:rgba(47,158,91,.14);stroke:var(--ok);stroke-width:1.5}
+svg .r{fill:rgba(208,64,64,.14);stroke:var(--bad);stroke-width:1.5}
+svg .y{fill:rgba(194,123,18,.14);stroke:var(--warn);stroke-width:1.5}
+svg .l{stroke:var(--sub);stroke-width:1.5;fill:none}
+svg .ld{stroke:var(--sub);stroke-width:1.5;fill:none;stroke-dasharray:5 4}
+svg .arrow{color:var(--sub)}
+</style>
+</head>
+<body>
+<main>
+<h1>2차 10a~10d 해설 — HTTP 서버를 "튼튼하게"</h1>
+<p class="lead">커밋 5b4f352(10a) · a76e6ed(10b) · 7932854(10c) · 0642c27(10d). 학습 강도: 균형. 설계 근거: <code>docs/02_설계.md</code> 3.5(오류 규약)·3.7(HTTP 보안 규칙).</p>
+
+<section>
+<h2>1. 한눈에 보기</h2>
+<ul>
+<li><b>왜</b>: 1차 서버는 "잘 될 때"만 생각하고 만들었다. 느린 클라이언트, 같은 포트로 두 번 실행, start/stop 동시 호출, 빈 토큰, 토큰 추측 공격 같은 "나쁜 날"을 막아야 한다(REQ-15, S-01~03).</li>
+<li><b>무엇을</b>: 10a 오류를 한 표로 결정 / 10b 연결 상한·작업 풀 고정·포트 옵션 / 10c 시작·중지 락과 바인딩 주소 / 10d 빈 토큰 거부·인증 교체 가능 구조·실패 경고.</li>
+<li><b>주의</b>: 10a의 <code>ErrorMapping</code>·<code>RequestValidation</code>은 "순수 모듈로 추가만" 했고 <b>아직 핸들러에서 호출하지 않는다</b>(커밋 메시지). 현재 라우트는 여전히 본문에 <code>"error"</code>가 들었는지 문자열로 찾는다(<code>HTTPServer.cpp</code> 178행 등). 연결은 후속 번호의 몫이다.</li>
+</ul>
+<table>
+<tr><th>파일</th><th>역할</th><th>변경 요약</th></tr>
+<tr><td><code>include/ErrorMapping.hpp</code> · <code>src/ErrorMapping.cpp</code></td><td>ErrorCode → 상태·코드·문구</td><td>신규(10a). switch 한 곳이 설계 3.5 표를 그대로 옮김</td></tr>
+<tr><td><code>include/RequestValidation.hpp</code> · <code>src/RequestValidation.cpp</code></td><td>입력 검증·로그 정제</td><td>신규(10a). 길이·제어문자·날짜·IPv4, <code>sanitizeForLog</code></td></tr>
+<tr><td><code>src/HTTPServer.cpp</code></td><td>서버 본체</td><td>10b <code>applyConnectionLimits</code> / 10c 락·바인딩 진단 / 10d 인증 래퍼에 Authenticator·모니터</td></tr>
+<tr><td><code>include/HTTPServer.hpp</code></td><td>서버 선언</td><td>10c <code>mLifecycleMutex</code>, 바인딩 주소 / 10d 생성자 하나 더(인증·시계 주입)</td></tr>
+<tr><td><code>src/TcpServer.cpp</code> · <code>include/TcpServer.hpp</code></td><td>8080 기기 서버</td><td>10c 같은 방식의 생명주기 락, 바인딩 실패 로그(주소·포트·errno)</td></tr>
+<tr><td><code>include/Authenticator.hpp</code></td><td>인증 판정 인터페이스</td><td>신규(10d). <code>BearerTokenAuthenticator</code>가 기존 <code>ApiAuth</code>를 감쌈</td></tr>
+<tr><td><code>include/AuthFailureMonitor.hpp</code></td><td>실패 집중 감지</td><td>신규(10d). 1분 창, 10회 초과 시 경고 1회</td></tr>
+<tr><td><code>src/ApiAuth.cpp</code></td><td>토큰 비교·로드</td><td>10d 빈 기대 토큰이면 무조건 거부, 소유자 다르면 경고</td></tr>
+<tr><td>tests/ (Limits·Slow·Lifecycle·Auth·ErrorMapping·AuthFailureMonitor 등)</td><td>검증</td><td>신규. 느린 시험은 ctest 라벨 <code>slow</code></td></tr>
+</table>
+</section>
+
+<section>
+<h2>2. 흐름 그림</h2>
+<h3>2-1. 요청 하나가 지나가는 길 (10b·10d)</h3>
+<svg viewBox="0 0 880 250" role="img" aria-label="요청이 소켓 읽기, 작업 풀, 인증 래퍼, 핸들러, 응답 쓰기를 지나는 흐름">
+  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10z" fill="currentColor"/></marker></defs>
+  <g class="arrow">
+  <rect class="b" x="5" y="30" width="105" height="64" rx="8"/><text x="16" y="55" font-weight="700">클라이언트</text><text x="16" y="75" font-size="12">(앱·curl)</text>
+  <rect class="y" x="150" y="30" width="120" height="64" rx="8"/><text x="160" y="52" font-weight="700">소켓 읽기</text><text x="160" y="70" font-size="12">읽기 타임아웃 5s</text><text x="160" y="86" font-size="12">본문 16KiB 상한</text>
+  <rect class="b" x="310" y="30" width="110" height="64" rx="8"/><text x="320" y="52" font-weight="700">작업 풀</text><text x="320" y="70" font-size="12">스레드 8개 고정</text>
+  <rect class="b" x="460" y="30" width="125" height="64" rx="8"/><text x="470" y="52" font-weight="700">인증 래퍼</text><text x="470" y="70" font-size="12">Authenticator</text><text x="470" y="86" font-size="12">+ 실패 모니터</text>
+  <rect class="g" x="625" y="30" width="110" height="64" rx="8"/><text x="635" y="52" font-weight="700">핸들러</text><text x="635" y="70" font-size="12">시간 제한 없음</text>
+  <rect class="y" x="765" y="30" width="110" height="64" rx="8"/><text x="775" y="52" font-weight="700">응답 쓰기</text><text x="775" y="70" font-size="12">쓰기 타임아웃 5s</text>
+  <path class="l" d="M110 62H148" marker-end="url(#a)"/><path class="l" d="M270 62H308" marker-end="url(#a)"/>
+  <path class="l" d="M420 62H458" marker-end="url(#a)"/><path class="l" d="M585 62H623" marker-end="url(#a)"/><path class="l" d="M735 62H763" marker-end="url(#a)"/>
+  </g>
+  <rect class="r" x="460" y="130" width="125" height="46" rx="8"/><text x="468" y="150" font-size="12">실패 → 401 +</text><text x="468" y="167" font-size="12">WWW-Authenticate</text>
+  <path class="ld" d="M522 94V128" marker-end="url(#a)"/>
+  <text x="5" y="130" font-size="12">노란색 = 소켓 대기 시간만 재는 구간(10b)</text>
+  <text x="5" y="150" font-size="12">초록색 = 타임아웃이 영향 주지 않는 구간</text>
+  <text x="5" y="170" font-size="12">작업 스레드 8개 중 1개가 요청 1건(또는 연결 1개)을 붙잡는다</text>
+  <text x="5" y="215" font-size="12">keep-alive: 응답 뒤 같은 연결에서 다음 요청을 최대 5초 기다리고, 한 연결로 20건까지만 처리한다</text>
+</svg>
+
+<h3>2-2. start / stop 생명주기 (10c)</h3>
+<svg viewBox="0 0 880 250" role="img" aria-label="HTTPServer 시작 전, 실행 중, 종료, 바인딩 실패 상태도">
+  <defs><marker id="b2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10z" fill="currentColor"/></marker></defs>
+  <g class="arrow">
+  <rect class="b" x="10" y="90" width="130" height="56" rx="28"/><text x="32" y="123" font-weight="700">멈춤(초기)</text>
+  <rect class="y" x="270" y="90" width="150" height="56" rx="28"/><text x="290" y="113" font-weight="700">시작 중</text><text x="290" y="131" font-size="12">스레드가 bind 시도</text>
+  <rect class="g" x="560" y="90" width="130" height="56" rx="28"/><text x="590" y="123" font-weight="700">실행 중</text>
+  <rect class="r" x="270" y="190" width="150" height="46" rx="23"/><text x="288" y="218" font-size="13">실행 끝남(실패)</text>
+  <path class="l" d="M140 118H268" marker-end="url(#b2)"/><text x="160" y="110" font-size="12">start()</text>
+  <path class="l" d="M420 118H558" marker-end="url(#b2)"/><text x="450" y="110" font-size="12">bind 성공</text>
+  <path class="l" d="M345 146V188" marker-end="url(#b2)"/><text x="352" y="172" font-size="12">bind 실패</text>
+  <path class="l" d="M270 213H75V148" marker-end="url(#b2)"/><text x="80" y="232" font-size="12">다음 start()가 정리(join) 후 재시작</text>
+  <path class="l" d="M625 90V40H75V88" marker-end="url(#b2)"/><text x="260" y="34" font-size="12">stop(): 끝날 때까지 반복해서 서버를 깨운 뒤 join</text>
+  <path class="ld" d="M345 90V60H540" /><text x="545" y="64" font-size="12">stop()이 이때 불려도 무시되지 않게 반복</text>
+  <text x="560" y="175" font-size="12">실행 중 start() → false (실행 중)</text>
+  <text x="560" y="195" font-size="12">멈춤에서 stop() → 아무 일 없음</text>
+  </g>
+</svg>
+<p>두 그림의 공통점: 시간을 재는 곳(노란색)과 일을 하는 곳(초록색)을 분리하고, 상태를 바꾸는 시작·중지는 락 하나로 한 줄로 세운다.</p>
+</section>
+
+<section>
+<h2>3. 코드 해설</h2>
+
+<h3>3-1. 10a — 오류를 한 곳의 표로 결정 (<code>ErrorMapping::describe</code>)</h3>
+<p>이전 방식(현재 라우트에 남아 있는 방식)과 10a의 방식을 비교한다.</p>
+<pre class="before">// before: 본문 문자열에 "error"가 들었는지 검사해서 상태를 정한다 (HTTPServer.cpp 178행)
+if (jsonResponse.find("\"error\"") != std::string::npos) {
+    res.status = 400;
+}</pre>
+<pre class="after">// after: ErrorCode -> (HTTP 상태, 코드 문자열, 고정 문구) 를 switch 한 곳에서만 결정 (ErrorMapping.cpp)
+case ErrorCode::DeviceNotFound:
+    return {404, "DEVICE_NOT_FOUND", "등록되지 않은 기기입니다."};
+case ErrorCode::CommissionBusy:
+    return {409, "COMMISSION_BUSY", "다른 기기 등록이 진행 중입니다."};</pre>
+<div class="wwb">
+<div><b>무엇을</b><br>오류 종류(<code>ErrorCode</code>)를 넣으면 상태·코드·문구가 한 번에 나온다. <code>buildErrorBody</code>는 <code>{"error":{"code","message"}}</code>만 만든다.</div>
+<div><b>왜</b><br>문자열 검사는 정상 응답에 우연히 "error"라는 글자가 들어가면(예: 기기 이름) 400으로 오판하고, 모든 오류가 400이 되어 404·409·502를 구분 못 한다. 표는 오류를 <b>타입</b>으로 다뤄 컴파일러가 누락을 잡아 주고, 시험 한 개(<code>EveryRowMatchesTheDesignTable</code>)가 설계 표와 1:1로 대조한다. 문구도 고정이라 SQL·경로·<code>e.what()</code> 같은 내부 정보가 응답에 새지 않는다(S-11).</div>
+<div><b>빼면</b><br>상태 결정이 핸들러마다 흩어지고, 문구가 제각각이 되며, 내부 오류 문장이 그대로 노출될 수 있다.</div>
+</div>
+<p>덧붙임: <code>ErrorCode::None</code>은 오류가 아니므로 호출되면 안 되지만, 안전하게 500으로 처리한다(시험 <code>NoneFallsBackToInternalError</code>). 등록 작업(E8)의 <code>COMMISSION_FAILED</code> 등은 HTTP는 200이고 오류 정보는 본문 안에 들어간다.</p>
+
+<h3>3-2. 10b — 타임아웃은 "소켓 대기"만 센다 + 포트·풀 설정 (<code>applyConnectionLimits</code>)</h3>
+<pre class="after">server.set_read_timeout(5);       // 소켓에서 바이트가 안 올 때 기다리는 시간
+server.set_write_timeout(5);      // 소켓에 쓸 수 없을 때 기다리는 시간
+server.set_keep_alive_timeout(5); // 응답 뒤 다음 요청을 기다리는 시간
+server.set_keep_alive_max_count(20);
+server.new_task_queue = [] { return new httplib::ThreadPool(8); };   // 풀 크기 고정
+server.set_socket_options([](socket_t sock) {
+    httplib::set_socket_opt(sock, SOL_SOCKET, SO_REUSEADDR, 1);       // SO_REUSEPORT는 켜지 않는다
+});</pre>
+<div class="wwb">
+<div><b>무엇을</b><br>느린 연결이 작업 스레드를 오래 붙잡지 못하게 상한을 건다. 풀은 8개로 고정하고, 소켓 옵션은 <code>SO_REUSEADDR</code>만 켠다.</div>
+<div><b>왜</b><br>스레드가 8개뿐이라 "헤더 한 줄만 보내고 멈추는" 연결 8개면 서버가 멎는다(느린 연결 공격). 기본 풀은 요청이 몰리면 스레드를 늘려서 메모리를 먹는다. 기본 소켓 옵션은 <code>SO_REUSEPORT</code>라 같은 포트에 두 프로세스가 동시에 붙어 버린다.</div>
+<div><b>빼면</b><br>상한이 없으면 느린 연결 몇 개로 서비스 거부가 되고, 스레드가 무한히 늘 수 있으며, 운영 8000에 실수로 서버를 두 번 띄워도 조용히 둘 다 떠서 요청이 반반 갈린다.</div>
+</div>
+
+<h3>왜 타임아웃이 느린 핸들러를 건드리지 않나 (T-4 시험)</h3>
+<p>읽기·쓰기 타임아웃은 "소켓이 읽기·쓰기 가능해질 때까지 기다린 시간"만 잰다. 요청을 다 받은 뒤 핸들러가 실행되는 동안에는 소켓을 기다리는 것이 아니므로 5초 시계가 돌지 않는다. 시험 <code>HandlerSlowerThanSocketTimeoutStillAnswersAndKeepsConnection</code>은 핸들러를 일부러 7초 재워도(타임아웃 5초보다 길다) 200 응답이 오고 같은 연결로 두 번째 요청도 되는 것을 확인한다. 그래서 수동 새로고침처럼 기기에 직접 묻는 느린 요청이 안전하다.</p>
+<p><b>관찰(느린 연결)</b>: 헤더를 일부만 보내고 멈추는 연결은 시험 <code>StalledPartialHeaderConnection...</code>에서 약 5초에 <code>400</code>과 <code>Connection: close</code> 응답을 받고, 소켓이 실제로 닫히는 건 그 뒤 keep-alive 대기 5초까지 끝난 <b>약 10초</b> 시점이다. 즉 "5초에 끊긴다"가 아니라 "5초에 응답, 10초에 닫힘"이다(시험은 4~7초 사이 첫 바이트, 12초 이내 종료를 확인). 또 <code>SevenStalledConnectionsDoNotBlockANormalRequest</code>는 풀 8개 중 7개가 묶여도 남은 1개로 정상 요청이 2초 안에 처리됨을 보인다.</p>
+
+<h3>SO_REUSEADDR vs SO_REUSEPORT</h3>
+<table>
+<tr><th></th><th><code>SO_REUSEADDR</code></th><th><code>SO_REUSEPORT</code></th></tr>
+<tr><td>하는 일</td><td>종료 직후 남는 TIME_WAIT 상태 때문에 같은 포트가 "사용 중"으로 보이는 것을 피한다. 재시작이 바로 된다.</td><td>같은 주소·포트에 여러 소켓(여러 프로세스)이 동시에 listen하게 허용하고 커널이 연결을 나눠 준다.</td></tr>
+<tr><td>같은 포트 두 번째 서버</td><td>listen 중인 소켓이 있으면 bind 실패(중복 실행이 막힘)</td><td>둘 다 성공 → 요청이 두 서버로 갈림</td></tr>
+<tr><td>위험</td><td>거의 없음(재시작에 필요)</td><td>유령·옛 프로세스가 같은 포트에서 계속 답하거나, 다른 프로그램이 포트를 가로챌 수 있음(같은 사용자 계정이면)</td></tr>
+</table>
+<p>시험: <code>SecondServerOnSamePortFailsToBecomeReady</code>(두 번째 서버는 준비 안 됨), <code>SamePortCanBeReusedRightAfterStop</code>(중지 직후 같은 포트로 재시작 성공).</p>
+
+<h3>3-3. 10c — 생명주기 락 (<code>start</code>/<code>stop</code>)</h3>
+<pre class="before">// before(개념): 락 없이 서버 스레드를 만들고 끝낸다
+//  - start 두 번 동시 호출 -> std::thread 두 개가 대입되어 std::terminate
+//  - stop 두 번 동시 호출 -> 같은 스레드를 두 번 join
+//  - stop이 bind 전에 불리면 서버가 멈추라는 신호를 놓침 -> join이 영원히 대기</pre>
+<pre class="after">bool HTTPServer::start(){
+    std::lock_guard&lt;std::mutex&gt; lock(mLifecycleMutex);
+    if (mServerThread.joinable()) {
+        if (!mHasRunFinished) return false;   // 이미 실행 중
+        mServerThread.join();                 // 바인딩 실패로 끝난 이전 실행 정리 후 재시작
+    }
+    mHasRunFinished = false;
+    buildServer();                            // start마다 새 서버 객체
+    mServerThread = std::thread(&amp;HTTPServer::run, this);
+    return true;
+}
+void HTTPServer::stop(){
+    std::lock_guard&lt;std::mutex&gt; lock(mLifecycleMutex);
+    if (!mServerThread.joinable()) return;    // 시작한 적 없거나 이미 멈춤
+    while (!mHasRunFinished) { mServer->stop(); sleep 5ms; }  // run이 끝날 때까지 반복
+    mServerThread.join();
+}</pre>
+<div class="wwb">
+<div><b>무엇을</b><br>start/stop을 락 하나로 직렬화하고, "스레드가 살아 있나(<code>joinable</code>)"와 "run이 끝났나(<code>mHasRunFinished</code>)" 두 신호로 상태를 판단한다.</div>
+<div><b>왜</b><br>G6(시작·종료 중복 호출 시 <code>std::thread</code> 예외·종료)와 T6(<code>stop</code>이 bind 전에 불려 무시되는 경합)을 막는다. <code>mServer-&gt;stop()</code>은 listen 전에 부르면 아무 효과가 없어서, run이 끝날 때까지 5ms마다 반복 호출한다. 시험: <code>ConcurrentStartsLetExactlyOneWin</code>, <code>StopRightAfterStartRepeatedlyNeverHangs</code>.</div>
+<div><b>빼면</b><br>드물게 터지는 크래시나 영원히 안 끝나는 종료. 시험으로 재현해야만 보이는 "경합 조건" 버그다.</div>
+</div>
+<p>락 안에서 <code>join</code>까지 하므로 설계 주석대로 <b>다른 락과 겹쳐 잡지 않는다</b>(교착 방지). <code>TcpServer</code>(8080)도 같은 패턴을 적용했다(<code>lifecycleMutex_</code>, 스레드 생성 실패 시 <code>running_</code> 되돌리기). 실패 로그는 <code>errno</code>를 <code>close</code> 호출 전에 <code>cause</code>로 저장한다(close가 errno를 덮어쓰기 때문). httplib는 실패 원인을 안 알려 주므로 <code>diagnoseBindErrno</code>가 같은 조건으로 소켓을 한 번 더 bind해 본다.</p>
+
+<h3>3-4. 10d — 빈 토큰 구멍, 인증 주입, 실패 모니터</h3>
+<pre class="before">// before(개념): 서버 토큰이 "" 이면, 헤더 "Bearer " 로 보낸 빈 토큰과 길이(0)가 같아 비교가 통과할 수 있었다</pre>
+<pre class="after">bool ApiAuth::isAuthorized(const std::string&amp; authorizationHeader, const std::string&amp; expectedToken) {
+    if (expectedToken.empty()) return false;          // 빈 토큰 구멍 차단: 설정이 비면 아무도 못 들어온다
+    ...
+    return CRYPTO_memcmp(...) == 0;                   // 상수 시간 비교
+}
+
+class Authenticator { virtual bool isAuthorized(const std::string&amp; header) const = 0; };
+// HTTPServer는 이 인터페이스만 안다 -> 시험에서는 가짜를 넣고, 나중에 방식을 바꿔도 서버 코드는 그대로
+
+bool recordFailure() {                                 // AuthFailureMonitor
+    now = clock.steadyNow(); lock;
+    times.push_back(now); dropOlderThanWindow(now);    // 60초 이상 된 기록 버림
+    if (times.size() &lt;= 10) { warned = false; return false; }  // 조용해지면 "재무장"
+    if (warned) return false;                          // 같은 구간 중복 경고 방지
+    warned = true; return true;                        // 11번째 순간 딱 한 번
+}</pre>
+<div class="wwb">
+<div><b>무엇을</b><br>빈 기대 토큰을 항상 거부하고, 인증 판정을 인터페이스 뒤로 숨기고, 1분 안 실패가 10회를 넘으면 경고를 딱 한 번 낸다(차단은 안 한다).</div>
+<div><b>왜</b><br>빈 토큰은 "인증 없음"과 같아서 가장 위험한 설정 실수다. 인터페이스(<code>Authenticator</code>)는 테스트에서 가짜를 넣고 시계도 <code>FakeClock</code>으로 주입해 "1분"을 기다리지 않고 시험하려는 설계다(의존성 주입). 경고를 한 번만 내는 이유는 공격 중 로그가 경고로 가득 차 정작 중요한 로그가 묻히는 것을 피하려는 것이다.</div>
+<div><b>빼면</b><br>빈 토큰 구멍은 무인증 접근, 모니터가 없으면 토큰 추측 시도를 알 수 없고, 매 실패마다 경고하면 로그 폭주. 실패 로그에는 토큰을 일부도 남기지 않고 메서드·경로는 <code>sanitizeForLog</code>로 정제한다(로그 위조 방지).</div>
+</div>
+<h4>1분 창과 재무장 한눈에</h4>
+<table>
+<tr><th>상황</th><th>결과</th><th>시험</th></tr>
+<tr><td>1분 안에 11번째 실패</td><td>경고 true(1회), 12·13번째는 false</td><td>WarnsOnceWhenMoreThanTenFailuresInAMinute</td></tr>
+<tr><td>7초마다 1회(1분에 약 8회)</td><td>영원히 경고 없음</td><td>SlowFailuresNeverWarn</td></tr>
+<tr><td>10건 뒤 60초 경과 후 1건</td><td>이전 10건은 창 밖 → 1건으로 계산, false</td><td>FailuresOlderThanAMinuteAreForgotten</td></tr>
+<tr><td>경고 후 61초 조용 → 다시 11건</td><td>다시 경고 true(재무장)</td><td>WarnsAgainAfterCalmingDown</td></tr>
+</table>
+<p>"창 밖" 판정은 <code>now - 기록 &gt;= 60초</code>라서 정확히 60초 된 기록도 버린다(경계 포함).</p>
+<div class="warn">짚어 볼 점(비판적 시각): 모니터는 경고만 하고 차단은 안 한다. 8개 스레드가 동시에 <code>recordFailure</code>를 부르므로 mutex로 보호하지만, 락 안에서는 메모리 작업만 한다(느린 I/O를 락 안에 넣지 않는 원칙). 또 요청자 주소는 소켓 주소 그대로라(<code>clientAddressOf</code>) 프록시 뒤에서는 모두 같은 주소로 보일 수 있다(설계상 XFF는 보류).</div>
+</section>
+
+<section>
+<h2>4. 용어 풀이</h2>
+<ul>
+<li><b>keep-alive</b>: 응답 뒤에도 TCP 연결을 닫지 않고 다음 요청을 받는 방식. 연결 비용을 아끼지만 놀고 있는 연결이 스레드를 잡을 수 있어 대기 시간·횟수 상한이 필요하다.</li>
+<li><b>작업 풀(ThreadPool)</b>: 미리 만든 스레드 N개가 요청을 나눠 처리하는 구조. 크기를 고정하면 자원 사용에 상한이 생긴다.</li>
+<li><b>TIME_WAIT</b>: 닫힌 TCP 연결의 흔적이 잠깐 남는 상태. <code>SO_REUSEADDR</code> 없이는 그 사이 같은 포트로 재시작이 막힐 수 있다.</li>
+<li><b>경합 조건(race condition)</b>: 스레드 실행 순서에 따라 결과가 달라지는 버그. 락과 상태 변수로 순서를 강제한다.</li>
+<li><b>의존성 주입</b>: 객체가 쓸 부품(인증, 시계)을 안에서 만들지 않고 밖에서 넣어 주는 설계. 시험에서 가짜로 바꾸기 쉽다.</li>
+<li><b>상수 시간 비교</b>(<code>CRYPTO_memcmp</code>): 비교가 어디서 틀렸는지에 따라 걸리는 시간이 달라지지 않게 해, 시간 차이로 토큰을 추측하는 공격을 막는다.</li>
+</ul>
+</section>
+
+<section>
+<h2>5. 이해도 질문</h2>
+<div class="q"><b>Q1.</b> 읽기 타임아웃이 5초인데 핸들러가 7초 걸려도 응답이 정상으로 가는 이유는? 만약 핸들러 전체에 5초 제한을 걸고 싶다면 이 설정으로 될까?
+<details><summary>정답</summary>읽기·쓰기 타임아웃은 소켓에서 바이트를 기다리는 시간만 센다. 요청을 다 받은 뒤 핸들러가 도는 동안은 소켓 대기가 아니므로 시계가 안 돈다. 핸들러 전체 제한은 이 설정으로 안 되고, 핸들러 안에서 별도 제한(예: 기기 호출 타임아웃)을 걸어야 한다.</details></div>
+<div class="q"><b>Q2.</b> 풀이 8개인데 느린 연결 8개가 헤더만 보내고 멈추면 어떻게 되나? 무엇이 이 상태를 풀어 주고, 얼마나 걸리나?
+<details><summary>정답</summary>모든 작업 스레드가 묶여 새 요청이 대기한다. 읽기 타임아웃 5초에 연결이 400으로 응답되고, keep-alive 대기까지 합쳐 약 10초에 소켓이 닫혀 스레드가 풀린다. 그동안은 서비스가 막히므로 이 설정은 "완전한 방어"가 아니라 "피해 시간 상한"이다(그래서 풀 크기와 타임아웃을 함께 정한다).</details></div>
+<div class="q"><b>Q3.</b> <code>stop()</code>이 <code>mServer-&gt;stop()</code>을 한 번만 부르지 않고 <code>mHasRunFinished</code>가 될 때까지 반복하는 이유는? 락(<code>mLifecycleMutex</code>)을 빼면 어떤 호출 조합이 위험한가?
+<details><summary>정답</summary>run()이 bind·listen에 들어가기 전에 stop이 불리면 httplib의 stop이 무시되어 신호를 놓치고 join이 영원히 대기한다(T6). 락이 없으면 start 동시 2회(스레드 대입 중복 → 비정상 종료), stop 동시 2회(같은 스레드 이중 join), start와 stop이 겹치는 경우가 위험하다(G6).</details></div>
+<div class="q"><b>Q4.</b> <code>AuthFailureMonitor</code>가 "10회까지는 false, 11번째 true, 이후 false"인데 <code>mWarned = false</code>로 되돌리는 코드는 어디서, 왜 필요한가? 이 줄을 빼면 어떤 시험이 깨지나?
+<details><summary>정답</summary>실패 수가 10 이하로 내려간 호출(<code>size() &lt;= kThreshold</code> 분기)에서 되돌린다. 안 그러면 한 번 경고한 뒤 영원히 경고가 없어서 "조용해진 뒤 다시 공격"을 알릴 수 없다. <code>WarnsAgainAfterCalmingDown</code> 시험이 깨진다.</details></div>
+</section>
+
+<section>
+<h2>6. 응용 실습</h2>
+<div class="warn"><b>안전 규칙</b>: 실습 명령은 <b>build-dev 폴더에서만</b> 실행하고, 시험 서버 포트는 임시 빈 포트(<code>findFreePort()</code>)를 쓴다. <b>운영 8000·8080 포트는 절대 쓰지 않는다.</b> 원본 <code>src/</code>를 고치지 말고 새 브랜치나 <code>learning/exercise-auth-monitor/</code> 같은 사본 폴더에서 한다. 비밀값(실제 토큰)은 쓰지 않고 시험용 문자열만 쓴다. 채점은 tester에게 요청하도록 총괄에게 알린다.</div>
+
+<h3>실습 A (빈칸 구현): <code>AuthFailureMonitor</code>의 창 판정</h3>
+<p><b>목표</b>: 1분 창·10회 초과·경고 1회·재무장을 직접 구현한다.<br>
+<b>고칠 파일</b>: 사본 <code>learning/exercise-auth-monitor/AuthFailureMonitor.hpp</code>(원본 <code>include/AuthFailureMonitor.hpp</code>을 복사해 본문만 비운다).<br>
+<b>완료 기준</b>: 원본 시험 <code>tests/unit/AuthFailureMonitorTest.cpp</code> 4개가 사본에서도 통과(build-dev에서 실행).</p>
+<pre class="after">// 빈칸 사본: 시그니처와 멤버는 그대로 두고 두 함수 본문만 채운다
+bool recordFailure() {
+    const auto now = mClock.steadyNow();
+    std::lock_guard&lt;std::mutex&gt; lock(mMutex);
+    // TODO 1: 현재 시각을 기록한다
+    // TODO 2: 창 밖의 오래된 기록을 버린다
+    // TODO 3: 기록 수가 kThreshold 이하이면 어떻게 해야 하나? (재무장)
+    // TODO 4: 이미 경고한 상태면? 처음 넘은 순간이면?
+}
+void dropOlderThanWindow(std::chrono::steady_clock::time_point now) {
+    // TODO: 가장 오래된 기록부터 보면서 창(kWindow) 밖이면 제거
+}</pre>
+<details><summary>힌트 1</summary>기록은 시간순으로 쌓이므로 <code>std::deque</code>의 앞(<code>front</code>)이 가장 오래된 것이다. 앞에서부터만 확인하면 된다.</details>
+<details><summary>힌트 2</summary>경고 상태를 기억하는 bool 하나가 필요하다. "10 이하"에서 꺼지고, "11번째"에서 켜면서 true를 돌려준다.</details>
+<details><summary>정답(부분): 창 판정</summary><pre>while (!mFailureTimes.empty() &amp;&amp; now - mFailureTimes.front() &gt;= kWindow)
+    mFailureTimes.pop_front();</pre></details>
+<details><summary>정답(전체)</summary><pre>mFailureTimes.push_back(now);
+dropOlderThanWindow(now);
+if (mFailureTimes.size() &lt;= kThreshold) { mWarned = false; return false; }
+if (mWarned) return false;
+mWarned = true;
+return true;</pre>경계 질문: <code>&gt;= kWindow</code>를 <code>&gt; kWindow</code>로 바꾸면 어떤 시험이 깨지나? (<code>FailuresOlderThanAMinuteAreForgotten</code>: 정확히 60초 된 10건이 남아 11건이 되어 true)</details>
+
+<h3>실습 A-2 (보너스, 작게): <code>ErrorMapping</code> 표에 한 줄 추가해 보기</h3>
+<p>사본 <code>ErrorMapping.cpp</code>에서 <code>Internal</code> 줄만 지운 뒤 컴파일 경고·시험(<code>EveryRowMatchesTheDesignTable</code>)이 무엇을 알려 주는지 관찰하고, 다시 채워 넣는다. 질문: 새 <code>ErrorCode</code>를 추가하면 어느 3곳을 고쳐야 하나? (<code>Result.hpp</code>의 enum, <code>ErrorMapping.cpp</code>의 switch, <code>ErrorMappingTest.cpp</code>의 <code>kRows</code> + 설계 3.5 표)</p>
+
+<h3>실습 B (응용): "같은 포트 두 인스턴스" 시험을 직접 설계하기</h3>
+<p><b>목표</b>: 10b의 포트 옵션 결정을 시험으로 증명하는 법을 익힌다.<br>
+<b>할 일</b>: 새 시험 파일 사본(<code>learning/exercise-port/</code>)에 아래 세 가지를 설계해서 써 본다(원본 <code>HttpServerLimitsTest.cpp</code>는 보기만 한다).<br>
+<b>완료 기준</b>: (1) 서버 A 실행 중 같은 포트에 서버 B <code>start()</code> 후 <code>waitUntilReady</code>가 false (2) A <code>stop()</code> 직후 B가 같은 포트에서 ready=true (3) 두 서버를 한 번 더 시도해도 매번 같은 결과(반복성 확인).<br>
+<b>실행</b>: build-dev에서 해당 시험만 필터로 실행한다. 포트는 <code>findFreePort()</code>로 얻고 8000·8080은 쓰지 않는다.</p>
+<details><summary>힌트</summary>원본 <code>SecondServerOnSamePortFailsToBecomeReady</code>를 읽어 보면 서버 두 개를 같은 <code>port</code>로 만들고 두 번째의 <code>start()</code>/<code>waitUntilReady</code> 결과를 본다. 두 번째 <code>start()</code> 자체는 true일 수 있다(스레드는 만들어지고 bind가 실패하므로). 실패는 <code>waitUntilReady</code>가 알려 준다는 점이 포인트다.</details>
+<details><summary>정답 스케치</summary><pre>port = findFreePort();
+HTTPServer a(manager, kToken, port), b(manager, kToken, port);
+ASSERT_TRUE(a.start());  ASSERT_TRUE(a.waitUntilReady(3s));
+b.start();
+EXPECT_FALSE(b.waitUntilReady(1s));   // SO_REUSEADDR만이라 bind 실패
+a.stop();
+ASSERT_TRUE(b.start());               // 바인딩 실패로 끝난 b를 다음 start가 정리 후 재시작
+EXPECT_TRUE(b.waitUntilReady(3s));    // 중지 직후 재사용 가능(SO_REUSEADDR)
+b.stop();</pre>생각해 볼 질문: 만약 <code>SO_REUSEPORT</code>를 다시 켜면 (1)번 결과가 어떻게 바뀌나? (둘 다 ready=true가 되어 시험이 실패해야 정상. 이게 "시험이 설계 결정을 지킨다"는 뜻이다.)</details>
+</section>
+</main>
+</body>
+</html>
