@@ -86,6 +86,22 @@ TEST_F(HttpServerAuthTest, FailureLogHasClientMethodPathButNeverTheTokenAndSanit
     server.stop();
 }
 
+TEST_F(HttpServerAuthTest, ForwardedForHeaderIsIgnoredInFailureLog) {
+    HTTPServer server(manager, kToken, port);
+    ASSERT_TRUE(server.start());
+    ASSERT_TRUE(server.waitUntilReady(3s));
+
+    testing::internal::CaptureStderr();
+    EXPECT_EQ(statusLineFor("GET /api/devices HTTP/1.1\r\nHost: x\r\nX-Forwarded-For: 10.9.9.9\r\n"
+                            "Forwarded: for=10.8.8.8\r\nAuthorization: Bearer bad\r\n\r\n"),
+              "HTTP/1.1 401 Unauthorized");
+    const std::string log = testing::internal::GetCapturedStderr();
+    EXPECT_NE(log.find("인증 실패: 127.0.0.1 GET"), std::string::npos) << log;
+    EXPECT_EQ(log.find("10.9.9.9"), std::string::npos) << log;
+    EXPECT_EQ(log.find("10.8.8.8"), std::string::npos) << log;
+    server.stop();
+}
+
 TEST_F(HttpServerAuthTest, WarnsExactlyOnceAfterMoreThanTenFailuresInAMinute) {
     HTTPServer server(manager, std::make_shared<BearerTokenAuthenticator>(kToken), port, "127.0.0.1", clock);
     ASSERT_TRUE(server.start());

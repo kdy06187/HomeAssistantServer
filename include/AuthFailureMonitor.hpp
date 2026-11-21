@@ -16,9 +16,12 @@ public:
 
     // 실패 한 건을 기록한다. 경고를 내야 하는 순간이면 true
     bool recordFailure() {
-        const auto now = mClock.steadyNow();
         std::lock_guard<std::mutex> lock(mMutex);
+        // 시각을 락 안에서 읽어야 저장 순서가 시간 순서와 같다
+        const auto now = mClock.steadyNow();
         mFailureTimes.push_back(now);
+        // 임계+1건만 있으면 "창 안에 임계 초과" 판정이 가능하다(공격 중에도 메모리 상한)
+        if (mFailureTimes.size() > kThreshold + 1) mFailureTimes.pop_front();
         dropOlderThanWindow(now);
         if (mFailureTimes.size() <= kThreshold) {
             mWarned = false;

@@ -112,6 +112,17 @@ TEST_F(TokenFileTest, GroupWritableFileIsRejected) {
     EXPECT_FALSE(ApiAuth::loadToken(path_).has_value());
 }
 
+TEST_F(TokenFileTest, ExecutableOrSpecialBitFilesAreRejected) {
+    for (mode_t mode : {mode_t(0700), mode_t(04600), mode_t(02600), mode_t(01600)}) {
+        writeFile(kToken, mode);
+        EXPECT_FALSE(ApiAuth::loadToken(path_).has_value()) << std::oct << mode;
+    }
+}
+
+TEST(ApiAuthLoadToken, DirectoryIsRejected) {
+    EXPECT_FALSE(ApiAuth::loadToken("/tmp").has_value());
+}
+
 TEST_F(TokenFileTest, OwnFileProducesNoOwnerWarning) {
     writeFile(kToken, 0600);
     testing::internal::CaptureStderr();

@@ -80,6 +80,23 @@ TEST_F(HttpServerSlowTest, StalledPartialHeaderConnectionIsAnsweredAtFiveSeconds
     EXPECT_LE(closedAfter, 12s);
 }
 
+// 헤더는 다 보내고 본문을 일부만 보낸 뒤 멈추면 읽기 타임아웃(5초)에 걸려 핸들러까지 가지 못하고 연결이 닫힌다.
+TEST_F(HttpServerSlowTest, StalledPostBodyTimesOutWithoutRunningTheHandler) {
+    RawHttpClient connection(port, 15);
+    ASSERT_TRUE(connection.connected());
+    const std::string body = R"({"deviceId": "DEV_1", "command": "OFF"})";
+    connection.sendAll("POST /api/control HTTP/1.1\r\nHost: local\r\nAuthorization: Bearer " + kToken +
+                       "\r\nContent-Type: application/json\r\nContent-Length: " + std::to_string(body.size()) +
+                       "\r\n\r\n" + body.substr(0, 10));
+
+    const auto closedAfter = connection.waitUntilClosed();
+    EXPECT_TRUE(connection.closedByPeer);
+    EXPECT_LE(closedAfter, 12s);
+    EXPECT_GE(closedAfter, 4s);  // 5초 타임아웃 전에 끊기지 않는다
+    EXPECT_EQ(connection.received.find("200 OK"), std::string::npos) << connection.received;
+    EXPECT_TRUE(tcpFake.sentCommands.empty()) << "본문이 끝나지 않은 요청이 실행되면 안 됨";
+}
+
 // 풀 8개 중 7개가 느린 연결에 묶여도 나머지 1개로 정상 요청이 처리된다.
 TEST_F(HttpServerSlowTest, SevenStalledConnectionsDoNotBlockANormalRequest) {
     std::vector<std::unique_ptr<RawHttpClient>> stalled;
@@ -100,7 +117,7 @@ TEST_F(HttpServerSlowTest, SevenStalledConnectionsDoNotBlockANormalRequest) {
     EXPECT_EQ(response.rfind("HTTP/1.1 200", 0), 0u) << response;
     EXPECT_LT(elapsed, 2s);
 
-    // 느린 연결은 약 5초 뒤 모두 닫힌다
+    // 느린 연결은 약 10초 뒤 모두 닫힌다(읽기 타임아웃 5초 + keep-alive 대기 5초)
     for (auto& connection : stalled) {
         connection->waitUntilClosed();
         EXPECT_TRUE(connection->closedByPeer);

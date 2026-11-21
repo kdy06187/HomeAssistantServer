@@ -16,8 +16,12 @@ std::optional<std::string> ApiAuth::loadToken(const std::string& tokenFilePath, 
         std::cerr << "[ApiAuth] 토큰 파일을 찾을 수 없습니다: " << tokenFilePath << std::endl;
         return std::nullopt;
     }
-    // SSH 개인키와 같은 정책: 소유자 외에 권한이 있으면 유출된 것으로 간주한다.
-    if (fileInfo.st_mode & (S_IRWXG | S_IRWXO)) {
+    if (!S_ISREG(fileInfo.st_mode)) {
+        std::cerr << "[ApiAuth] 토큰 경로가 일반 파일이 아닙니다: " << tokenFilePath << std::endl;
+        return std::nullopt;
+    }
+    // SSH 개인키와 같은 정책: 소유자 읽기·쓰기(0600) 외의 비트가 있으면 거부한다. 실행·setuid·setgid·sticky 비트 포함.
+    if (fileInfo.st_mode & (S_ISUID | S_ISGID | S_ISVTX | S_IXUSR | S_IRWXG | S_IRWXO)) {
         std::cerr << "[ApiAuth] 토큰 파일 권한이 너무 넓습니다. chmod 600이 필요합니다." << std::endl;
         return std::nullopt;
     }

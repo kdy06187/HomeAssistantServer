@@ -5,11 +5,13 @@
 #include "RequestValidation.hpp"
 #include "json.hpp"
 #include <arpa/inet.h>
+#include <atomic>
 #include <cerrno>
 #include <chrono>
 #include <cstring>
 #include <iostream>
 #include <sys/socket.h>
+#include <stdexcept>
 #include <system_error>
 #include <unistd.h>
 #include <utility>
@@ -67,11 +69,12 @@ namespace {
 
     void logBindFailure(const std::string& address, int port) {
         const int cause = diagnoseBindErrno(address, port);
-        std::cerr << "[HTTPServer] ❌ 바인딩 실패: 주소 " << address << ", 포트 " << port;
+        std::cerr << "[HTTPServer] ❌ 바인딩/리슨 실패: 주소 " << address << ", 포트 " << port;
         if (cause != 0) {
             std::cerr << " (errno=" << cause << " " << std::strerror(cause) << ")" << std::endl;
         } else {
-            std::cerr << " (진단 bind는 성공: 시작 직후 포트 경합 가능)" << std::endl;
+            // 진단 bind는 listen을 하지 않으므로 listen 단계 실패나 그 사이 포트 경합은 원인을 알 수 없다
+            std::cerr << " (진단 bind는 성공: listen 단계 실패 또는 포트 경합, 원인 불명)" << std::endl;
         }
     }
 
@@ -97,7 +100,17 @@ namespace {
         static const SystemClock clock;
         return clock;
     }
+
+    std::shared_ptr<const Authenticator> requireAuthenticator(std::shared_ptr<const Authenticator> authenticator) {
+        if (!authenticator) throw std::invalid_argument("HTTPServer: authenticator가 null");
+        return authenticator;
+    }
 }
+
+struct HTTPServer::RunState {
+    httplib::Server server;
+    std::atomic<bool> hasFinished{false};
+};
 
 HTTPServer::HTTPServer(DeviceManager& deviceManager, std::string apiToken, int port, std::string bindAddress)
     : HTTPServer(deviceManager, std::make_shared<BearerTokenAuthenticator>(std::move(apiToken)), port,
@@ -106,7 +119,7 @@ HTTPServer::HTTPServer(DeviceManager& deviceManager, std::string apiToken, int p
 
 HTTPServer::HTTPServer(DeviceManager& deviceManager, std::shared_ptr<const Authenticator> authenticator, int port,
                        std::string bindAddress, const Clock& clock)
-    : mDeviceManager(deviceManager), mAuthenticator(std::move(authenticator)), mAuthFailureMonitor(clock),
+    : mDeviceManager(deviceManager), mAuthenticator(requireAuthenticator(std::move(authenticator))), mAuthFailureMonitor(clock),
       mPort(port), mBindAddress(std::move(bindAddress)) {
 }
 
@@ -117,24 +130,33 @@ HTTPServer::~HTTPServer() {
     stop();
 }
 
+std::shared_ptr<HTTPServer::RunState> HTTPServer::currentRunState() const {
+    std::lock_guard<std::mutex> lock(mRunStateMutex);
+    return mRunState;
+}
+
 bool HTTPServer::start(){
-    std::lock_guard<std::mutex> lock(mLifecycleMutex);
-    if (mServerThread.joinable()) {
-        if (!mHasRunFinished) return false; // 이미 실행 중
-        mServerThread.join();               // 바인딩 실패 등으로 끝난 이전 실행을 정리하고 다시 시작
-    }
-    mHasRunFinished = false;
-    buildServer();
-    try {
-        mServerThread = std::thread(&HTTPServer::run, this);
-    } catch (const std::system_error& e) {
-        std::cerr << "[HTTPServer] ❌ 서버 스레드 생성 실패 (" << e.what() << ")" << std::endl;
-        mHasRunFinished = true;
+    if (mPort < 1 || mPort > 65535) {
+        std::cerr << "[HTTPServer] ❌ 포트 범위 오류 (" << mPort << ", 1~65535)" << std::endl;
         return false;
     }
-    std::cout << "[HTTPServer] HTTP 서버 시작 (주소: " << mBindAddress << ", 포트: " << mPort
-              << ", 평문 HTTP)" << std::endl;
-    return true;
+    std::lock_guard<std::mutex> lock(mLifecycleMutex);
+    if (mServerThread.joinable()) {
+        if (!mRunState->hasFinished) return false; // 이미 실행 중
+        mServerThread.join();                      // 바인딩 실패 등으로 끝난 이전 실행을 정리하고 다시 시작
+    }
+    auto state = buildRunState();
+    try {
+        mServerThread = std::thread(&HTTPServer::run, this, state);
+    } catch (const std::system_error& e) {
+        std::cerr << "[HTTPServer] ❌ 서버 스레드 생성 실패 (" << e.what() << ")" << std::endl;
+        state->hasFinished = true;
+    }
+    {
+        std::lock_guard<std::mutex> stateLock(mRunStateMutex);
+        mRunState = state;
+    }
+    return mServerThread.joinable();
 }
 
 void HTTPServer::stop(){
@@ -142,8 +164,10 @@ void HTTPServer::stop(){
     if (!mServerThread.joinable()) return; // 시작한 적이 없거나 이미 멈춤
 
     // run()이 bind·listen에 들어가기 전에 stop()이 불리면 무시되므로, run()이 끝날 때까지 반복 호출한다.
-    while (!mHasRunFinished) {
-        mServer->stop();
+    // mRunState는 생명주기 락을 쥔 쪽만 바꾸므로 여기서는 락 없이 읽어도 안전하다.
+    const auto state = mRunState;
+    while (!state->hasFinished) {
+        state->server.stop();
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
     mServerThread.join();
@@ -151,36 +175,38 @@ void HTTPServer::stop(){
 }
 
 bool HTTPServer::waitUntilReady(std::chrono::milliseconds timeout){
-    if (!mServer) return false; // start()를 부르기 전
+    const auto state = currentRunState(); // 락은 복사하는 순간만. 아래 대기는 락 밖
+    if (!state) return false; // start()를 부르기 전
     const auto deadline = std::chrono::steady_clock::now() + timeout;
-    while (!mServer->is_running()) {
-        if (mHasRunFinished || std::chrono::steady_clock::now() >= deadline) return false;
+    while (!state->server.is_running()) {
+        if (state->hasFinished || std::chrono::steady_clock::now() >= deadline) return false;
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
     return true;
 }
 
-void HTTPServer::buildServer(){
-    mServer = std::make_unique<httplib::Server>();
-    mServer->set_payload_max_length(16 * 1024);
-    applyConnectionLimits(*mServer);
-    registerRoutes();
+std::shared_ptr<HTTPServer::RunState> HTTPServer::buildRunState(){
+    auto state = std::make_shared<RunState>();
+    state->server.set_payload_max_length(16 * 1024);
+    applyConnectionLimits(state->server);
+    registerRoutes(state->server);
+    return state;
 }
 
-void HTTPServer::registerRoutes(){
-    addRoute(HttpMethod::Get, "/api/devices", [this](const httplib::Request&, httplib::Response& res) {
+void HTTPServer::registerRoutes(httplib::Server& server){
+    addRoute(server, HttpMethod::Get, "/api/devices", [this](const httplib::Request&, httplib::Response& res) {
         std::string jsonResponse = this->handleGetDevices();
         res.set_content(jsonResponse, "application/json");
     });
 
-    addRoute(HttpMethod::Post, "/api/control", [this](const httplib::Request& req, httplib::Response& res) {
+    addRoute(server, HttpMethod::Post, "/api/control", [this](const httplib::Request& req, httplib::Response& res) {
         std::string jsonResponse = this->handleControlDevice(req.body);
         if (jsonResponse.find("\"error\"") != std::string::npos) {
             res.status = 400; 
         }
         res.set_content(jsonResponse, "application/json");
     });
-    addRoute(HttpMethod::Post, "/api/commission", [this](const httplib::Request& req, httplib::Response& res){
+    addRoute(server, HttpMethod::Post, "/api/commission", [this](const httplib::Request& req, httplib::Response& res){
         std::string jsonResponse = this->handleCommissionDevice(req.body);
         if (jsonResponse.find("\"error\"") != std::string::npos) {
             res.status = 400; 
@@ -188,7 +214,7 @@ void HTTPServer::registerRoutes(){
         res.set_content(jsonResponse, "application/json");
     });
 
-    addRoute(HttpMethod::Post, "/api/devices/delete", [this](const httplib::Request& req, httplib::Response& res) {
+    addRoute(server, HttpMethod::Post, "/api/devices/delete", [this](const httplib::Request& req, httplib::Response& res) {
         std::string jsonResponse = this->handleDeleteDevice(req.body);
         if (jsonResponse.find("\"error\"") != std::string::npos) {
             res.status = 400; 
@@ -196,7 +222,7 @@ void HTTPServer::registerRoutes(){
         res.set_content(jsonResponse, "application/json");
     });
 
-    addRoute(HttpMethod::Get, R"(/api/devices/([^/]+)/state)", [this](const httplib::Request& req, httplib::Response& res) {
+    addRoute(server, HttpMethod::Get, R"(/api/devices/([^/]+)/state)", [this](const httplib::Request& req, httplib::Response& res) {
         std::string deviceId = req.matches[1];
         bool isManualRefresh = false; // 기본값은 false
         if (req.has_param("isManualRefresh")) {
@@ -214,7 +240,7 @@ void HTTPServer::registerRoutes(){
         
         res.set_content(response.dump(), "application/json");
     });
-    addRoute(HttpMethod::Get, R"(/api/devices/([^/]+)/energy)", [this](const httplib::Request& req, httplib::Response& res) {
+    addRoute(server, HttpMethod::Get, R"(/api/devices/([^/]+)/energy)", [this](const httplib::Request& req, httplib::Response& res) {
         std::string deviceId = req.matches[1];
         std::string jsonResponse = this->handleGetDeviceEnergy(deviceId);
         if (jsonResponse.find("\"error\"") != std::string::npos) {
@@ -223,7 +249,7 @@ void HTTPServer::registerRoutes(){
         res.set_content(jsonResponse, "application/json");
     });
 
-    addRoute(HttpMethod::Get, R"(/api/devices/([^/]+)/energy/history)", [this](const httplib::Request& req, httplib::Response& res) {
+    addRoute(server, HttpMethod::Get, R"(/api/devices/([^/]+)/energy/history)", [this](const httplib::Request& req, httplib::Response& res) {
         std::string deviceId = req.matches[1];
         std::string result = this->handleGetDeviceEnergyHistory(deviceId);
         res.set_content(result, "application/json");
@@ -233,22 +259,24 @@ void HTTPServer::registerRoutes(){
     const auto notFound = [](const httplib::Request&, httplib::Response& res) { res.status = 404; };
     for (HttpMethod method : {HttpMethod::Get, HttpMethod::Post, HttpMethod::Put,
                               HttpMethod::Delete, HttpMethod::Patch, HttpMethod::Options}) {
-        addRoute(method, ".*", notFound);
+        addRoute(server, method, ".*", notFound);
     }
 }
 
-void HTTPServer::run(){
-    httplib::Server& svr = *mServer;
+void HTTPServer::run(std::shared_ptr<RunState> state){
+    httplib::Server& svr = state->server;
     if (!svr.bind_to_port(mBindAddress, mPort)) {
         logBindFailure(mBindAddress, mPort);
     } else {
-        std::cout << "[HTTPServer]네트워크 소켓 개방 완료" << std::endl;
+        // waitUntilReady가 true가 되기 전(listen 전)에 출력해 로그가 항상 준비 완료보다 앞선다
+        std::cout << "[HTTPServer] HTTP 서버 시작 (주소: " << mBindAddress << ", 포트: " << mPort
+                  << ", 평문 HTTP)" << std::endl;
         svr.listen_after_bind(); // stop()이 부르면 반환한다
     }
-    mHasRunFinished = true;
+    state->hasFinished = true;
 }
 
-void HTTPServer::addRoute(HttpMethod method, const std::string& pattern, RouteHandler handler) {
+void HTTPServer::addRoute(httplib::Server& svr, HttpMethod method, const std::string& pattern, RouteHandler handler) {
     auto guarded = [this, handler = std::move(handler)](const httplib::Request& req, httplib::Response& res) {
         if (!mAuthenticator->isAuthorized(req.get_header_value("Authorization"))) {
             // 제시된 토큰은 일부라도 로그에 남기지 않는다. 메서드·경로는 외부 입력이라 정제한다.
@@ -268,14 +296,15 @@ void HTTPServer::addRoute(HttpMethod method, const std::string& pattern, RouteHa
         try {
             handler(req, res);
         } catch (const std::exception& e) {
-            std::cerr << "[HTTPServer] 처리 중 예외: " << req.method << " " << req.path << " (" << e.what() << ")" << std::endl;
+            std::cerr << "[HTTPServer] 처리 중 예외: " << RequestValidation::sanitizeForLog(req.method) << " "
+                      << RequestValidation::sanitizeForLog(req.path) << " (" << e.what() << ")" << std::endl;
             respondInternalError(res);
         } catch (...) {
-            std::cerr << "[HTTPServer] 처리 중 알 수 없는 예외: " << req.method << " " << req.path << std::endl;
+            std::cerr << "[HTTPServer] 처리 중 알 수 없는 예외: " << RequestValidation::sanitizeForLog(req.method) << " "
+                      << RequestValidation::sanitizeForLog(req.path) << std::endl;
             respondInternalError(res);
         }
     };
-    httplib::Server& svr = *mServer;
     switch (method) {
         case HttpMethod::Get:     svr.Get(pattern, guarded); break;
         case HttpMethod::Post:    svr.Post(pattern, guarded); break;

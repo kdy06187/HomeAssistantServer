@@ -26,10 +26,12 @@ public:
     TcpServer& operator=(const TcpServer&) = delete;
 
     // 바인드·리슨까지 마치고 수락 스레드를 띄운다. port 0이면 임의 포트(boundPort로 확인)
-    // 이미 실행 중이면 true. start·stop은 여러 스레드가 동시에 불러도 안전하다
+    // 이미 실행 중이면 false(HTTPServer::start와 같은 규약: true는 이번 호출이 시작했다는 뜻).
+    // 포트는 0~65535(0은 임의 포트). start·stop은 여러 스레드가 동시에 불러도 안전하다
     bool start(int port, const std::string& bindAddress = "0.0.0.0");
     // 수락을 멈추고(join) 모든 연결을 닫는다. 여러 번 불러도 안전하다
     void stop();
+    // 실행 중이 아니면 0
     int boundPort() const { return boundPort_; }
 
     // 요청 JSON 한 줄을 보내고, 받은 줄 중 마지막으로 해석된 JSON을 돌려준다. 실패하면 null.
@@ -58,7 +60,7 @@ private:
     // start·stop 호출끼리만 직렬화한다. 수락 스레드와 연결 맵 락은 이 락을 잡지 않는다
     std::mutex lifecycleMutex_;
     int listenFd_ = -1;
-    int boundPort_ = 0;
+    std::atomic<int> boundPort_{0};
     std::thread acceptThread_;
     std::atomic<bool> running_{false};
 

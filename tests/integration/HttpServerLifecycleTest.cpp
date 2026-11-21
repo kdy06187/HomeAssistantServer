@@ -8,7 +8,9 @@
 #include "support/RawHttpClient.hpp"
 #include <arpa/inet.h>
 #include <atomic>
+#include <cerrno>
 #include <memory>
+#include <stdexcept>
 #include <thread>
 #include <vector>
 
@@ -143,6 +145,61 @@ TEST_F(HttpServerLifecycleTest, ConcurrentStartAndStopCallsEndInACleanState) {
     EXPECT_TRUE(server.waitUntilReady(3s));
 }
 
+TEST_F(HttpServerLifecycleTest, ConcurrentStartStopAndWaitUntilReadyAreRaceFree) {
+    HTTPServer server(manager, kToken, port);
+    std::atomic<bool> go{false};
+    std::atomic<bool> done{false};
+    std::vector<std::thread> threads;
+    threads.emplace_back([&] {
+        while (!go) std::this_thread::yield();
+        for (int i = 0; i < 20; ++i) server.start();
+    });
+    threads.emplace_back([&] {
+        while (!go) std::this_thread::yield();
+        for (int i = 0; i < 20; ++i) server.stop();
+    });
+    for (int w = 0; w < 2; ++w) {
+        threads.emplace_back([&] {
+            while (!go) std::this_thread::yield();
+            while (!done) server.waitUntilReady(5ms);
+        });
+    }
+    go = true;
+    threads[0].join();
+    threads[1].join();
+    done = true;
+    threads[2].join();
+    threads[3].join();
+    server.stop();
+    ASSERT_TRUE(server.start());
+    EXPECT_TRUE(server.waitUntilReady(3s));
+}
+
+TEST_F(HttpServerLifecycleTest, NullAuthenticatorIsRejectedAtConstruction) {
+    EXPECT_THROW(HTTPServer(manager, std::shared_ptr<const Authenticator>(), port, "127.0.0.1", clock),
+                 std::invalid_argument);
+}
+
+TEST_F(HttpServerLifecycleTest, PortOutOfRangeFailsToStart) {
+    for (int bad : {0, -1, 65536, 100000}) {
+        HTTPServer server(manager, kToken, bad);
+        testing::internal::CaptureStderr();
+        EXPECT_FALSE(server.start()) << bad;
+        testing::internal::GetCapturedStderr();
+        EXPECT_FALSE(server.waitUntilReady(10ms)) << bad;
+    }
+}
+
+TEST_F(HttpServerLifecycleTest, StartLogIsPrintedOnlyAfterBindingSucceeds) {
+    PortHolder holder(port);
+    ASSERT_TRUE(holder.held());
+    HTTPServer server(manager, kToken, port);
+    testing::internal::CaptureStdout();
+    ASSERT_TRUE(server.start());
+    EXPECT_FALSE(server.waitUntilReady(2s));
+    EXPECT_EQ(testing::internal::GetCapturedStdout().find("HTTP 서버 시작"), std::string::npos);
+}
+
 TEST_F(HttpServerLifecycleTest, BindFailureLogsAddressPortAndErrnoThenRestartSucceedsAfterRelease) {
     PortHolder holder(port);
     ASSERT_TRUE(holder.held());
@@ -154,7 +211,7 @@ TEST_F(HttpServerLifecycleTest, BindFailureLogsAddressPortAndErrnoThenRestartSuc
     const std::string log = testing::internal::GetCapturedStderr();
     EXPECT_NE(log.find("0.0.0.0"), std::string::npos) << log;
     EXPECT_NE(log.find(std::to_string(port)), std::string::npos) << log;
-    EXPECT_NE(log.find("errno=98"), std::string::npos) << log;  // EADDRINUSE
+    EXPECT_NE(log.find("errno=" + std::to_string(EADDRINUSE)), std::string::npos) << log;
 
     holder.release();
     ASSERT_TRUE(server.start());  // 실패로 끝난 실행을 정리하고 다시 시작

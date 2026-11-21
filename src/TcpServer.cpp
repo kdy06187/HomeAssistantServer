@@ -31,7 +31,12 @@ TcpServer::~TcpServer() {
 
 bool TcpServer::start(int port, const std::string& bindAddress) {
     std::lock_guard<std::mutex> lock(lifecycleMutex_);
-    if (running_) return true;
+    if (running_) return false;  // 이미 실행 중: 이번 호출이 시작한 것이 아니다
+    // 0은 OS가 고르는 임시 포트(시험용)
+    if (port < 0 || port > 65535) {
+        std::cerr << "[TCPDriver] 에러 : 포트 범위 오류 (" << port << ", 0~65535)" << std::endl;
+        return false;
+    }
 
     // CLOEXEC: chip-tool 같은 자식 프로세스가 소켓을 물려받아 계속 열어 두지 않게 한다
     listenFd_ = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
@@ -74,6 +79,7 @@ bool TcpServer::start(int port, const std::string& bindAddress) {
         acceptThread_ = std::thread(&TcpServer::acceptLoop, this);
     } catch (const std::system_error& e) {
         running_ = false;
+        boundPort_ = 0;
         std::cerr << "[TCPDriver] 에러 : 수락 스레드 생성 실패 (" << e.what() << ")" << std::endl;
         closeListenSocket();
         return false;
@@ -97,6 +103,7 @@ void TcpServer::stop() {
     }
     if (acceptThread_.joinable()) acceptThread_.join();
     closeListenSocket();
+    boundPort_ = 0;
 
     std::unordered_map<std::string, std::shared_ptr<TcpConnection>> closing;
     {

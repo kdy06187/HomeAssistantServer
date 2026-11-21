@@ -1,6 +1,5 @@
 #include "RequestValidation.hpp"
 #include <arpa/inet.h>
-#include <cctype>
 #include <cerrno>
 #include <cstdlib>
 
@@ -19,6 +18,40 @@ bool hasControlChar(const std::string& text) {
 
 bool isUtf8Continuation(unsigned char c) {
     return (c & 0xC0) == 0x80;
+}
+
+// 엄격한 UTF-8 검사: 연속 바이트 단독, 잘린 시퀀스, overlong, 서로게이트, U+10FFFF 초과를 거부한다
+bool isValidUtf8(const std::string& text) {
+    size_t i = 0;
+    while (i < text.size()) {
+        const unsigned char lead = text[i];
+        size_t extra = 0;
+        unsigned char secondMin = 0x80, secondMax = 0xBF;
+        if (lead < 0x80) {
+            ++i;
+            continue;
+        } else if (lead >= 0xC2 && lead <= 0xDF) {
+            extra = 1;
+        } else if (lead >= 0xE0 && lead <= 0xEF) {
+            extra = 2;
+            if (lead == 0xE0) secondMin = 0xA0;  // overlong 방지
+            if (lead == 0xED) secondMax = 0x9F;  // 서로게이트 방지
+        } else if (lead >= 0xF0 && lead <= 0xF4) {
+            extra = 3;
+            if (lead == 0xF0) secondMin = 0x90;
+            if (lead == 0xF4) secondMax = 0x8F;  // U+10FFFF 초과 방지
+        } else {
+            return false;  // 연속 바이트가 맨 앞에 옴, C0·C1, F5 이상
+        }
+        if (i + extra >= text.size()) return false;  // 시퀀스가 잘림
+        const unsigned char second = text[i + 1];
+        if (second < secondMin || second > secondMax) return false;
+        for (size_t k = 2; k <= extra; ++k) {
+            if (!isUtf8Continuation(text[i + k])) return false;
+        }
+        i += extra + 1;
+    }
+    return true;
 }
 
 // UTF-8 글자 수(연속 바이트를 세지 않는다)
@@ -41,7 +74,7 @@ Result<HistoryQuery> invalidHistory(const std::string& reason) {
 bool isAllDigits(const std::string& text) {
     if (text.empty()) return false;
     for (unsigned char c : text) {
-        if (!std::isdigit(c)) return false;
+        if (c < '0' || c > '9') return false;
     }
     return true;
 }
@@ -116,7 +149,7 @@ std::optional<CivilDate> parseDate(const std::string& text) {
     if (text.size() != 10 || text[4] != '-' || text[7] != '-') return std::nullopt;
     for (size_t i = 0; i < text.size(); ++i) {
         if (i == 4 || i == 7) continue;
-        if (!std::isdigit(static_cast<unsigned char>(text[i]))) return std::nullopt;
+        if (text[i] < '0' || text[i] > '9') return std::nullopt;
     }
     CivilDate date;
     date.year = std::stoi(text.substr(0, 4));
@@ -148,12 +181,16 @@ std::optional<int64_t> parseLimitNumber(const std::string& text) {
 bool RequestValidation::isValidDeviceId(const std::string& deviceId) {
     if (deviceId.empty() || deviceId.size() > 64) return false;
     for (unsigned char c : deviceId) {
-        if (!std::isalnum(c) && c != '_' && c != '-') return false;
+        const bool allowed = (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+                             c == '_' || c == '-';
+        if (!allowed) return false;
     }
     return true;
 }
 
 bool RequestValidation::isValidIpv4Address(const std::string& text) {
+    // inet_pton은 C 문자열이라 중간 NUL 뒤를 무시한다
+    if (text.find('\0') != std::string::npos) return false;
     in_addr address{};
     return inet_pton(AF_INET, text.c_str(), &address) == 1;
 }
@@ -183,10 +220,12 @@ Result<CommissionInput> RequestValidation::parseCommission(const nlohmann::json&
     input.protocolType = *protocolType;
 
     if (readString(body, "deviceName", input.deviceName) != FieldState::ok) return invalidCommission("deviceName");
+    if (!isValidUtf8(input.deviceName)) return invalidCommission("deviceName UTF-8");
     const size_t nameChars = countUtf8Chars(input.deviceName);
     if (nameChars < 1 || nameChars > kMaxDeviceNameChars) return invalidCommission("deviceName 길이");
 
     if (readString(body, "payload", input.payload) != FieldState::ok) return invalidCommission("payload");
+    if (hasControlChar(input.payload)) return invalidCommission("payload 제어문자");
     const bool payloadOk = *protocolType == ProtocolType::MATTER ? isValidMatterPayload(input.payload)
                                                                  : isValidTcpPayload(input.payload);
     if (!payloadOk) return invalidCommission("payload 형식");
@@ -197,9 +236,11 @@ Result<CommissionInput> RequestValidation::parseCommission(const nlohmann::json&
     if (input.ssid.size() > kMaxSsidBytes) return invalidCommission("ssid 길이");
     if (input.password.size() > kMaxPasswordBytes) return invalidCommission("password 길이");
 
-    // payload는 위 형식 검사에서 이미 제어문자가 걸러진다
     if (hasControlChar(input.deviceName) || hasControlChar(input.ssid) || hasControlChar(input.password)) {
         return invalidCommission("제어문자");
+    }
+    if (!isValidUtf8(input.deviceName) || !isValidUtf8(input.ssid) || !isValidUtf8(input.password)) {
+        return invalidCommission("UTF-8");
     }
 
     const auto typesIt = body.find("driverTypes");
@@ -217,6 +258,10 @@ Result<HistoryQuery> RequestValidation::parseHistoryQuery(const httplib::Params&
         const auto it = params.find(key);
         return it == params.end() ? nullptr : &it->second;
     };
+
+    for (const char* key : {"from", "to", "period", "limit"}) {
+        if (params.count(key) > 1) return invalidHistory("중복 파라미터");
+    }
 
     if (const std::string* text = find("from")) {
         query.from = parseDate(*text);

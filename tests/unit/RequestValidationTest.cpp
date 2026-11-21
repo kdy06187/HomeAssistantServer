@@ -54,6 +54,11 @@ TEST(Ipv4Validation, AcceptsDottedQuadOnly) {
     EXPECT_FALSE(isValidIpv4Address("example.com"));
 }
 
+TEST(Ipv4Validation, RejectsEmbeddedNulAfterValidAddress) {
+    EXPECT_FALSE(isValidIpv4Address(std::string("192.168.0.1\0x", 13)));
+    EXPECT_FALSE(isValidIpv4Address(std::string("192.168.0.1\0", 12)));
+}
+
 // ---- parseCommission ----
 json validMatter() {
     return json{{"protocolType", "MATTER"}, {"deviceName", "스마트 플러그"}, {"payload", "34970112332"},
@@ -176,6 +181,55 @@ TEST(ParseCommission, TcpPayloadIsIpv4OrEmpty) {
     EXPECT_FALSE(accepts("192.168.0.10\n"));
 }
 
+TEST(ParseCommission, PayloadWithControlCharactersOrNulIsRejected) {
+    for (const char* protocol : {"MATTER", "TCP_DIY"}) {
+        for (const std::string& bad : {std::string("34970112332\n"), std::string("192.168.0.1\0x", 13),
+                                       std::string("a\rb"), std::string("\t")}) {
+            json body{{"protocolType", protocol}, {"deviceName", "전등"}, {"payload", bad}};
+            EXPECT_FALSE(parseCommission(body).ok()) << protocol;
+        }
+    }
+}
+
+TEST(ParseCommission, InvalidUtf8IsRejectedInTextFields) {
+    const std::string invalid[] = {
+        "\x80", "ab\xBF",                // 연속 바이트만
+        "ab\xC3", "\xE2\x82", "\xF0\x9F\x98",  // 잘린 시퀀스
+        "\xC0\xAF", "\xE0\x80\xAF",      // overlong
+        "\xED\xA0\x80",                 // 서로게이트
+        "\xF4\x90\x80\x80", "\xF5\x80\x80\x80", "\xFF"};
+    for (const char* key : {"deviceName", "ssid", "password"}) {
+        for (const std::string& bad : invalid) {
+            json body = validMatter();
+            body[key] = bad;  // nlohmann은 dump 때만 검사하므로 직접 넣어도 객체는 만들어진다
+            EXPECT_FALSE(parseCommission(body).ok()) << key;
+        }
+    }
+    json ok = validMatter();
+    ok["deviceName"] = "가나다😀";  // 4바이트 글자
+    EXPECT_TRUE(parseCommission(ok).ok());
+}
+
+TEST(ParseCommission, NullOptionalFieldsAndDriverTypesAreRejected) {
+    for (const char* key : {"ssid", "password", "driverTypes"}) {
+        json body = validMatter();
+        body[key] = nullptr;
+        EXPECT_FALSE(parseCommission(body).ok()) << key;
+    }
+}
+
+TEST(ParseCommission, EmptyDriverTypesArrayIsAcceptedBoolElementsAreNot) {
+    json body = validMatter();
+    body["driverTypes"] = json::array();
+    const auto empty = parseCommission(body);
+    ASSERT_TRUE(empty.ok());
+    EXPECT_TRUE(empty.value->driverTypes.empty());
+    body["driverTypes"] = json::array({true});
+    EXPECT_FALSE(parseCommission(body).ok());
+    body["driverTypes"] = json::array({1, false});
+    EXPECT_FALSE(parseCommission(body).ok());
+}
+
 TEST(ParseCommission, DriverTypesMustBeOneToThree) {
     json body = validMatter();
     body["driverTypes"] = json::array({1, 2, 3});
@@ -225,6 +279,24 @@ TEST(ParseHistoryQuery, DateFormatAndCalendarChecks) {
     for (const char* bad : {"2026-1-01", "20261101", "2026/11/01", "2026-11-01T00:00", "", "abcd-ef-gh"}) {
         EXPECT_FALSE(parseHistoryQuery(params({{"from", bad}})).ok()) << bad;
     }
+}
+
+TEST(ParseHistoryQuery, CenturyLeapYearRules) {
+    EXPECT_FALSE(parseHistoryQuery(params({{"from", "1900-02-29"}})).ok());  // 100의 배수는 평년
+    EXPECT_TRUE(parseHistoryQuery(params({{"from", "2000-02-29"}})).ok());   // 400의 배수는 윤년
+}
+
+TEST(ParseHistoryQuery, DuplicateParametersAreRejected) {
+    for (const char* key : {"from", "to", "period", "limit"}) {
+        const auto result = parseHistoryQuery(params({{key, "1"}, {key, "1"}}));
+        ASSERT_FALSE(result.ok()) << key;
+        EXPECT_EQ(result.error.code, ErrorCode::InvalidRequest);
+    }
+}
+
+TEST(ParseHistoryQuery, FullWidthDigitsAndNonAsciiDigitsAreRejected) {
+    EXPECT_FALSE(parseHistoryQuery(params({{"limit", "１２"}})).ok());
+    EXPECT_FALSE(parseHistoryQuery(params({{"from", "２０２６-11-01"}})).ok());
 }
 
 TEST(ParseHistoryQuery, PeriodValuesAndRequiresBothDates) {
