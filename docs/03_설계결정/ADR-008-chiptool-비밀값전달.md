@@ -43,3 +43,48 @@ C-6에서 A가 동작하지 않으면 **B로 후퇴**: 인자 방식 유지, `do
 
 ## 학습 포인트
 - 프로세스 인자 노출(`/proc/<pid>/cmdline`), fork/exec/pipe/waitpid, 셸 주입, Adapter 패턴(외부 프로그램을 인터페이스 뒤로).
+
+## 2차 보완(제안, 승인 전) — 2026-11-21
+
+대상: 2차 13번(REQ-16, C-6·C-7). 근거: 실기 `docs/07_실기시험-1차.md` 5.2, 보안 SEC-1차-03·10, chip-tool 소스(읽기만, `examples/chip-tool/commands/interactive/InteractiveCommands.cpp`, `commands/common/Commands.cpp`·`Command.cpp`).
+
+### 1) 실기·소스에서 새로 안 것
+| # | 사실 | 근거 | 의미 |
+|---|---|---|---|
+| F1 | interactive는 따옴표를 무시하고 공백으로 나눈다 | 실기 5.2 ② | `str:` 값에 공백이 있으면 인자가 갈라짐 |
+| F2 | 옥텟 문자열 인자는 `hex:` 접두사를 받는다(SSID·비밀번호는 옥텟 문자열 인자) | `Command.cpp` `OctetStringFromCharString`, `PairingCommand.h` `AddArgument("ssid"/"password")` | F1은 `hex:`로 피할 수 있음(interactive에서도 되는지는 실기 필요) |
+| F3 | 입력 줄을 readline 기록에 넣고 매번 `write_history` | `InteractiveCommands.cpp` `GetCommand` | 비밀값이 파일에 남음. 파일 위치는 `--storage-directory`가 있으면 그 폴더, 없으면 `$TMPDIR` 또는 `/tmp`. **지금 서버는 `../config/chip-tool`(0700)을 넘기므로 서버 실행 시 `../config/chip-tool/chip_tool_history`(umask 077 → 0600)에 남는다**(실기는 저장소 옵션 없이 돌려 `/tmp`에 생김) |
+| F4 | 실행 전 `Command: <전체 인자>`를 로그로 출력 | `Commands.cpp` `RunInteractive` | 비밀값이 stdout에 나옴(실기 "출력 2회"). 러너 마스킹이 필요하며 `hex:`를 쓰면 **hex 문자열도** 가릴 목록에 넣어야 함 |
+| F5 | `quit` 없이 stdin이 닫히면 끝나지 않음 | 실기 5.2 ③ | 단, 실기 ①은 명령과 `quit`을 **한꺼번에** 보냈는데 명령을 끝까지 실행한 뒤 종료(exit 0, 2.4s). 명령은 동기로 돌므로 "완료 확인 뒤 quit"은 필요 없고 **끝에 `quit` 한 줄을 붙이면 된다**(원래 결정과 같음) |
+| F6 | interactive 루프가 끝나면 `SetCommandExitStatus(CHIP_NO_ERROR)` | `InteractiveCommands.cpp` `InteractiveStartCommand::RunCommand` 끝 | **페어링이 실패해도 종료 코드가 0일 가능성**. 지금 성공 판정(종료 코드 0 + 성공 문구) 중 종료 코드 신호를 잃고 출력 문구에만 기댐 → 실기 필요 |
+| F7 | chip-tool은 파일·환경 변수로 비밀값을 받지 않는다 | 이 ADR 배경(조사) | "0600 임시 파일"은 결국 stdin 리다이렉트와 같아 이점 없음 |
+| F8 | 서버 PC 로그인 계정은 1개(`kdy`) | `08_검증-1차.md` 6절 D-7 | 다른 계정이 `ps`로 볼 위험은 지금 구성에서 낮음. 같은 계정은 어느 방식이든 `/proc/<pid>/mem`·파일을 읽을 수 있어 막을 수 없음 |
+
+### 2) 대안
+| 대안 | 내용 | 장점 | 단점 |
+|---|---|---|---|
+| **A. 인자 방식 유지 + `/proc` `hidepid=2`(운영 설정) + 위험 문서화** | 지금 코드 그대로(execv, `str:`). `06_배포.md`에 `hidepid=2` 마운트 안내. REQ-16 완료 기준을 "다른 계정에서 안 보임"으로 재협의 | 코드 변경 0. 공백·따옴표 문제 없음(execv는 인자를 나누지 않음). 종료 코드 판정 유지. 파일 잔류 없음 | 같은 계정·root에는 보임(어느 방식이든 같음). `hidepid`는 시스템 설정이라 일부 데몬(polkit 등)에 부작용 가능, 서버 코드로 보장 못 함 |
+| B. interactive stdin + `hex:` + history 차단 | 페어링만 `interactive start`, SSID·비밀번호를 `hex:`로, 끝에 `quit`. history는 ① `chip_tool_history` 자리를 **빈 디렉터리로 미리 만들어** 쓰기 실패를 유도, 또는 ② 실행 뒤 파일 삭제 | argv에 비밀값 없음 → 원래 REQ-16 그대로 충족 | F4 출력 노출(마스킹 목록에 hex 추가), F6 종료 코드 신호 상실(출력 판정만), ①은 SDK 동작에 기대는 꼼수(readline 버전에 따라 다를 수 있음), ②는 서버가 죽으면 파일이 남고 삭제 전까지 디스크에 있음. 테스트·실기 항목 증가 |
+| C. `interactive server`(WebSocket) 상주 | 프로세스 하나에 명령 전송 | 매번 실행 비용 없음 | 수명·재접속·포트 관리. 같은 LAN·계정 노출 문제는 새 포트로 옮겨 감. 요구 대비 과함(원래도 기각) |
+
+### 3) 추천: **A** (B로 바꿀 조건을 함께 기록)
+- 근거: 노출 대상이 "같은 PC의 다른 계정"뿐인데 그런 계정이 없다(F8). B는 이 작은 위험을 줄이려고 **새 위험 3개**(디스크 잔류 F3, 출력 노출 F4, 실패 판정 약화 F6)를 들여온다. 실무에서도 "공격자 모델에 맞는 가장 단순한 통제"를 고르는 것이 원칙이다(Defense in depth는 비용 대비).
+- 함께 할 것(어느 안이든): SEC-1차-10 — SSID도 마스킹 목록에, 실패 출력 로그는 끝 N줄(예 4KiB)만.
+- B로 바꿀 조건: 서버 PC에 다른 계정이 생기거나 여러 사람이 쓰는 서버로 옮길 때.
+
+### 4) C-7 페어링 시간 측정(코드 변경 없이 / 2차 13번에서)
+| 방법 | 내용 | 장단점 |
+|---|---|---|
+| ① 로그 줄에 시각 붙이기(지금 가능) | `cd $FIELD/run && $REPO/build-field/HomeAssistantCore 2>&1 \| while IFS= read -r l; do printf '%s %s\n' "$(date +%T.%3N)" "$l"; done \| tee $FIELD/logs/server-c7.log` 후 `기기 등록 시도: NodeId=` → `커미셔닝 성공` 간격 | 코드 0. 시리얼 읽기(최대 10초)가 포함되므로 그만큼 빼서 본다 |
+| ② 러너가 걸린 시간을 로그(2차 13번) | `ProcessChipToolRunner`가 실행마다 `[ChipToolRunner] <명령 이름> 종료 코드 N, X ms` 한 줄(인자·비밀값 없음) | 모든 명령에 재사용, 이후 제한 시간 조정 근거. 작은 코드 추가 |
+| ③ 앱 화면 스톱워치 | 사람이 잼 | 오차 크고 반복 어려움 |
+- 추천: 지금은 ①로 **5회**(가까운 거리·먼 거리 섞어) 측정, 2차 13번에 ② 추가. 제한 시간은 "최댓값 × 2, 상한 180초"로 정한다.
+
+### 5) 실기 필요
+- (B를 고를 때만) `hex:` SSID·비밀번호가 interactive에서 그대로 해석되는가(가짜 값, 없는 노드) / 페어링 **실패** 시 `interactive start` 종료 코드(F6) / history 자리 디렉터리 선점 시 명령은 정상 실행되는가.
+- (A) `hidepid=2` 적용 뒤 서버·chip-tool·데스크톱(polkit·로그인) 정상인지, 다른 계정이 없는지 재확인.
+- C-7 측정 5회(방법 ①).
+
+### 6) 영향 번호 · 사용자가 정할 것
+- 영향: **13번**(주), 10번(E3 입력 검증의 공백·따옴표 규칙 — A면 제어문자만 금지, 공백·따옴표 허용).
+- 정할 것: ① A / B ② A면 `hidepid=2`를 배포 절차에 넣을지(시스템 설정 변경) ③ REQ-16 완료 기준 재문구 ④ 측정 방법 ②를 13번에 넣을지.
