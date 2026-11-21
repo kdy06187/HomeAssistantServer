@@ -22,8 +22,11 @@ protected:
         port = findFreePort();
     }
 
+    std::unique_ptr<HTTPServer> makeServer(int onPort) {
+        return std::make_unique<HTTPServer>(manager, kToken, onPort);
+    }
     std::unique_ptr<HTTPServer> startServer(int onPort) {
-        auto server = std::make_unique<HTTPServer>(manager, kToken, onPort);
+        auto server = makeServer(onPort);
         EXPECT_TRUE(server->start());
         return server;
     }
@@ -55,12 +58,16 @@ TEST_F(HttpServerLimitsTest, KeepAliveClosesAfter20RequestsOnOneConnection) {
     server->stop();
 }
 
-TEST_F(HttpServerLimitsTest, SecondServerOnSamePortFailsToBecomeReady) {
+TEST_F(HttpServerLimitsTest, SecondServerOnSamePortFailsToStart) {
     auto first = startServer(port);
     ASSERT_TRUE(first->waitUntilReady(std::chrono::seconds(3)));
 
-    auto second = startServer(port);
-    EXPECT_FALSE(second->waitUntilReady(std::chrono::seconds(2)));
+    // SO_REUSEPORT를 끄고 SO_REUSEADDR만 쓰므로 같은 포트를 두 번째 서버가 열 수 없다
+    auto second = makeServer(port);
+    testing::internal::CaptureStderr();
+    EXPECT_FALSE(second->start());
+    testing::internal::GetCapturedStderr();
+    EXPECT_FALSE(second->waitUntilReady(std::chrono::milliseconds(50)));
     second->stop();
 
     // 첫 서버는 영향받지 않고 계속 응답한다

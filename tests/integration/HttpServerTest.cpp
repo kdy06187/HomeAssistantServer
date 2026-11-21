@@ -6,6 +6,7 @@
 #include "fakes/FakeClock.hpp"
 #include "fakes/FakeProtocolDriver.hpp"
 #include "PCDriver.hpp"
+#include "support/RawHttpClient.hpp"
 #include "httplib.h"
 #include "json.hpp"
 #include <arpa/inet.h>
@@ -17,97 +18,15 @@
 #include <vector>
 
 using json = nlohmann::json;
+using namespace testsupport;
 
 namespace {
 
 const std::string kToken = "test-token-0123456789abcdef0123456789";
 const char* kUnauthorizedBody = R"({"error": "인증이 필요합니다."})";
-
-int findFreePort() {
-    int fd = socket(AF_INET, SOCK_STREAM, 0);
-    sockaddr_in addr{};
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    addr.sin_port = 0;
-    bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
-    socklen_t len = sizeof(addr);
-    getsockname(fd, reinterpret_cast<sockaddr*>(&addr), &len);
-    const int port = ntohs(addr.sin_port);
-    close(fd);
-    return port;
-}
-
-// 원시 소켓 클라이언트: 요청 문자열을 그대로 보내고 응답을 직접 읽는다.
-class RawConnection {
-public:
-    explicit RawConnection(int port) {
-        fd_ = socket(AF_INET, SOCK_STREAM, 0);
-        sockaddr_in addr{};
-        addr.sin_family = AF_INET;
-        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-        addr.sin_port = htons(port);
-        connected_ = connect(fd_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0;
-        timeval timeout{3, 0};
-        setsockopt(fd_, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
-    }
-    ~RawConnection() { close(fd_); }
-
-    bool connected() const { return connected_; }
-    // 전송 중 오류(EPIPE/ECONNRESET)가 나면 sendErrno에 남는다.
-    void sendAll(const std::string& data) {
-        size_t sent = 0;
-        while (sent < data.size()) {
-            const ssize_t n = send(fd_, data.data() + sent, data.size() - sent, MSG_NOSIGNAL);
-            if (n <= 0) { sendErrno = errno; return; }
-            sent += n;
-        }
-    }
-    // Content-Length 만큼 본문까지 읽는다. 연결이 끊기거나 시간 초과면 거기까지.
-    std::string readResponse() {
-        std::string data;
-        char buffer[4096];
-        size_t bodyStart = std::string::npos;
-        size_t expected = std::string::npos;
-        for (;;) {
-            if (bodyStart == std::string::npos) {
-                bodyStart = data.find("\r\n\r\n");
-                if (bodyStart != std::string::npos) {
-                    bodyStart += 4;
-                    expected = bodyStart + contentLength(data.substr(0, bodyStart));
-                }
-            }
-            if (expected != std::string::npos && data.size() >= expected) break;
-            const ssize_t n = recv(fd_, buffer, sizeof(buffer), 0);
-            if (n < 0) { recvErrno = errno; break; }
-            if (n == 0) { closedByPeer = true; break; }
-            data.append(buffer, n);
-        }
-        return data;
-    }
-
-    int sendErrno = 0;
-    int recvErrno = 0;
-    bool closedByPeer = false;
-
-private:
-    static size_t contentLength(const std::string& header) {
-        const auto pos = header.find("Content-Length: ");
-        if (pos == std::string::npos) return 0;
-        return std::stoul(header.substr(pos + 16));
-    }
-    int fd_;
-    bool connected_ = false;
-};
-
-std::string makePostRequest(const std::string& path, const std::string& token, const std::string& body) {
-    return "POST " + path + " HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer " + token +
-           "\r\nContent-Type: application/json\r\nContent-Length: " + std::to_string(body.size()) +
-           "\r\n\r\n" + body;
-}
-
-std::string makeGetRequest(const std::string& path, const std::string& token) {
-    return "GET " + path + " HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer " + token + "\r\n\r\n";
-}
+const char* kDeviceNotFoundBody = R"({"error":{"code":"DEVICE_NOT_FOUND","message":"등록되지 않은 기기입니다."}})";
+const char* kNotFoundBody = R"({"error":{"code":"NOT_FOUND","message":"없는 경로입니다."}})";
+const char* kInvalidRequestBody = R"({"error":{"code":"INVALID_REQUEST","message":"요청 형식이 올바르지 않습니다."}})";
 
 std::string makeBody(size_t size) {
     std::string body = R"({"deviceId":"X","command":"ON","pad":")";
@@ -169,12 +88,12 @@ protected:
 };
 
 TEST_F(HttpServerTest, RawSocketBadTokenWithSmallBodyGets401AndKeepAliveWorks) {
-    RawConnection connection(port);
+    RawHttpClient connection(port, 3);
     ASSERT_TRUE(connection.connected());
     connection.sendAll(makePostRequest("/api/control", "wrong", makeBody(100)));
     const std::string first = connection.readResponse();
     EXPECT_EQ(connection.sendErrno, 0);
-    EXPECT_EQ(connection.recvErrno, 0) << "recv errno=" << connection.recvErrno;
+    EXPECT_EQ(connection.receiveErrno, 0) << "recv errno=" << connection.receiveErrno;
     EXPECT_EQ(first.rfind("HTTP/1.1 401", 0), 0u) << first;
     EXPECT_NE(first.find(kUnauthorizedBody), std::string::npos) << first;
 
@@ -184,12 +103,12 @@ TEST_F(HttpServerTest, RawSocketBadTokenWithSmallBodyGets401AndKeepAliveWorks) {
 }
 
 TEST_F(HttpServerTest, RawSocketBadTokenWith8KiBBodyGets401AndKeepAliveWorks) {
-    RawConnection connection(port);
+    RawHttpClient connection(port, 3);
     ASSERT_TRUE(connection.connected());
     connection.sendAll(makePostRequest("/api/control", "wrong", makeBody(8 * 1024)));
     const std::string first = connection.readResponse();
     EXPECT_EQ(connection.sendErrno, 0);
-    EXPECT_EQ(connection.recvErrno, 0) << "recv errno=" << connection.recvErrno;
+    EXPECT_EQ(connection.receiveErrno, 0) << "recv errno=" << connection.receiveErrno;
     EXPECT_EQ(first.rfind("HTTP/1.1 401", 0), 0u) << first;
     EXPECT_NE(first.find(kUnauthorizedBody), std::string::npos) << first;
 
@@ -269,7 +188,7 @@ TEST_F(HttpServerTest, UnknownPathWithValidTokenReturns404WithoutBody) {
 
 // 원시 요청으로 상태 줄만 확인한다. 토큰 없음/틀림/정상 세 경우를 한 번에 본다.
 static std::string rawStatusLine(int port, const std::string& method, const std::string& path, const std::string& authHeader) {
-    RawConnection connection(port);
+    RawHttpClient connection(port, 3);
     if (!connection.connected()) return "CONNECT_FAIL";
     connection.sendAll(method + " " + path + " HTTP/1.1\r\nHost: localhost\r\n" + authHeader +
                        "Connection: close\r\n\r\n");
@@ -315,7 +234,7 @@ TEST_F(HttpServerTest, UnregisteredMethodsDoNotLeakWithoutToken) {
 }
 
 TEST_F(HttpServerTest, Http10RequestWithoutTokenGets401) {
-    RawConnection connection(port);
+    RawHttpClient connection(port, 3);
     ASSERT_TRUE(connection.connected());
     connection.sendAll("GET /api/devices HTTP/1.0\r\n\r\n");
     EXPECT_EQ(connection.readResponse().rfind("HTTP/1.1 401", 0), 0u);
@@ -342,7 +261,7 @@ TEST_F(HttpServerTest, StopImmediatelyAfterStartReturnsQuickly) {
 }
 
 TEST_F(HttpServerTest, StopWithIdleKeepAliveConnectionReturnsQuickly) {
-    RawConnection idle(port);
+    RawHttpClient idle(port, 3);
     ASSERT_TRUE(idle.connected());
     idle.sendAll(makeGetRequest("/api/devices", kToken));
     idle.readResponse();
@@ -361,12 +280,12 @@ TEST_F(HttpServerTest, BodyUpTo16KiBIsProcessed) {
 }
 
 TEST_F(HttpServerTest, BodyOver16KiBIsRejectedWith413) {
-    RawConnection connection(port);
+    RawHttpClient connection(port, 3);
     ASSERT_TRUE(connection.connected());
     connection.sendAll(makePostRequest("/api/control", kToken, makeBody(16 * 1024 + 1)));
     const std::string response = connection.readResponse();
     std::cout << "[413 observation] sendErrno=" << connection.sendErrno
-              << " recvErrno=" << connection.recvErrno << " closedByPeer=" << connection.closedByPeer
+              << " recvErrno=" << connection.receiveErrno << " closedByPeer=" << connection.closedByPeer
               << " response=[" << response.substr(0, 60) << "]" << std::endl;
     EXPECT_EQ(response.rfind("HTTP/1.1 413", 0), 0u) << response;
 }
@@ -377,14 +296,14 @@ TEST_F(HttpServerTest, E1ListsDevices) {
     auto empty = httplib::Client("127.0.0.1", port).Get("/api/devices", authHeaders());
     ASSERT_TRUE(empty);
     EXPECT_EQ(empty->status, 200);
-    EXPECT_EQ(json::parse(empty->body), json::parse(R"({"status":"success","total_count":0,"devices":[]})"));
+    EXPECT_EQ(json::parse(empty->body), json::parse(R"({"totalCount":0,"devices":[]})"));
 
     addDevice(ProtocolType::TCP_DIY, "FAKE_1", "lamp");
     auto one = httplib::Client("127.0.0.1", port).Get("/api/devices", authHeaders());
     ASSERT_TRUE(one);
     EXPECT_EQ(json::parse(one->body),
-              json::parse(R"({"status":"success","total_count":1,"devices":[
-                  {"id":"FAKE_1","name":"lamp","type":"TCP_DIY","state":"UNKNOWN"}]})"));
+              json::parse(R"({"totalCount":1,"devices":[
+                  {"deviceId":"FAKE_1","name":"lamp","protocolType":"TCP_DIY","state":"UNKNOWN"}]})"));
 }
 
 // ---- E2 ----
@@ -536,7 +455,7 @@ TEST_F(HttpServerTest, E4DeleteOfflineDeviceStillSucceeds) {
     EXPECT_FALSE(manager.getDevice("ARD_9", device));
 }
 
-// 포트를 이미 다른 소켓이 쓰고 있으면 준비되지 않는다(main은 이때 종료한다)
+// 포트를 이미 다른 소켓이 쓰고 있으면 start가 실패한다(main은 이때 종료한다)
 TEST(HttpServerStartTest, PortInUseIsNotReady) {
     const int holder = socket(AF_INET, SOCK_STREAM, 0);
     ASSERT_GE(holder, 0);
@@ -556,9 +475,11 @@ TEST(HttpServerStartTest, PortInUseIsNotReady) {
     FakeClock clock;
     DeviceManager manager(db, drivers, clock);
     HTTPServer server(manager, kToken, busyPort);
-    ASSERT_TRUE(server.start());
+    testing::internal::CaptureStderr();
+    EXPECT_FALSE(server.start());  // 바인딩 실패는 start가 바로 돌려준다
+    testing::internal::GetCapturedStderr();
 
-    EXPECT_FALSE(server.waitUntilReady(std::chrono::seconds(2)));
+    EXPECT_FALSE(server.waitUntilReady(std::chrono::milliseconds(50)));
     server.stop();
     close(holder);
 }
@@ -576,8 +497,22 @@ TEST_F(HttpServerTest, E5StateOfKnownAndUnknownDevice) {
 
     auto unknown = client.Get("/api/devices/NOPE/state", authHeaders());
     ASSERT_TRUE(unknown);
-    EXPECT_EQ(unknown->status, 200);
-    EXPECT_EQ(json::parse(unknown->body), json::parse(R"({"deviceId":"NOPE","state":"UNKNOWN"})"));
+    EXPECT_EQ(unknown->status, 404);
+    EXPECT_EQ(json::parse(unknown->body), json::parse(kDeviceNotFoundBody));
+    EXPECT_EQ(unknown->get_header_value("Content-Type"), "application/json");
+}
+
+TEST_F(HttpServerTest, E5MalformedDeviceIdReturns404NotFoundForEveryReadRoute) {
+    httplib::Client client("127.0.0.1", port);
+    const std::string tooLong(65, 'a');
+    for (const std::string& badId : {std::string("a.b"), std::string("a%20b"), tooLong}) {
+        for (const std::string suffix : {"/state", "/energy", "/energy/history"}) {
+            auto response = client.Get("/api/devices/" + badId + suffix, authHeaders());
+            ASSERT_TRUE(response) << badId << suffix;
+            EXPECT_EQ(response->status, 404) << badId << suffix;
+            EXPECT_EQ(json::parse(response->body), json::parse(kNotFoundBody)) << badId << suffix;
+        }
+    }
 }
 
 // ---- E6 ----
@@ -590,30 +525,44 @@ TEST_F(HttpServerTest, E6EnergySuccess) {
     auto response = httplib::Client("127.0.0.1", port).Get("/api/devices/PLUG_1/energy", authHeaders());
     ASSERT_TRUE(response);
     EXPECT_EQ(response->status, 200);
-    const json body = json::parse(response->body);
-    EXPECT_EQ(body["device_status"], "ON");
-    EXPECT_EQ(body["activePower_mW"], 15230);
-    EXPECT_TRUE(body["totalEnergy_mWh"].is_number_integer());
+    EXPECT_EQ(json::parse(response->body),
+              json::parse(R"({"deviceId":"PLUG_1","state":"ON","activePower_mW":15230,"totalEnergy_mWh":1048576})"));
+    EXPECT_TRUE(json::parse(response->body)["totalEnergy_mWh"].is_number_integer());
 }
 
-TEST_F(HttpServerTest, E6EnergyUnregisteredAndReadFailureReturn400) {
+TEST_F(HttpServerTest, E6UnregisteredReturns404AndTcpDeviceReturns400Unsupported) {
     httplib::Client client("127.0.0.1", port);
     auto missing = client.Get("/api/devices/NOPE/energy", authHeaders());
     ASSERT_TRUE(missing);
-    EXPECT_EQ(missing->status, 400);
-    EXPECT_EQ(json::parse(missing->body), json::parse(R"({"error":"등록되지 않은 기기입니다."})"));
+    EXPECT_EQ(missing->status, 404);
+    EXPECT_EQ(json::parse(missing->body), json::parse(kDeviceNotFoundBody));
 
+    addDevice(ProtocolType::TCP_DIY, "FAKE_1", "lamp");
+    auto tcp = client.Get("/api/devices/FAKE_1/energy", authHeaders());
+    ASSERT_TRUE(tcp);
+    EXPECT_EQ(tcp->status, 400);
+    EXPECT_EQ(json::parse(tcp->body),
+              json::parse(R"({"error":{"code":"UNSUPPORTED_OPERATION","message":"이 기기에서 지원하지 않는 요청입니다."}})"));
+    EXPECT_TRUE(tcpFake.energyReadIds.empty());
+}
+
+TEST_F(HttpServerTest, E6ReadFailureReturns502ForUnreachableAndParseFailure) {
     addDevice(ProtocolType::MATTER, "PLUG_1", "plug");
-    matterFake.energyResult = Result<EnergyReading>::failure(ErrorCode::Internal, "parse failed");
-    auto failed = client.Get("/api/devices/PLUG_1/energy", authHeaders());
-    ASSERT_TRUE(failed);
-    EXPECT_EQ(failed->status, 400);
-    EXPECT_EQ(json::parse(failed->body), json::parse(R"({"error":"서버 내부 데이터 처리 오류입니다."})"));
+    httplib::Client client("127.0.0.1", port);
+    for (ErrorCode code : {ErrorCode::DeviceUnreachable, ErrorCode::Internal}) {
+        matterFake.energyResult = Result<EnergyReading>::failure(code, "read failed");
+        auto failed = client.Get("/api/devices/PLUG_1/energy", authHeaders());
+        ASSERT_TRUE(failed);
+        EXPECT_EQ(failed->status, 502);
+        EXPECT_EQ(json::parse(failed->body),
+                  json::parse(R"({"error":{"code":"DEVICE_UNREACHABLE","message":"기기가 응답하지 않습니다."}})"));
+    }
 }
 
 // ---- E7 ----
 
-TEST_F(HttpServerTest, E7HistoryReturnsLogsAndErrorWith200ForUnknownDevice) {
+// from·to·period와 v2.0 키·시각 형식은 12번에서 바꾼다. 지금은 v1.0 본문 + 새 오류 규약
+TEST_F(HttpServerTest, E7HistoryReturnsLogsAnd404ForUnknownDevice) {
     addDevice(ProtocolType::MATTER, "PLUG_1", "plug");
     database.insertEnergyLog("PLUG_1", 100);
     database.insertEnergyLog("PLUG_1", 200);
@@ -629,8 +578,33 @@ TEST_F(HttpServerTest, E7HistoryReturnsLogsAndErrorWith200ForUnknownDevice) {
 
     auto missing = client.Get("/api/devices/NOPE/energy/history", authHeaders());
     ASSERT_TRUE(missing);
-    EXPECT_EQ(missing->status, 200);
-    EXPECT_EQ(json::parse(missing->body), json::parse(R"({"error":"등록되지 않은 기기입니다."})"));
+    EXPECT_EQ(missing->status, 404);
+    EXPECT_EQ(json::parse(missing->body), json::parse(kDeviceNotFoundBody));
+}
+
+TEST_F(HttpServerTest, E7LimitQueryIsAppliedAndInvalidQueriesReturn400) {
+    addDevice(ProtocolType::MATTER, "PLUG_1", "plug");
+    for (int i = 1; i <= 5; ++i) database.insertEnergyLog("PLUG_1", i * 100);
+    httplib::Client client("127.0.0.1", port);
+
+    auto limited = client.Get("/api/devices/PLUG_1/energy/history?limit=2", authHeaders());
+    ASSERT_TRUE(limited);
+    EXPECT_EQ(limited->status, 200);
+    EXPECT_EQ(json::parse(limited->body)["logs"].size(), 2u);
+
+    for (const std::string query : {"limit=0", "limit=abc", "from=2026-02-30&to=2026-03-01", "period=week",
+                                    "from=2026-03-02&to=2026-03-01", "limit=1&limit=2"}) {
+        auto response = client.Get("/api/devices/PLUG_1/energy/history?" + query, authHeaders());
+        ASSERT_TRUE(response) << query;
+        EXPECT_EQ(response->status, 400) << query;
+        EXPECT_EQ(json::parse(response->body), json::parse(kInvalidRequestBody)) << query;
+    }
+}
+
+TEST_F(HttpServerTest, E7InvalidQueryDoesNotTouchTheDatabase) {
+    auto response = httplib::Client("127.0.0.1", port).Get("/api/devices/NOPE/energy/history?limit=-1", authHeaders());
+    ASSERT_TRUE(response);
+    EXPECT_EQ(response->status, 400);
 }
 
 // ---- CommandResult -> message 매핑 ----

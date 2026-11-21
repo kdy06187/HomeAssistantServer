@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 #include "Result.hpp"
+#include "../src/json.hpp"
 
 // ErrorCode를 HTTP 응답(상태·코드 문자열·고정 문구)으로 바꾼다. 상세 메시지는 응답에 싣지 않는다.
 struct HttpErrorInfo {
@@ -15,5 +16,6 @@ namespace ErrorMapping {
     HttpErrorInfo describe(ErrorCode code);
 
     // {"error":{"code":...,"message":...}} 본문
+    nlohmann::json buildErrorJson(ErrorCode code);
     std::string buildErrorBody(ErrorCode code);
 }

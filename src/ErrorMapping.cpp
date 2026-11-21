@@ -36,10 +36,14 @@ HttpErrorInfo ErrorMapping::describe(ErrorCode code) {
     return {500, "INTERNAL_ERROR", "서버 내부 오류입니다."};
 }
 
-std::string ErrorMapping::buildErrorBody(ErrorCode code) {
+nlohmann::json ErrorMapping::buildErrorJson(ErrorCode code) {
     const HttpErrorInfo info = describe(code);
     nlohmann::json body;
     body["error"]["code"] = info.code;
     body["error"]["message"] = info.message;
-    return body.dump();
+    return body;
+}
+
+std::string ErrorMapping::buildErrorBody(ErrorCode code) {
+    return buildErrorJson(code).dump();
 }

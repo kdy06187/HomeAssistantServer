@@ -2,6 +2,7 @@
 #include "ApiAuth.hpp"
 #include "DeviceManager.hpp"
 #include "httplib.h"
+#include "ErrorMapping.hpp"
 #include "RequestValidation.hpp"
 #include "json.hpp"
 #include <arpa/inet.h>
@@ -10,6 +11,7 @@
 #include <chrono>
 #include <cstring>
 #include <iostream>
+#include <optional>
 #include <sys/socket.h>
 #include <stdexcept>
 #include <system_error>
@@ -78,9 +80,30 @@ namespace {
         }
     }
 
+    // 직렬화 실패(예외)도 래퍼의 try 안에서 일어나므로, 상태 코드는 본문이 만들어진 뒤에 넣는다.
+    // 잘못된 UTF-8은 예외 대신 U+FFFD로 바꿔 한 기기 이름 때문에 목록 전체가 500이 되지 않게 한다.
+    void writeApiResponse(httplib::Response& res, const ApiResponse& response) {
+        const std::string text = response.body.dump(-1, ' ', false, json::error_handler_t::replace);
+        res.status = response.httpStatus;
+        res.set_content(text, "application/json");
+    }
+
     void respondInternalError(httplib::Response& res) {
-        res.status = 500;
-        res.set_content(R"({"error": "서버 내부 오류입니다."})", "application/json");
+        writeApiResponse(res, ApiResponse::error(ErrorCode::Internal));
+    }
+
+    // 본문이 JSON 객체가 아니면 nullopt. 예외를 던지지 않는다.
+    std::optional<json> parseJsonObject(const std::string& text) {
+        json parsed = json::parse(text, nullptr, /*allow_exceptions=*/false);
+        if (parsed.is_discarded() || !parsed.is_object()) return std::nullopt;
+        return parsed;
+    }
+
+    // 문자열 필드가 없거나 문자열이 아니면 nullopt
+    std::optional<std::string> readStringField(const json& object, const char* key) {
+        const auto it = object.find(key);
+        if (it == object.end() || !it->is_string()) return std::nullopt;
+        return it->get<std::string>();
     }
 }
 
@@ -143,40 +166,45 @@ bool HTTPServer::start(){
     std::lock_guard<std::mutex> lock(mLifecycleMutex);
     if (mServerThread.joinable()) {
         if (!mRunState->hasFinished) return false; // 이미 실행 중
-        mServerThread.join();                      // 바인딩 실패 등으로 끝난 이전 실행을 정리하고 다시 시작
+        mServerThread.join();                      // 스스로 끝난 이전 실행을 정리하고 다시 시작
     }
     auto state = buildRunState();
+    // 바인딩은 호출한 스레드에서 끝내 실패를 바로 돌려준다(httplib는 bind 때 listen까지 마친다)
+    if (!state->server.bind_to_port(mBindAddress, mPort)) {
+        logBindFailure(mBindAddress, mPort);
+        return false;
+    }
+    // waitUntilReady가 true가 되기 전에 출력해 로그가 항상 준비 완료보다 앞선다
+    std::cout << "[HTTPServer] HTTP 서버 시작 (주소: " << mBindAddress << ", 포트: " << mPort
+              << ", 평문 HTTP)" << std::endl;
     try {
         mServerThread = std::thread(&HTTPServer::run, this, state);
     } catch (const std::system_error& e) {
         std::cerr << "[HTTPServer] ❌ 서버 스레드 생성 실패 (" << e.what() << ")" << std::endl;
-        state->hasFinished = true;
+        state->server.stop(); // 바인딩한 소켓을 닫는다
+        return false;
     }
     {
         std::lock_guard<std::mutex> stateLock(mRunStateMutex);
         mRunState = state;
     }
-    return mServerThread.joinable();
+    return true;
 }
 
 void HTTPServer::stop(){
     std::lock_guard<std::mutex> lock(mLifecycleMutex);
     if (!mServerThread.joinable()) return; // 시작한 적이 없거나 이미 멈춤
 
-    // run()이 bind·listen에 들어가기 전에 stop()이 불리면 무시되므로, run()이 끝날 때까지 반복 호출한다.
+    // stop()은 listen 진입 전에 불려도 리슨 소켓을 닫아, 수락 스레드가 곧바로 끝난다.
     // mRunState는 생명주기 락을 쥔 쪽만 바꾸므로 여기서는 락 없이 읽어도 안전하다.
-    const auto state = mRunState;
-    while (!state->hasFinished) {
-        state->server.stop();
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    }
+    mRunState->server.stop();
     mServerThread.join();
     std::cout << "[HTTPServer] HTTP 서버 종료" << std::endl;
 }
 
 bool HTTPServer::waitUntilReady(std::chrono::milliseconds timeout){
     const auto state = currentRunState(); // 락은 복사하는 순간만. 아래 대기는 락 밖
-    if (!state) return false; // start()를 부르기 전
+    if (!state) return false; // start()가 성공한 적 없음
     const auto deadline = std::chrono::steady_clock::now() + timeout;
     while (!state->server.is_running()) {
         if (state->hasFinished || std::chrono::steady_clock::now() >= deadline) return false;
@@ -194,69 +222,30 @@ std::shared_ptr<HTTPServer::RunState> HTTPServer::buildRunState(){
 }
 
 void HTTPServer::registerRoutes(httplib::Server& server){
-    addRoute(server, HttpMethod::Get, "/api/devices", [this](const httplib::Request&, httplib::Response& res) {
-        std::string jsonResponse = this->handleGetDevices();
-        res.set_content(jsonResponse, "application/json");
+    addRoute(server, HttpMethod::Get, "/api/devices", [this](const httplib::Request&) {
+        return handleGetDevices();
     });
-
-    addRoute(server, HttpMethod::Post, "/api/control", [this](const httplib::Request& req, httplib::Response& res) {
-        std::string jsonResponse = this->handleControlDevice(req.body);
-        if (jsonResponse.find("\"error\"") != std::string::npos) {
-            res.status = 400; 
-        }
-        res.set_content(jsonResponse, "application/json");
+    addRoute(server, HttpMethod::Post, "/api/control", [this](const httplib::Request& req) {
+        return handleControlDevice(req.body);
     });
-    addRoute(server, HttpMethod::Post, "/api/commission", [this](const httplib::Request& req, httplib::Response& res){
-        std::string jsonResponse = this->handleCommissionDevice(req.body);
-        if (jsonResponse.find("\"error\"") != std::string::npos) {
-            res.status = 400; 
-        }
-        res.set_content(jsonResponse, "application/json");
+    addRoute(server, HttpMethod::Post, "/api/commission", [this](const httplib::Request& req) {
+        return handleCommissionDevice(req.body);
     });
-
-    addRoute(server, HttpMethod::Post, "/api/devices/delete", [this](const httplib::Request& req, httplib::Response& res) {
-        std::string jsonResponse = this->handleDeleteDevice(req.body);
-        if (jsonResponse.find("\"error\"") != std::string::npos) {
-            res.status = 400; 
-        }
-        res.set_content(jsonResponse, "application/json");
+    addRoute(server, HttpMethod::Post, "/api/devices/delete", [this](const httplib::Request& req) {
+        return handleDeleteDevice(req.body);
     });
-
-    addRoute(server, HttpMethod::Get, R"(/api/devices/([^/]+)/state)", [this](const httplib::Request& req, httplib::Response& res) {
-        std::string deviceId = req.matches[1];
-        bool isManualRefresh = false; // 기본값은 false
-        if (req.has_param("isManualRefresh")) {
-            std::string paramValue = req.get_param_value("isManualRefresh");
-            // 안드로이드가 ?isManualRefresh=true 형태로 보냈을 때 처리
-            if (paramValue == "true") { 
-                isManualRefresh = true;
-            }
-        }
-        std::string currentState = mDeviceManager.getDeviceState(deviceId, isManualRefresh);
-        
-        json response;
-        response["deviceId"] = deviceId;
-        response["state"] = currentState;
-        
-        res.set_content(response.dump(), "application/json");
+    addRoute(server, HttpMethod::Get, R"(/api/devices/([^/]+)/state)", [this](const httplib::Request& req) {
+        return handleGetDeviceState(req);
     });
-    addRoute(server, HttpMethod::Get, R"(/api/devices/([^/]+)/energy)", [this](const httplib::Request& req, httplib::Response& res) {
-        std::string deviceId = req.matches[1];
-        std::string jsonResponse = this->handleGetDeviceEnergy(deviceId);
-        if (jsonResponse.find("\"error\"") != std::string::npos) {
-            res.status = 400;
-        }
-        res.set_content(jsonResponse, "application/json");
+    addRoute(server, HttpMethod::Get, R"(/api/devices/([^/]+)/energy)", [this](const httplib::Request& req) {
+        return handleGetDeviceEnergy(req);
     });
-
-    addRoute(server, HttpMethod::Get, R"(/api/devices/([^/]+)/energy/history)", [this](const httplib::Request& req, httplib::Response& res) {
-        std::string deviceId = req.matches[1];
-        std::string result = this->handleGetDeviceEnergyHistory(deviceId);
-        res.set_content(result, "application/json");
+    addRoute(server, HttpMethod::Get, R"(/api/devices/([^/]+)/energy/history)", [this](const httplib::Request& req) {
+        return handleGetDeviceEnergyHistory(req);
     });
 
     // 없는 경로도 토큰이 틀리면 401이어야 하므로, 마지막에 전체 매칭 라우트를 둔다(앞선 라우트가 먼저 매칭된다).
-    const auto notFound = [](const httplib::Request&, httplib::Response& res) { res.status = 404; };
+    const auto notFound = [](const httplib::Request&) { return ApiResponse{404, json()}; };
     for (HttpMethod method : {HttpMethod::Get, HttpMethod::Post, HttpMethod::Put,
                               HttpMethod::Delete, HttpMethod::Patch, HttpMethod::Options}) {
         addRoute(server, method, ".*", notFound);
@@ -264,15 +253,7 @@ void HTTPServer::registerRoutes(httplib::Server& server){
 }
 
 void HTTPServer::run(std::shared_ptr<RunState> state){
-    httplib::Server& svr = state->server;
-    if (!svr.bind_to_port(mBindAddress, mPort)) {
-        logBindFailure(mBindAddress, mPort);
-    } else {
-        // waitUntilReady가 true가 되기 전(listen 전)에 출력해 로그가 항상 준비 완료보다 앞선다
-        std::cout << "[HTTPServer] HTTP 서버 시작 (주소: " << mBindAddress << ", 포트: " << mPort
-                  << ", 평문 HTTP)" << std::endl;
-        svr.listen_after_bind(); // stop()이 부르면 반환한다
-    }
+    state->server.listen_after_bind(); // stop()이 부르면 반환한다
     state->hasFinished = true;
 }
 
@@ -294,7 +275,12 @@ void HTTPServer::addRoute(httplib::Server& svr, HttpMethod method, const std::st
         }
         // 핸들러가 처리하지 못한 예외는 내부 정보 없이 500으로 바꾼다(로그에도 메시지만 남긴다)
         try {
-            handler(req, res);
+            const ApiResponse response = handler(req);
+            if (response.body.is_null()) {
+                res.status = response.httpStatus; // 본문 없는 응답(10f에서 오류 봉투로 교체)
+            } else {
+                writeApiResponse(res, response);
+            }
         } catch (const std::exception& e) {
             std::cerr << "[HTTPServer] 처리 중 예외: " << RequestValidation::sanitizeForLog(req.method) << " "
                       << RequestValidation::sanitizeForLog(req.path) << " (" << e.what() << ")" << std::endl;
@@ -315,165 +301,142 @@ void HTTPServer::addRoute(httplib::Server& svr, HttpMethod method, const std::st
     }
 }
 
-std::string HTTPServer::handleGetDevices(){
+ApiResponse HTTPServer::handleGetDevices(){
     std::cout << "[HTTPServer] 기기 목록 조회(GET) 요청 수신" << std::endl;
-    json jsonArray = json::array();
-    std::vector<Device> deviceList = mDeviceManager.getAllDevices();
+    json devices = json::array();
+    const std::vector<Device> deviceList = mDeviceManager.getAllDevices();
     for (const auto& device : deviceList) {
-        json deviceObj;
-        
-        // 주의: Device 클래스의 멤버 변수 이름(id, name 등)이 private이면 
-        // device.getId() 같은 getter 메서드로 바꿔 적어주세요!
-        deviceObj["id"] = device.id; 
-        deviceObj["name"] = device.name;
-        deviceObj["type"] = mDeviceManager.getProtocolString(device.protocol_type); // enum 이름 확인!
-        deviceObj["state"] = device.state; // 현재 상태
-        
-        jsonArray.push_back(deviceObj);
+        json item;
+        item["deviceId"] = device.id;
+        item["name"] = device.name;
+        item["protocolType"] = mDeviceManager.getProtocolString(device.protocol_type);
+        item["state"] = device.state;
+        devices.push_back(std::move(item));
     }
     json response;
-    response["status"] = "success";
-    response["total_count"] = deviceList.size();
-    response["devices"] = jsonArray;
-    return response.dump();
+    response["totalCount"] = deviceList.size();
+    response["devices"] = std::move(devices);
+    return ApiResponse::ok(std::move(response));
 }
 
-std::string HTTPServer::handleControlDevice(const std::string& requestBody){
-    std::cout << "[HTTPServer] 제어(POST) 요청 수신! Body: " << requestBody << std::endl;
-        
-       try {
-            // 들어온 문자열(req.body)을 JSON 객체로 파싱
-            json j = json::parse(requestBody);
-            
-            // JSON에서 값을 추출
-            std::string targetDeviceId = j["deviceId"];
-            std::string command = j["command"];
-
-            if (!isAllowedControlCommand(command)) {
-                std::cerr << "[HTTPServer] 허용되지 않은 명령 거부: " << targetDeviceId << std::endl;
-                return R"({"result": "error", "message": "허용되지 않은 명령입니다."})";
-            }
-            
-            std::cout << "  ➔ 대상 기기: " << targetDeviceId << ", 명령: " << command << std::endl;
-
-            // DeviceManager로 동적 명령 하달
-            const CommandResult result = mDeviceManager.executeCommand(targetDeviceId, command);
-            json response;
-            response["status"] = result.state;
-            response["message"] = controlMessageFor(result);
-            return response.dump();
-            
-        } catch (const json::exception& e) {
-            // JSON 형식이 잘못되었을 때 (앱 개발자의 실수 방어)
-            std::cerr << "[HTTPServer] ❌ JSON 파싱 에러: " << e.what() << std::endl;
-            return R"({"result": "error", "message": "잘못된 JSON 형식입니다."})";
-        }
+// 10f에서 v2.0으로 바꾸기 전까지 v1.0 본문을 그대로 낸다
+ApiResponse HTTPServer::handleControlDevice(const std::string& requestBody){
+    const auto body = parseJsonObject(requestBody);
+    const auto deviceId = body ? readStringField(*body, "deviceId") : std::nullopt;
+    const auto command = body ? readStringField(*body, "command") : std::nullopt;
+    if (!deviceId || !command) {
+        return ApiResponse::ok(json{{"result", "error"}, {"message", "잘못된 JSON 형식입니다."}}, 400);
+    }
+    if (!isAllowedControlCommand(*command)) {
+        std::cerr << "[HTTPServer] 허용되지 않은 명령 거부: " << RequestValidation::sanitizeForLog(*deviceId) << std::endl;
+        return ApiResponse::ok(json{{"result", "error"}, {"message", "허용되지 않은 명령입니다."}}, 400);
+    }
+    std::cout << "[HTTPServer] 제어(POST) 요청: 기기 " << RequestValidation::sanitizeForLog(*deviceId)
+              << ", 명령 " << *command << std::endl;
+    const CommandResult result = mDeviceManager.executeCommand(*deviceId, *command);
+    return ApiResponse::ok(json{{"status", result.state}, {"message", controlMessageFor(result)}});
 }
 
-std::string HTTPServer::handleCommissionDevice(const std::string& requestBody){
+ApiResponse HTTPServer::handleCommissionDevice(const std::string& requestBody){
     // Body에 Wi-Fi 비밀번호와 페어링 코드가 있으므로 내용을 출력하지 않는다.
     std::cout << "[HTTPServer] 기기 등록(POST) 요청 수신" << std::endl;
-        
-       try {
-            // 들어온 문자열(req.body)을 JSON 객체로 파싱
-            json j = json::parse(requestBody);
-            
-            // JSON에서 값을 추출
-            std::string payload = j["payload"];
-            std::string deviceName = j["deviceName"];
-            std::string protocolTypeStr = j["protocolType"];
+    const json badJson = {{"result", "error"}, {"message", "잘못된 JSON 형식입니다."}};
+    const auto body = parseJsonObject(requestBody);
+    if (!body) return ApiResponse::ok(badJson, 400);
 
-            std::string ssid = j.value("ssid", "");
-            std::string password = j.value("password", "");
+    const auto payload = readStringField(*body, "payload");
+    const auto deviceName = readStringField(*body, "deviceName");
+    const auto protocolTypeText = readStringField(*body, "protocolType");
+    if (!payload || !deviceName || !protocolTypeText) return ApiResponse::ok(badJson, 400);
 
-            std::vector<DriverType> driverTypes;
-            if (j.contains("driverTypes") && j["driverTypes"].is_array()) {
-                for (int typeInt : j["driverTypes"]) {
-                    driverTypes.push_back(static_cast<DriverType>(typeInt));
-                }
-            }
-
-            ProtocolType protocolType;
-            if (protocolTypeStr == "MATTER") {
-                protocolType = ProtocolType::MATTER;
-            } else if (protocolTypeStr == "TCP_DIY") {
-                protocolType = ProtocolType::TCP_DIY;
-            } else {
-                return R"({"result": "error", "message": "알 수 없는 프로토콜 타입입니다."})";
-            }
-
-            bool isSuccess = mDeviceManager.startCommissioning(protocolType, deviceName, payload, ssid, password, driverTypes);
-            if (isSuccess) {
-                return R"({"result": "success", "message": "기기 등록 성공!"})";
-            } else {
-                return R"({"result": "error", "message": "기기 등록 실패!"})";
-            }
-        } catch (const json::exception& e) {
-            // JSON 형식이 잘못되었을 때 (앱 개발자의 실수 방어)
-            // e.what()에는 입력 일부가 포함될 수 있어 오류 번호만 출력한다.
-            std::cerr << "[HTTPServer] ❌ JSON 파싱 에러 (id: " << e.id << ")" << std::endl;
-            return R"({"result": "error", "message": "잘못된 JSON 형식입니다."})";
-        }
-}
-
-std::string HTTPServer::handleDeleteDevice(const std::string& requestBody) {
-    std::cout << "[HTTPServer] 기기 삭제(POST) 요청 수신! Body: " << requestBody << std::endl;
-
-    try {
-        json j = json::parse(requestBody);
-        std::string targetDeviceId = j["deviceId"];
-
-        bool success = mDeviceManager.removeDevice(targetDeviceId);
-
-        if (success) {
-            return R"({"result": "success", "message": "기기 삭제 성공!"})";
-        } else {
-            return R"({"result": "error", "message": "기기 삭제 실패 또는 기기 없음"})";
-        }
-    } catch (const json::exception& e) {
-        std::cerr << "[HTTPServer] ❌ JSON 파싱 에러: " << e.what() << std::endl;
-        return R"({"result": "error", "message": "잘못된 JSON 형식입니다."})";
+    ProtocolType protocolType;
+    if (*protocolTypeText == "MATTER") {
+        protocolType = ProtocolType::MATTER;
+    } else if (*protocolTypeText == "TCP_DIY") {
+        protocolType = ProtocolType::TCP_DIY;
+    } else {
+        return ApiResponse::ok(json{{"result", "error"}, {"message", "알 수 없는 프로토콜 타입입니다."}}, 400);
     }
+    std::vector<DriverType> driverTypes;
+    if (body->contains("driverTypes") && (*body)["driverTypes"].is_array()) {
+        for (const auto& item : (*body)["driverTypes"]) {
+            if (!item.is_number_integer()) return ApiResponse::ok(badJson, 400);
+            driverTypes.push_back(static_cast<DriverType>(item.get<int>()));
+        }
+    }
+    std::string ssid;
+    std::string password;
+    try {
+        ssid = body->value("ssid", "");
+        password = body->value("password", "");
+    } catch (const json::exception&) {
+        return ApiResponse::ok(badJson, 400); // 문자열이 아닌 값
+    }
+
+    const bool isSuccess = mDeviceManager.startCommissioning(protocolType, *deviceName, *payload, ssid, password, driverTypes);
+    if (isSuccess) return ApiResponse::ok(json{{"result", "success"}, {"message", "기기 등록 성공!"}});
+    return ApiResponse::ok(json{{"result", "error"}, {"message", "기기 등록 실패!"}}, 400);
 }
 
-std::string HTTPServer::handleGetDeviceEnergy(const std::string& deviceId) {
+ApiResponse HTTPServer::handleDeleteDevice(const std::string& requestBody) {
+    const auto body = parseJsonObject(requestBody);
+    const auto deviceId = body ? readStringField(*body, "deviceId") : std::nullopt;
+    if (!deviceId) {
+        return ApiResponse::ok(json{{"result", "error"}, {"message", "잘못된 JSON 형식입니다."}}, 400);
+    }
+    std::cout << "[HTTPServer] 기기 삭제(POST) 요청: 기기 " << RequestValidation::sanitizeForLog(*deviceId) << std::endl;
+    if (mDeviceManager.removeDevice(*deviceId)) {
+        return ApiResponse::ok(json{{"result", "success"}, {"message", "기기 삭제 성공!"}});
+    }
+    return ApiResponse::ok(json{{"result", "error"}, {"message", "기기 삭제 실패 또는 기기 없음"}}, 400);
+}
+
+ApiResponse HTTPServer::handleGetDeviceState(const httplib::Request& request) {
+    const std::string& deviceId = request.matches[1];
+    if (!RequestValidation::isValidDeviceId(deviceId)) return ApiResponse::error(ErrorCode::NotFound);
+
+    // 안드로이드가 ?isManualRefresh=true 형태로 보냈을 때만 수동 새로고침
+    const bool isManualRefresh = request.get_param_value("isManualRefresh") == "true";
+
+    Device device;
+    if (!mDeviceManager.getDevice(deviceId, device)) return ApiResponse::error(ErrorCode::DeviceNotFound);
+    const std::string state = mDeviceManager.getDeviceState(deviceId, isManualRefresh);
+    return ApiResponse::ok(json{{"deviceId", deviceId}, {"state", state}});
+}
+
+ApiResponse HTTPServer::handleGetDeviceEnergy(const httplib::Request& request) {
+    const std::string& deviceId = request.matches[1];
+    if (!RequestValidation::isValidDeviceId(deviceId)) return ApiResponse::error(ErrorCode::NotFound);
     std::cout << "[HTTPServer] 기기 전력량(실시간/누적) GET 요청 수신 Device ID: " << deviceId << std::endl;
 
     // 존재 확인을 먼저 하므로, 없는 기기는 DB에 아무것도 남기지 않는다
     const auto energy = mDeviceManager.readEnergy(deviceId);
-    if (!energy.ok()) {
-        if (energy.error.code == ErrorCode::DeviceNotFound) {
-            return R"({"error": "등록되지 않은 기기입니다."})";
-        }
-        return R"({"error": "서버 내부 데이터 처리 오류입니다."})";
-    }
+    if (!energy.ok()) return ApiResponse::error(energy.error.code);
     json response;
-    response["device_status"] = energy.value->deviceState;
+    response["deviceId"] = deviceId;
+    response["state"] = energy.value->deviceState;
     response["activePower_mW"] = energy.value->activePower_mW;
     response["totalEnergy_mWh"] = energy.value->totalEnergy_mWh; // DB 보정이 끝난 진짜 데이터
-    return response.dump();
+    return ApiResponse::ok(std::move(response));
 }
 
-std::string HTTPServer::handleGetDeviceEnergyHistory(const std::string& deviceId) {
+// from·to·period와 v2.0 키·시각 형식은 아직 적용하지 않는다(v1.0 본문). 파라미터 검사와 limit만 반영한다
+ApiResponse HTTPServer::handleGetDeviceEnergyHistory(const httplib::Request& request) {
+    const std::string& deviceId = request.matches[1];
+    if (!RequestValidation::isValidDeviceId(deviceId)) return ApiResponse::error(ErrorCode::NotFound);
     std::cout << "[HTTPServer] 시계열 데이터 GET 요청 수신 Device ID: " << deviceId << std::endl;
 
-    // v1.0 계약: E7의 오류는 HTTP 200 + {"error"}. DB 오류도 빈 목록(성공)으로 숨기지 않는다
-    const auto history = mDeviceManager.getEnergyHistory(deviceId);
-    if (!history.ok()) {
-        if (history.error.code == ErrorCode::DeviceNotFound) {
-            return R"({"error": "등록되지 않은 기기입니다."})";
-        }
-        return R"({"error": "서버 내부 데이터 처리 오류입니다."})";
+    const auto query = RequestValidation::parseHistoryQuery(request.params);
+    if (!query.ok()) return ApiResponse::error(query.error.code);
+
+    const auto history = mDeviceManager.getEnergyHistory(deviceId, static_cast<int>(query.value->limit));
+    if (!history.ok()) return ApiResponse::error(history.error.code);
+    json logsArray = json::array();
+    for (const auto& log : history.value->logs) {
+        logsArray.push_back(json{{"timestamp", log.timestamp}, {"totalEnergy_mWh", log.total_mwh}});
     }
     json response;
     response["device_status"] = history.value->deviceState;
-    json logsArray = json::array();
-    for (const auto& log : history.value->logs) {
-        json item;
-        item["timestamp"] = log.timestamp;
-        item["totalEnergy_mWh"] = log.total_mwh;
-        logsArray.push_back(item);
-    }
-    response["logs"] = logsArray;
-    return response.dump();
+    response["logs"] = std::move(logsArray);
+    return ApiResponse::ok(std::move(response));
 }

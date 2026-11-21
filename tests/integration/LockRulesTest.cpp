@@ -8,10 +8,7 @@
 #include "fakes/FakeProtocolDriver.hpp"
 #include "httplib.h"
 #include "json.hpp"
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <unistd.h>
+#include "support/RawHttpClient.hpp"
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -24,6 +21,7 @@
 #include <vector>
 
 using json = nlohmann::json;
+using testsupport::findFreePort;
 
 namespace {
 
@@ -342,20 +340,6 @@ TEST(LockRulesDelayedTest, CommandResultStateIsCurrentStateWhenDelayed) {
 
 // ---- 처리하지 못한 예외는 500 + 고정 본문 ----
 
-int findFreePort() {
-    int fd = socket(AF_INET, SOCK_STREAM, 0);
-    sockaddr_in address{};
-    address.sin_family = AF_INET;
-    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    address.sin_port = 0;
-    bind(fd, reinterpret_cast<sockaddr*>(&address), sizeof(address));
-    socklen_t length = sizeof(address);
-    getsockname(fd, reinterpret_cast<sockaddr*>(&address), &length);
-    const int port = ntohs(address.sin_port);
-    close(fd);
-    return port;
-}
-
 TEST_F(LockRulesTest, UnhandledExceptionInHandlerReturns500WithFixedBody) {
     // 가짜 설정은 서버 스레드가 뜨기 전에 끝낸다(설정 값은 락으로 보호하지 않는다)
     addTcpDevice("A");
@@ -374,7 +358,7 @@ TEST_F(LockRulesTest, UnhandledExceptionInHandlerReturns500WithFixedBody) {
 
     ASSERT_TRUE(response);
     EXPECT_EQ(response->status, 500);
-    EXPECT_EQ(json::parse(response->body), json::parse(R"({"error": "서버 내부 오류입니다."})"));
+    EXPECT_EQ(json::parse(response->body), json::parse(R"({"error":{"code":"INTERNAL_ERROR","message":"서버 내부 오류입니다."}})"));
     EXPECT_EQ(response->body.find("fake sendCommand failure"), std::string::npos); // 예외 내용은 응답에 없다
     ASSERT_TRUE(afterwards);
     EXPECT_EQ(afterwards->status, 200); // 서버는 계속 동작한다

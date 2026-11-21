@@ -47,7 +47,7 @@ public:
         size_t sent = 0;
         while (sent < data.size()) {
             const ssize_t n = send(fd_, data.data() + sent, data.size() - sent, MSG_NOSIGNAL);
-            if (n <= 0) return;
+            if (n <= 0) { sendErrno = errno; return; }
             sent += n;
         }
     }
@@ -88,6 +88,7 @@ public:
     std::chrono::milliseconds firstByteAfter{-1};  // 첫 바이트가 온 시각(없으면 -1)
     std::string received;  // waitUntilClosed 동안 받은 바이트
     int receiveErrno = 0;
+    int sendErrno = 0;
     bool closedByPeer = false;
 
 private:
@@ -105,6 +106,12 @@ private:
 
 inline std::string makeGetRequest(const std::string& path, const std::string& token) {
     return "GET " + path + " HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer " + token + "\r\n\r\n";
+}
+
+inline std::string makePostRequest(const std::string& path, const std::string& token, const std::string& body) {
+    return "POST " + path + " HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer " + token +
+           "\r\nContent-Type: application/json\r\nContent-Length: " + std::to_string(body.size()) +
+           "\r\n\r\n" + body;
 }
 
 }  // namespace testsupport

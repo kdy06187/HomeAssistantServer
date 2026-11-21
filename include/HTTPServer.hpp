@@ -5,6 +5,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include "ApiResponse.hpp"
 #include "AuthFailureMonitor.hpp"
 #include "Authenticator.hpp"
 #include "Clock.hpp"
@@ -29,13 +30,13 @@ public:
                std::string bindAddress, const Clock& clock);
     ~HTTPServer();
 
-    // 이미 실행 중이면 false(TcpServer::start와 같은 규약: true는 이번 호출이 시작했다는 뜻).
-    // 포트가 1~65535 밖이어도 false. 포트 바인딩 실패는 waitUntilReady가 false로 알려 준다.
+    // 포트 바인딩까지 이 호출 안에서 끝내고, 성공하면 수락 스레드를 띄운다(TcpServer::start와 같은 규약:
+    // true는 이번 호출이 시작했다는 뜻). 이미 실행 중이거나 포트가 1~65535 밖이거나 바인딩에 실패하면 false.
     // stop 뒤나 바인딩 실패 뒤에 다시 부를 수 있다. 여러 스레드가 동시에 불러도 안전하다.
     bool start();
     // 실행 중이 아니면 아무것도 하지 않는다(여러 번 불러도 안전).
     void stop();
-    // listen이 시작될 때까지 기다린다. 포트 바인드 실패 등으로 시간 안에 못 열리면 false.
+    // 수락 스레드가 listen에 들어갈 때까지 기다린다. start가 성공하지 않았거나 시간 안에 못 열리면 false.
     bool waitUntilReady(std::chrono::milliseconds timeout);
 
 private:
@@ -62,14 +63,16 @@ DeviceManager& mDeviceManager;
     static std::string clientAddressOf(const httplib::Request& request);
 
     enum class HttpMethod { Get, Post, Put, Delete, Patch, Options };
-    using RouteHandler = std::function<void(const httplib::Request&, httplib::Response&)>;
-    // 모든 라우트는 이 함수로만 등록한다. 인증을 통과한 요청만 handler에 도달한다.
+    using RouteHandler = std::function<ApiResponse(const httplib::Request&)>;
+    // 모든 라우트는 이 함수로만 등록한다. 인증을 통과한 요청만 handler에 도달하고,
+    // 응답 직렬화와 예외→500 변환은 여기서 한다.
     void addRoute(httplib::Server& server, HttpMethod method, const std::string& pattern, RouteHandler handler);
 
-    std::string handleGetDevices();
-    std::string handleControlDevice(const std::string& requestBody);
-    std::string handleCommissionDevice(const std::string& requestBody);
-    std::string handleDeleteDevice(const std::string& requestBody);
-    std::string handleGetDeviceEnergy(const std::string& deviceId);
-    std::string handleGetDeviceEnergyHistory(const std::string& deviceId);
+    ApiResponse handleGetDevices();
+    ApiResponse handleControlDevice(const std::string& requestBody);
+    ApiResponse handleCommissionDevice(const std::string& requestBody);
+    ApiResponse handleDeleteDevice(const std::string& requestBody);
+    ApiResponse handleGetDeviceState(const httplib::Request& request);
+    ApiResponse handleGetDeviceEnergy(const httplib::Request& request);
+    ApiResponse handleGetDeviceEnergyHistory(const httplib::Request& request);
 };

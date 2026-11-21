@@ -300,6 +300,10 @@ Result<EnergySnapshot> DeviceManager::readEnergy(const std::string& deviceId) {
             std::cerr << "[DeviceManager] 전력 조회 실패: 등록되지 않은 기기 (" << deviceId << ")" << std::endl;
             return Result<EnergySnapshot>::failure(ErrorCode::DeviceNotFound, "device not found");
         }
+        // TCP 기기는 전력 측정 하드웨어가 없다. 드라이버 유무와 상관없이 같은 오류로 답한다
+        if (it->second.protocol_type == ProtocolType::TCP_DIY) {
+            return Result<EnergySnapshot>::failure(ErrorCode::UnsupportedOperation, "TCP 기기는 전력 조회를 지원하지 않음");
+        }
         // 기기 자신의 프로토콜 드라이버에 묻는다. 전력 조회를 지원하지 않는 드라이버는 실패를 돌려준다
         auto driverIt = drivers_.find(it->second.protocol_type);
         if (driverIt != drivers_.end()) protocolDriver = driverIt->second;
@@ -316,8 +320,11 @@ Result<EnergySnapshot> DeviceManager::readEnergy(const std::string& deviceId) {
     const auto reading = protocolDriver->readEnergy(deviceId); // chip-tool 실행 중이므로 상태 락 밖
     if (!reading.ok()) {
         std::cerr << "[DeviceManager] 기기(" << deviceId << ") 전력 조회 실패: " << reading.error.message << std::endl;
-        // 기기 존재는 위에서 확인했다. 드라이버의 "모름"(매핑 없음)은 내부 불일치로 본다
-        const ErrorCode code = reading.error.code == ErrorCode::DeviceNotFound ? ErrorCode::Internal : reading.error.code;
+        // 기기 존재는 위에서 확인했다. 드라이버의 "모름"(매핑 없음)은 내부 불일치(Internal)로 보고,
+        // 그 밖의 읽기·해석 실패는 호출자에게 모두 "기기에서 값을 못 읽음"(DeviceUnreachable)으로 알린다
+        ErrorCode code = ErrorCode::DeviceUnreachable;
+        if (reading.error.code == ErrorCode::DeviceNotFound) code = ErrorCode::Internal;
+        if (reading.error.code == ErrorCode::UnsupportedOperation) code = ErrorCode::UnsupportedOperation;
         return Result<EnergySnapshot>::failure(code, reading.error.message);
     }
 

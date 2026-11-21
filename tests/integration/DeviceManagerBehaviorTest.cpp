@@ -72,7 +72,7 @@ TEST_F(DeviceManagerBehaviorTest, EnergyForUnregisteredIdFailsWithoutReadingDriv
 }
 
 // TCP 기기는 자기 드라이버(전력 조회 미지원)에 묻고, Matter 드라이버는 부르지 않는다
-TEST_F(DeviceManagerBehaviorTest, EnergyForTcpDeviceUsesItsOwnDriverNotMatter) {
+TEST_F(DeviceManagerBehaviorTest, EnergyForTcpDeviceIsUnsupportedWithoutAskingAnyDriver) {
     tcpFake.commissionResult = Result<CommissionOutcome>::success(CommissionOutcome{"ARD_1"});
     manager.startCommissioning(ProtocolType::TCP_DIY, "lamp", "");
     tcpFake.energyResult = Result<EnergyReading>::failure(ErrorCode::UnsupportedOperation, "unsupported");
@@ -83,7 +83,7 @@ TEST_F(DeviceManagerBehaviorTest, EnergyForTcpDeviceUsesItsOwnDriverNotMatter) {
     ASSERT_FALSE(energy.ok());
     EXPECT_EQ(energy.error.code, ErrorCode::UnsupportedOperation);
     EXPECT_TRUE(matterFake.energyReadIds.empty());
-    ASSERT_EQ(tcpFake.energyReadIds.size(), 1u);
+    EXPECT_TRUE(tcpFake.energyReadIds.empty());
 }
 
 TEST_F(DeviceManagerBehaviorTest, EnergyWithoutProtocolDriverFailsAsInternal) {

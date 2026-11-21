@@ -195,8 +195,10 @@ TEST_F(HttpServerLifecycleTest, StartLogIsPrintedOnlyAfterBindingSucceeds) {
     ASSERT_TRUE(holder.held());
     HTTPServer server(manager, kToken, port);
     testing::internal::CaptureStdout();
-    ASSERT_TRUE(server.start());
-    EXPECT_FALSE(server.waitUntilReady(2s));
+    testing::internal::CaptureStderr();
+    EXPECT_FALSE(server.start());
+    EXPECT_FALSE(server.waitUntilReady(10ms));
+    testing::internal::GetCapturedStderr();
     EXPECT_EQ(testing::internal::GetCapturedStdout().find("HTTP 서버 시작"), std::string::npos);
 }
 
@@ -206,15 +208,15 @@ TEST_F(HttpServerLifecycleTest, BindFailureLogsAddressPortAndErrnoThenRestartSuc
 
     HTTPServer server(manager, kToken, port);
     testing::internal::CaptureStderr();
-    ASSERT_TRUE(server.start());
-    EXPECT_FALSE(server.waitUntilReady(2s));
+    EXPECT_FALSE(server.start());
+    EXPECT_FALSE(server.waitUntilReady(10ms));
     const std::string log = testing::internal::GetCapturedStderr();
     EXPECT_NE(log.find("0.0.0.0"), std::string::npos) << log;
     EXPECT_NE(log.find(std::to_string(port)), std::string::npos) << log;
     EXPECT_NE(log.find("errno=" + std::to_string(EADDRINUSE)), std::string::npos) << log;
 
     holder.release();
-    ASSERT_TRUE(server.start());  // 실패로 끝난 실행을 정리하고 다시 시작
+    ASSERT_TRUE(server.start());  // 바인딩 실패 뒤에도 같은 객체로 다시 시작할 수 있다
     EXPECT_TRUE(server.waitUntilReady(3s));
     EXPECT_TRUE(answersRequests());
 }

@@ -80,9 +80,8 @@ int main() {
     periodicTasks.start();
     manager.initFromDatabase();
     HTTPServer httpServer(manager, *apiToken, 8000, *httpBindAddress.value);
-    httpServer.start();
-    // start()는 스레드만 띄운다. listen이 실패하면 run()이 바로 끝나므로 준비 여부로 판단한다
-    if (!httpServer.waitUntilReady(std::chrono::seconds(5))) {
+    // start()가 바인딩까지 마치므로 실패하면 바로 알 수 있다. 수락 스레드가 listen에 들어갈 때까지 한 번 더 확인한다
+    if (!httpServer.start() || !httpServer.waitUntilReady(std::chrono::seconds(5))) {
         std::cerr << "❌ HTTP 포트 8000을 열 수 없습니다(원인은 위 [HTTPServer] 로그). 서버를 종료합니다." << std::endl;
         return 1;
     }

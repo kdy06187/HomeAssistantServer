@@ -8,10 +8,7 @@
 #include "fakes/FakeProtocolDriver.hpp"
 #include "httplib.h"
 #include "json.hpp"
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <unistd.h>
+#include "support/RawHttpClient.hpp"
 #include <atomic>
 #include <chrono>
 #include <future>
@@ -22,25 +19,12 @@
 #include <string>
 
 using json = nlohmann::json;
+using testsupport::findFreePort;
 namespace fs = std::filesystem;
 
 namespace {
 
 const std::string kToken = "energy-test-token-0123456789";
-
-int findFreePort() {
-    int fd = socket(AF_INET, SOCK_STREAM, 0);
-    sockaddr_in address{};
-    address.sin_family = AF_INET;
-    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    address.sin_port = 0;
-    bind(fd, reinterpret_cast<sockaddr*>(&address), sizeof(address));
-    socklen_t length = sizeof(address);
-    getsockname(fd, reinterpret_cast<sockaddr*>(&address), &length);
-    const int port = ntohs(address.sin_port);
-    close(fd);
-    return port;
-}
 
 // DatabaseManager를 거치지 않고 같은 파일을 직접 보는 검증용 연결
 class RawDb {
@@ -162,21 +146,22 @@ TEST_F(EnergyPathTest, LargeCumulativeValuesAreNotTruncated) {
 // ---- REQ-04 / H6: 미등록·TCP 기기는 DB 행을 만들지 않는다 ----
 
 TEST_F(EnergyPathTest, E6ForUnregisteredAndTcpDeviceCreatesNoStatsRow) {
-    manager.addDevice("ARD_10.0.0.9", "lamp", ProtocolType::TCP_DIY, {}, &tcpFake);
+    manager.addDevice("TCP_A1B2C3D4E5F6", "lamp", ProtocolType::TCP_DIY, {}, &tcpFake);
     matterFake.energyResult = Result<EnergyReading>::success(EnergyReading{5, 50});
     startServer();
 
     auto missing = get("/api/devices/NOPE/energy");
-    auto tcp = get("/api/devices/ARD_10.0.0.9/energy");
+    auto tcp = get("/api/devices/TCP_A1B2C3D4E5F6/energy");
 
     ASSERT_TRUE(missing);
-    EXPECT_EQ(missing->status, 400);
-    EXPECT_EQ(json::parse(missing->body), json::parse(R"({"error":"등록되지 않은 기기입니다."})"));
+    EXPECT_EQ(missing->status, 404);
+    EXPECT_EQ(json::parse(missing->body), json::parse(R"({"error":{"code":"DEVICE_NOT_FOUND","message":"등록되지 않은 기기입니다."}})"));
     ASSERT_TRUE(tcp);
     EXPECT_EQ(tcp->status, 400);
-    EXPECT_EQ(json::parse(tcp->body), json::parse(R"({"error":"서버 내부 데이터 처리 오류입니다."})"));
+    EXPECT_EQ(json::parse(tcp->body),
+              json::parse(R"({"error":{"code":"UNSUPPORTED_OPERATION","message":"이 기기에서 지원하지 않는 요청입니다."}})"));
     EXPECT_EQ(statsRowCount("NOPE"), "0");
-    EXPECT_EQ(statsRowCount("ARD_10.0.0.9"), "0");
+    EXPECT_EQ(statsRowCount("TCP_A1B2C3D4E5F6"), "0");
     EXPECT_TRUE(matterFake.energyReadIds.empty()); // Matter 드라이버에 남의 ID를 묻지 않는다
 }
 
@@ -191,7 +176,7 @@ TEST_F(EnergyPathTest, E6SuccessReturnsStateAndCorrectedTotal) {
     ASSERT_TRUE(response);
     EXPECT_EQ(response->status, 200);
     EXPECT_EQ(json::parse(response->body),
-              json::parse(R"({"device_status":"ON","activePower_mW":15230,"totalEnergy_mWh":1048576})"));
+              json::parse(R"({"deviceId":"PLUG","state":"ON","activePower_mW":15230,"totalEnergy_mWh":1048576})"));
 }
 
 // ---- 6b: 같은 기기 전력 조회는 조회~저장이 직렬화된다 ----
@@ -346,22 +331,23 @@ TEST_F(EnergyPathTest, E7ReturnsExactFieldsOldestFirst) {
         {"timestamp":"2026-11-16 09:30:00","totalEnergy_mWh":1048576}]})"));
 }
 
-TEST_F(EnergyPathTest, E7UnregisteredDeviceReturns200WithError) {
+TEST_F(EnergyPathTest, E7UnregisteredDeviceReturns404) {
     startServer();
     auto response = get("/api/devices/NOPE/energy/history");
     ASSERT_TRUE(response);
-    EXPECT_EQ(response->status, 200);
-    EXPECT_EQ(json::parse(response->body), json::parse(R"({"error":"등록되지 않은 기기입니다."})"));
+    EXPECT_EQ(response->status, 404);
+    EXPECT_EQ(json::parse(response->body), json::parse(R"({"error":{"code":"DEVICE_NOT_FOUND","message":"등록되지 않은 기기입니다."}})"));
 }
 
-TEST_F(EnergyPathTest, E6DriverFailureReturns400) {
+TEST_F(EnergyPathTest, E6DriverFailureReturns502) {
     manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {}, &matterFake);
     matterFake.energyResult = Result<EnergyReading>::failure(ErrorCode::DeviceUnreachable, "누적 전력 값 없음");
     startServer();
     auto response = get("/api/devices/PLUG/energy");
     ASSERT_TRUE(response);
-    EXPECT_EQ(response->status, 400);
-    EXPECT_EQ(json::parse(response->body), json::parse(R"({"error":"서버 내부 데이터 처리 오류입니다."})"));
+    EXPECT_EQ(response->status, 502);
+    EXPECT_EQ(json::parse(response->body),
+              json::parse(R"({"error":{"code":"DEVICE_UNREACHABLE","message":"기기가 응답하지 않습니다."}})"));
     EXPECT_EQ(statsRowCount("PLUG"), "0");
 }
 
@@ -392,8 +378,8 @@ TEST_F(EnergyPathTest, E6ReturnsInternalErrorWhenStatsCannotBeSaved) {
     auto response = get("/api/devices/PLUG/energy");
 
     ASSERT_TRUE(response);
-    EXPECT_EQ(response->status, 400);
-    EXPECT_EQ(json::parse(response->body), json::parse(R"({"error":"서버 내부 데이터 처리 오류입니다."})"));
+    EXPECT_EQ(response->status, 500);
+    EXPECT_EQ(json::parse(response->body), json::parse(R"({"error":{"code":"INTERNAL_ERROR","message":"서버 내부 오류입니다."}})"));
 }
 
 // ---- D5 ----
@@ -405,7 +391,7 @@ TEST_F(EnergyPathTest, InsertEnergyLogReturnsFalseWhenStoreFails) {
     EXPECT_FALSE(database.insertEnergyLog("PLUG", 100));
 }
 
-// ---- G11 / H12: E7은 존재 확인 먼저, DB 오류는 200 + error ----
+// ---- G11 / H12: E7은 존재 확인 먼저, DB 오류는 500 ----
 
 TEST_F(EnergyPathTest, E7ReportsDatabaseErrorInsteadOfEmptyList) {
     manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {}, &matterFake);
@@ -416,8 +402,8 @@ TEST_F(EnergyPathTest, E7ReportsDatabaseErrorInsteadOfEmptyList) {
     auto response = get("/api/devices/PLUG/energy/history");
 
     ASSERT_TRUE(response);
-    EXPECT_EQ(response->status, 200);
-    EXPECT_EQ(json::parse(response->body), json::parse(R"({"error":"서버 내부 데이터 처리 오류입니다."})"));
+    EXPECT_EQ(response->status, 500);
+    EXPECT_EQ(json::parse(response->body), json::parse(R"({"error":{"code":"INTERNAL_ERROR","message":"서버 내부 오류입니다."}})"));
 }
 
 TEST_F(EnergyPathTest, E7EmptyHistoryIsStillSuccess) {
