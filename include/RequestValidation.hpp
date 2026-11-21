@@ -1,0 +1,57 @@
+#pragma once
+#include <cstdint>
+#include <optional>
+#include <string>
+#include <vector>
+#include "Device.hpp"
+#include "DriverType.hpp"
+#include "Result.hpp"
+#include "../src/httplib.h"
+#include "../src/json.hpp"
+
+// 외부에서 들어온 값을 검사하는 순수 함수 모음. 예외를 던지지 않고 Result로 돌려준다.
+
+struct CommissionInput {
+    ProtocolType protocolType = ProtocolType::UNKNOWN;
+    std::string deviceName;
+    std::string payload;
+    std::string ssid;
+    std::string password;
+    std::vector<DriverType> driverTypes;
+};
+
+struct CivilDate {
+    int year = 0;
+    int month = 0;
+    int day = 0;
+};
+
+enum class HistoryPeriod { Day, Week, Month };
+
+struct HistoryQuery {
+    std::optional<CivilDate> from;
+    std::optional<CivilDate> to;
+    std::optional<HistoryPeriod> period;
+    int64_t limit = 50;
+};
+
+namespace RequestValidation {
+    constexpr size_t kMaxDeviceNameChars = 64;
+    constexpr size_t kMaxSsidBytes = 32;
+    constexpr size_t kMaxPasswordBytes = 63;
+    constexpr int64_t kDefaultHistoryLimit = 50;
+    constexpr int64_t kMaxHistoryLimit = 1000;
+    constexpr int kMaxHistoryRangeDays = 366;
+
+    // [A-Za-z0-9_-]{1,64}
+    bool isValidDeviceId(const std::string& deviceId);
+
+    // 점으로 구분한 IPv4 문자열(예 192.168.0.5)인지
+    bool isValidIpv4Address(const std::string& text);
+
+    // 제어문자를 ?로 바꾸고 maxLength 바이트로 자른다(UTF-8 글자 중간은 자르지 않음)
+    std::string sanitizeForLog(const std::string& text, size_t maxLength = 200);
+
+    Result<CommissionInput> parseCommission(const nlohmann::json& body);
+    Result<HistoryQuery> parseHistoryQuery(const httplib::Params& params);
+}

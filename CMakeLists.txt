@@ -34,7 +34,9 @@ add_library(hac_core OBJECT
     src/ChipToolOutputParser.cpp
     src/DatabaseManager.cpp
     src/DeviceManager.cpp
+    src/ErrorMapping.cpp
     src/HTTPServer.cpp
+    src/RequestValidation.cpp
     src/PCDriver.cpp
     src/PeriodicTasks.cpp
     src/TcpConnection.cpp

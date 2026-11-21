@@ -1,5 +1,7 @@
 add_executable(hac_tests
     unit/ApiAuthTest.cpp
+    unit/ErrorMappingTest.cpp
+    unit/RequestValidationTest.cpp
     unit/PCDriverTest.cpp
     unit/ResultTest.cpp
     unit/FakeClockTest.cpp
