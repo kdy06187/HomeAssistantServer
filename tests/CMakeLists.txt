@@ -1,5 +1,6 @@
 add_executable(hac_tests
     unit/ApiAuthTest.cpp
+    unit/AuthFailureMonitorTest.cpp
     unit/ErrorMappingTest.cpp
     unit/HttpBindAddressTest.cpp
     unit/RequestValidationTest.cpp
@@ -14,6 +15,7 @@ add_executable(hac_tests
     integration/HttpServerTest.cpp
     integration/HttpServerLimitsTest.cpp
     integration/HttpServerLifecycleTest.cpp
+    integration/HttpServerAuthTest.cpp
     integration/LockRulesTest.cpp
     integration/EnergyPathTest.cpp
     integration/TcpServerTest.cpp

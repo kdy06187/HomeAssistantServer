@@ -6,6 +6,9 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include "AuthFailureMonitor.hpp"
+#include "Authenticator.hpp"
+#include "Clock.hpp"
 #include "Command.hpp"
 #include "Result.hpp"
 class DeviceManager;
@@ -21,6 +24,9 @@ class HTTPServer{
 public:
     HTTPServer(DeviceManager& deviceManager, std::string apiToken, int port = 8000,
                std::string bindAddress = "0.0.0.0");
+    // 인증 방식과 시계를 주입한다(테스트용). clock은 서버보다 오래 살아야 한다
+    HTTPServer(DeviceManager& deviceManager, std::shared_ptr<const Authenticator> authenticator, int port,
+               std::string bindAddress, const Clock& clock);
     ~HTTPServer();
 
     // 이미 실행 중이면 false. 포트 바인딩 실패는 waitUntilReady가 false로 알려 준다.
@@ -33,7 +39,8 @@ public:
 
 private:
 DeviceManager& mDeviceManager;
-    std::string mApiToken;
+    std::shared_ptr<const Authenticator> mAuthenticator;
+    AuthFailureMonitor mAuthFailureMonitor;
     int mPort;
     std::string mBindAddress;
     // start/stop 호출끼리만 직렬화한다(안에서 join까지 하므로 다른 락과 겹쳐 잡지 않는다)
@@ -46,6 +53,8 @@ DeviceManager& mDeviceManager;
     void buildServer();
     void registerRoutes();
     void run();
+    // 요청자 주소 판정은 이 함수 한 곳에서만 한다(지금은 소켓 주소 그대로)
+    static std::string clientAddressOf(const httplib::Request& request);
 
     enum class HttpMethod { Get, Post, Put, Delete, Patch, Options };
     using RouteHandler = std::function<void(const httplib::Request&, httplib::Response&)>;

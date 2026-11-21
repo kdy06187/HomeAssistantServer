@@ -42,6 +42,12 @@ TEST(ApiAuthIsAuthorized, PrefixOnlyIsRejected) {
     EXPECT_FALSE(ApiAuth::isAuthorized("Bearer ", kToken));
 }
 
+TEST(ApiAuthIsAuthorized, EmptyExpectedTokenRejectsEverything) {
+    EXPECT_FALSE(ApiAuth::isAuthorized("Bearer ", ""));
+    EXPECT_FALSE(ApiAuth::isAuthorized("", ""));
+    EXPECT_FALSE(ApiAuth::isAuthorized("Bearer anything", ""));
+}
+
 // 임시 파일을 만들고 소멸자에서 지운다. 실제 config/ 는 건드리지 않는다.
 class TokenFileTest : public ::testing::Test {
 protected:
@@ -104,6 +110,23 @@ TEST_F(TokenFileTest, ReadOnlyOwnerFileIsAccepted) {
 TEST_F(TokenFileTest, GroupWritableFileIsRejected) {
     writeFile(kToken, 0620);
     EXPECT_FALSE(ApiAuth::loadToken(path_).has_value());
+}
+
+TEST_F(TokenFileTest, OwnFileProducesNoOwnerWarning) {
+    writeFile(kToken, 0600);
+    testing::internal::CaptureStderr();
+    EXPECT_TRUE(ApiAuth::loadToken(path_).has_value());
+    EXPECT_EQ(testing::internal::GetCapturedStderr().find("소유자"), std::string::npos);
+}
+
+TEST_F(TokenFileTest, OtherOwnerWarnsButStillReturnsToken) {
+    writeFile(kToken, 0600);
+    testing::internal::CaptureStderr();
+    const auto token = ApiAuth::loadToken(path_, geteuid() + 1);
+    const std::string log = testing::internal::GetCapturedStderr();
+    ASSERT_TRUE(token.has_value());
+    EXPECT_NE(log.find("소유자"), std::string::npos) << log;
+    EXPECT_EQ(log.find(kToken), std::string::npos) << "경고에 토큰이 들어가면 안 됨";
 }
 
 TEST(ApiAuthLoadToken, MissingFileReturnsNullopt) {

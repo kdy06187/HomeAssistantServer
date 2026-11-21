@@ -92,9 +92,26 @@ Result<std::string> parseHttpBindAddress(const char* environmentValue) {
     return Result<std::string>::success(address);
 }
 
+namespace {
+    const SystemClock& systemClock() {
+        static const SystemClock clock;
+        return clock;
+    }
+}
+
 HTTPServer::HTTPServer(DeviceManager& deviceManager, std::string apiToken, int port, std::string bindAddress)
-    : mDeviceManager(deviceManager), mApiToken(std::move(apiToken)), mPort(port),
-      mBindAddress(std::move(bindAddress)) {
+    : HTTPServer(deviceManager, std::make_shared<BearerTokenAuthenticator>(std::move(apiToken)), port,
+                 std::move(bindAddress), systemClock()) {
+}
+
+HTTPServer::HTTPServer(DeviceManager& deviceManager, std::shared_ptr<const Authenticator> authenticator, int port,
+                       std::string bindAddress, const Clock& clock)
+    : mDeviceManager(deviceManager), mAuthenticator(std::move(authenticator)), mAuthFailureMonitor(clock),
+      mPort(port), mBindAddress(std::move(bindAddress)) {
+}
+
+std::string HTTPServer::clientAddressOf(const httplib::Request& request) {
+    return request.remote_addr;
 }
 HTTPServer::~HTTPServer() {
     stop();
@@ -233,9 +250,15 @@ void HTTPServer::run(){
 
 void HTTPServer::addRoute(HttpMethod method, const std::string& pattern, RouteHandler handler) {
     auto guarded = [this, handler = std::move(handler)](const httplib::Request& req, httplib::Response& res) {
-        if (!ApiAuth::isAuthorized(req.get_header_value("Authorization"), mApiToken)) {
-            // 제시된 토큰은 일부라도 로그에 남기지 않는다.
-            std::cerr << "[HTTPServer] 인증 실패: " << req.remote_addr << " " << req.method << " " << req.path << std::endl;
+        if (!mAuthenticator->isAuthorized(req.get_header_value("Authorization"))) {
+            // 제시된 토큰은 일부라도 로그에 남기지 않는다. 메서드·경로는 외부 입력이라 정제한다.
+            std::cerr << "[HTTPServer] 인증 실패: " << clientAddressOf(req) << " "
+                      << RequestValidation::sanitizeForLog(req.method) << " "
+                      << RequestValidation::sanitizeForLog(req.path) << std::endl;
+            if (mAuthFailureMonitor.recordFailure()) {
+                std::cerr << "[HTTPServer] ⚠ 인증 실패가 1분에 " << AuthFailureMonitor::kThreshold
+                          << "회를 넘었습니다. 토큰 추측 시도일 수 있습니다." << std::endl;
+            }
             res.status = 401;
             res.set_header("WWW-Authenticate", "Bearer");
             res.set_content(R"({"error": "인증이 필요합니다."})", "application/json");

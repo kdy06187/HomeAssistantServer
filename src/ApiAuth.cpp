@@ -10,7 +10,7 @@ namespace {
     constexpr size_t kMinTokenLength = 32;
 }
 
-std::optional<std::string> ApiAuth::loadToken(const std::string& tokenFilePath) {
+std::optional<std::string> ApiAuth::loadToken(const std::string& tokenFilePath, uid_t expectedOwner) {
     struct stat fileInfo{};
     if (stat(tokenFilePath.c_str(), &fileInfo) != 0) {
         std::cerr << "[ApiAuth] 토큰 파일을 찾을 수 없습니다: " << tokenFilePath << std::endl;
@@ -20,6 +20,9 @@ std::optional<std::string> ApiAuth::loadToken(const std::string& tokenFilePath) 
     if (fileInfo.st_mode & (S_IRWXG | S_IRWXO)) {
         std::cerr << "[ApiAuth] 토큰 파일 권한이 너무 넓습니다. chmod 600이 필요합니다." << std::endl;
         return std::nullopt;
+    }
+    if (fileInfo.st_uid != expectedOwner) {
+        std::cerr << "[ApiAuth] ⚠ 토큰 파일 소유자가 실행 계정과 다릅니다. 파일 소유권을 확인하세요." << std::endl;
     }
     std::ifstream tokenFile(tokenFilePath);
     std::string token;
@@ -32,6 +35,7 @@ std::optional<std::string> ApiAuth::loadToken(const std::string& tokenFilePath) 
 }
 
 bool ApiAuth::isAuthorized(const std::string& authorizationHeader, const std::string& expectedToken) {
+    if (expectedToken.empty()) return false;
     if (authorizationHeader.rfind(kBearerPrefix, 0) != 0) return false;
     const std::string presentedToken = authorizationHeader.substr(kBearerPrefix.size());
     // CRYPTO_memcmp는 길이가 같아야 한다. 토큰 길이는 비밀이 아니므로 먼저 반환해도 안전하다.
