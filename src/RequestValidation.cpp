@@ -195,6 +195,17 @@ bool RequestValidation::isValidIpv4Address(const std::string& text) {
     return inet_pton(AF_INET, text.c_str(), &address) == 1;
 }
 
+Result<std::string> RequestValidation::parseBindAddress(const char* environmentValue) {
+    if (environmentValue == nullptr || environmentValue[0] == '\0') {
+        return Result<std::string>::success("0.0.0.0");
+    }
+    const std::string address(environmentValue);
+    if (!isValidIpv4Address(address)) {
+        return Result<std::string>::failure(ErrorCode::InvalidRequest, "IPv4 형식이 아님");
+    }
+    return Result<std::string>::success(address);
+}
+
 std::string RequestValidation::sanitizeForLog(const std::string& text, size_t maxLength) {
     size_t length = text.size() > maxLength ? maxLength : text.size();
     // 글자 중간에서 잘리면 그 글자를 통째로 버린다

@@ -84,7 +84,7 @@ bool TcpServer::start(int port, const std::string& bindAddress) {
         closeListenSocket();
         return false;
     }
-    std::cout << "[TCPDriver] " << boundPort_ << " 포트에서 클라이언트 연결 대기 중..." << std::endl;
+    std::cout << "[TCPDriver] " << bindAddress << ":" << boundPort_ << " 에서 클라이언트 연결 대기 중..." << std::endl;
     return true;
 }
 

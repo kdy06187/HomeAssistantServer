@@ -21,7 +21,7 @@ public:
     Status sendTo(const std::string& deviceId, const std::string& jsonLine) override;
     void broadcast(const std::string& jsonLine) override;
     // TCP 서버 시작 및 종료 메서드
-    bool startServer(int port);  // 포트를 열지 못하면 false
+    bool startServer(int port, const std::string& bindAddress = "0.0.0.0");  // 포트를 열지 못하면 false
     void stopServer();
 private:
     // 소켓 수락·연결 맵·요청/응답은 TcpServer가 맡는다(BLE 없이 테스트하려고 분리)

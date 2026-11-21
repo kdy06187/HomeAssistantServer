@@ -128,12 +128,12 @@ Result<CommissionOutcome> TCPDriver::commission(const CommissionRequest& request
     return Result<CommissionOutcome>::failure(ErrorCode::CommissionTimeout, "기기 접속 타임아웃");
 }
 
-bool TCPDriver::startServer(int port){
-    if (!server_.start(port)) {
-        std::cerr << "[TCPDriver] TCP 서버 시작 실패 ( 포트 : " << port << ")" << std::endl;
+bool TCPDriver::startServer(int port, const std::string& bindAddress){
+    if (!server_.start(port, bindAddress)) {
+        std::cerr << "[TCPDriver] TCP 서버 시작 실패 ( 주소 : " << bindAddress << ", 포트 : " << port << ")" << std::endl;
         return false;
     }
-    std::cout << "[TCPDriver] TCP 서버 시작 ( 포트 : " << port << ")" << std::endl;
+    std::cout << "[TCPDriver] TCP 서버 시작 ( 주소 : " << bindAddress << ", 포트 : " << port << ", 평문)" << std::endl;
     return true;
 }
 

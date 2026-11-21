@@ -8,6 +8,7 @@
 #include "MatterController.hpp"
 #include "ProcessChipToolRunner.hpp"
 #include "HTTPServer.hpp"
+#include "RequestValidation.hpp"
 #include "DriverManager.hpp"
 #include "PCDriver.hpp"
 #include "IMessageSender.hpp"
@@ -39,6 +40,13 @@ int main() {
         return 1;
     }
 
+    // HTTP와 같은 방식으로 TCP 바인딩 주소를 읽는다(기기 접속 포트 8080)
+    const auto tcpBindAddress = RequestValidation::parseBindAddress(std::getenv("HAC_TCP_BIND"));
+    if (!tcpBindAddress.ok()) {
+        std::cerr << "❌ 환경 변수 HAC_TCP_BIND 형식 오류(IPv4 주소 필요). 서버를 시작하지 않습니다." << std::endl;
+        return 1;
+    }
+
     // 0. 데이터베이스 준비
     DatabaseManager database;
     if (!database.init("../db/home_assistant.db")) {
@@ -53,7 +61,7 @@ int main() {
     // 2. TCP 드라이버 생성 및 포트 8080으로 서버 시작
     TCPDriver tcpDriver;
     // 포트를 못 열면(이전 프로세스가 남아 있는 등) 반쯤 켜진 채 돌지 않고 바로 끝낸다
-    if (!tcpDriver.startServer(8080)) {
+    if (!tcpDriver.startServer(8080, *tcpBindAddress.value)) {
         std::cerr << "❌ TCP 포트 8080을 열 수 없습니다(원인은 위 [TCPDriver] 로그). 서버를 종료합니다." << std::endl;
         return 1;
     }

@@ -126,14 +126,7 @@ namespace {
 }
 
 Result<std::string> parseHttpBindAddress(const char* environmentValue) {
-    if (environmentValue == nullptr || environmentValue[0] == '\0') {
-        return Result<std::string>::success("0.0.0.0");
-    }
-    const std::string address(environmentValue);
-    if (!RequestValidation::isValidIpv4Address(address)) {
-        return Result<std::string>::failure(ErrorCode::InvalidRequest, "IPv4 형식이 아님");
-    }
-    return Result<std::string>::success(address);
+    return RequestValidation::parseBindAddress(environmentValue);
 }
 
 namespace {

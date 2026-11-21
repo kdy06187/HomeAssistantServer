@@ -103,4 +103,32 @@ TEST(TcpServerLifecycle, InvalidBindAddressFailsWithoutLeavingStateBehind) {
     server.stop();
 }
 
+bool canConnect(const char* address, int port) {
+    const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    sockaddr_in target{};
+    target.sin_family = AF_INET;
+    target.sin_port = htons(port);
+    inet_pton(AF_INET, address, &target.sin_addr);
+    const bool connected = ::connect(fd, reinterpret_cast<sockaddr*>(&target), sizeof(target)) == 0;
+    ::close(fd);
+    return connected;
+}
+
+TEST(TcpServerLifecycle, BindsOnlyToTheGivenAddress) {
+    TcpServer server;
+    testing::internal::CaptureStdout();
+    ASSERT_TRUE(server.start(0, "127.0.0.1"));
+    const std::string log = testing::internal::GetCapturedStdout();
+    EXPECT_NE(log.find("127.0.0.1"), std::string::npos) << log;
+    EXPECT_TRUE(canConnect("127.0.0.1", server.boundPort()));
+    // 127.0.0.2로는 닿지 않는다 = 0.0.0.0이 아니라 127.0.0.1에만 열려 있다
+    EXPECT_FALSE(canConnect("127.0.0.2", server.boundPort()));
+}
+
+TEST(TcpServerLifecycle, DefaultAddressListensOnAllInterfaces) {
+    TcpServer server;
+    ASSERT_TRUE(server.start(0));
+    EXPECT_TRUE(canConnect("127.0.0.2", server.boundPort()));
+}
+
 }  // namespace

@@ -49,6 +49,10 @@ namespace RequestValidation {
     // 점으로 구분한 IPv4 문자열(예 192.168.0.5)인지
     bool isValidIpv4Address(const std::string& text);
 
+    // HAC_HTTP_BIND·HAC_TCP_BIND 같은 바인딩 주소 환경 변수 값을 해석한다.
+    // 없거나 빈 문자열이면 기본 0.0.0.0, IPv4 형식이 아니면 InvalidRequest
+    Result<std::string> parseBindAddress(const char* environmentValue);
+
     // 제어문자를 ?로 바꾸고 maxLength 바이트로 자른다(UTF-8 글자 중간은 자르지 않음)
     std::string sanitizeForLog(const std::string& text, size_t maxLength = 200);
 
