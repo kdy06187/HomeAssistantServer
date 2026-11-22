@@ -136,9 +136,57 @@ TEST_F(DelayedCommandSchedulerTest, 로그에_예약_실행_취소와_시각이_
     EXPECT_NE(log.find("[Scheduler] 지연 OFF 실행: d1, 00:00:45"), std::string::npos) << log;
 }
 
+TEST_F(DelayedCommandSchedulerTest, 만기가_지났지만_tick_전이면_pending은_0초다) {
+    scheduler.schedule("d1", "OFF", 45s, countTask());
+    clock.advance(50s);
+    const auto pending = scheduler.pending("d1");
+    ASSERT_TRUE(pending.has_value());
+    EXPECT_EQ(pending->remainingSeconds, 0);
+}
+
+TEST_F(DelayedCommandSchedulerTest, 실행_중_작업이_있으면_stop이_기다리고_같은_시점의_다음_작업은_실행하지_않는다) {
+    std::atomic<bool> firstStarted{false};
+    std::atomic<bool> releaseFirst{false};
+    std::atomic<bool> stopReturned{false};
+    scheduler.schedule("a", "OFF", 1s, [&] {
+        firstStarted = true;
+        while (!releaseFirst) std::this_thread::sleep_for(1ms);
+    });
+    scheduler.schedule("b", "OFF", 2s, countTask());
+    clock.advance(10s); // 둘 다 만기
+
+    std::thread ticker([&] { scheduler.tick(clock.steadyNow()); });
+    while (!firstStarted) std::this_thread::sleep_for(1ms);
+    std::thread stopper([&] {
+        scheduler.stopAndCancelAll();
+        stopReturned = true;
+    });
+    std::this_thread::sleep_for(100ms);
+    EXPECT_FALSE(stopReturned); // 실행 중인 작업이 끝나기 전에는 돌아오지 않는다
+
+    releaseFirst = true;
+    stopper.join();
+    ticker.join();
+    EXPECT_TRUE(stopReturned);
+    EXPECT_EQ(runCount, 0); // b는 실행되지 않았다
+}
+
 TEST(FormatClockTimeTest, 시각을_HH_MM_SS로_만든다) {
     EXPECT_EQ(formatClockTime(std::chrono::system_clock::time_point{}), "00:00:00");
     EXPECT_EQ(formatClockTime(std::chrono::system_clock::time_point{} + 3661s), "01:01:01");
+}
+
+TEST(DelayedCommandSchedulerThreadTest, 긴_예약_중_짧은_예약을_추가하면_바로_깨어나_실행한다) {
+    SystemClock clock;
+    DelayedCommandScheduler scheduler(clock);
+    scheduler.start();
+    std::atomic<int> runCount{0};
+    scheduler.schedule("long", "OFF", std::chrono::hours(1), [] {});
+    std::this_thread::sleep_for(50ms); // 스레드가 1시간짜리를 기준으로 잠든 뒤
+    scheduler.schedule("short", "OFF", 50ms, [&] { ++runCount; });
+    for (int i = 0; i < 200 && runCount == 0; ++i) std::this_thread::sleep_for(10ms);
+    EXPECT_EQ(runCount, 1);
+    scheduler.stopAndCancelAll();
 }
 
 TEST(DelayedCommandSchedulerThreadTest, 실제_스레드가_짧은_지연_뒤_작업을_실행한다) {

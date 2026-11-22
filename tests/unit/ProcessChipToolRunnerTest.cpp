@@ -114,6 +114,28 @@ TEST(ProcessChipToolRunnerTest, ChildDoesNotInheritBlockedTermSignalOnCancelAll)
     EXPECT_LT(std::chrono::steady_clock::now() - started, 900ms); // SIGKILL 유예(1초)까지 가지 않는다
 }
 
+// /proc/self/status의 SigIgn(무시)·SigBlk(막음) 마스크로 자식의 신호 상태를 직접 본다(셸 없이 grep만 사용)
+unsigned long long signalMaskOf(const std::string& output, const std::string& field) {
+    const auto pos = output.find(field + ":");
+    if (pos == std::string::npos) return ~0ULL;
+    return std::stoull(output.substr(pos + field.size() + 1), nullptr, 16);
+}
+
+TEST(ProcessChipToolRunnerTest, ChildStartsWithDefaultSigpipeAndNoBlockedSignals) {
+    ProcessChipToolRunner runner;
+    auto previous = std::signal(SIGPIPE, SIG_IGN); // 서버와 같은 상태
+    const auto result = std::async(std::launch::async, [&] {
+        blockTerminationSignalsInThisThread();
+        return runner.run({"/bin/grep", "-E", "^Sig(Ign|Blk):", "/proc/self/status"}, "", 3000ms);
+    }).get();
+    std::signal(SIGPIPE, previous);
+
+    ASSERT_EQ(result.exitCode, 0) << result.output;
+    const unsigned long long sigpipeBit = 1ULL << (SIGPIPE - 1);
+    EXPECT_EQ(signalMaskOf(result.output, "SigIgn") & sigpipeBit, 0ULL) << result.output;
+    EXPECT_EQ(signalMaskOf(result.output, "SigBlk"), 0ULL) << result.output;
+}
+
 // SIGTERM을 무시하는 프로그램은 1초 유예 뒤 SIGKILL로 끝낸다
 TEST(ProcessChipToolRunnerTest, IgnoredSigtermEscalatesToSigkill) {
     ProcessChipToolRunner runner;

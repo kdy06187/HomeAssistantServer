@@ -603,6 +603,36 @@ TEST_F(HttpServerTest, E4DeleteOfflineDeviceStillSucceeds) {
     EXPECT_FALSE(manager.getDevice("ARD_9", device));
 }
 
+// ---- 종료 중 기기 호출은 200이 아니라 502 ----
+
+TEST_F(HttpServerTest, DuringShutdownE2ImmediateCommandReturns502WithoutTouchingDevice) {
+    addDevice(ProtocolType::TCP_DIY, "FAKE_1", "lamp");
+    manager.beginShutdown();
+    auto response = httplib::Client("127.0.0.1", port).Post("/api/control", authHeaders(),
+                                                           R"({"deviceId":"FAKE_1","command":"ON"})", "application/json");
+    ASSERT_TRUE(response);
+    EXPECT_EQ(response->status, 502);
+    EXPECT_TRUE(tcpFake.sentCommands.empty());
+}
+
+TEST_F(HttpServerTest, DuringShutdownE5CancelledStateReturns502) {
+    addDevice(ProtocolType::MATTER, "PLUG_1", "plug");
+    matterFake.stateToReturn = "UNKNOWN"; // 취소된 Matter 조회가 돌려주는 값
+    manager.beginShutdown();
+    auto response = httplib::Client("127.0.0.1", port).Get("/api/devices/PLUG_1/state?isManualRefresh=true", authHeaders());
+    ASSERT_TRUE(response);
+    EXPECT_EQ(response->status, 502);
+}
+
+TEST_F(HttpServerTest, DuringShutdownE6CancelledEnergyReturns502) {
+    addDevice(ProtocolType::MATTER, "PLUG_1", "plug");
+    matterFake.energyResult = Result<EnergyReading>::failure(ErrorCode::Cancelled, "cancelled");
+    manager.beginShutdown();
+    auto response = httplib::Client("127.0.0.1", port).Get("/api/devices/PLUG_1/energy", authHeaders());
+    ASSERT_TRUE(response);
+    EXPECT_EQ(response->status, 502);
+}
+
 // ---- E5 ----
 
 TEST_F(HttpServerTest, E5StateOfKnownAndUnknownDevice) {
