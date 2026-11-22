@@ -22,6 +22,7 @@ add_executable(hac_tests
     integration/LockRulesTest.cpp
     integration/EnergyPathTest.cpp
     integration/DatabaseRetentionTest.cpp
+    integration/DeviceRetentionFlowTest.cpp
     integration/TcpServerTest.cpp
     integration/TcpServerLifecycleTest.cpp
     integration/MatterControllerTest.cpp

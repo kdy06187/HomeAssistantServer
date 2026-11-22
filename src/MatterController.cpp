@@ -124,6 +124,7 @@ std::string MatterController::runChipToolCommand(const std::vector<std::string>&
 
     return output;
 }
+// 등록 정보(매핑·파일)는 항상 먼저 정리한다. 반환값은 기기 쪽 해제(chip-tool)의 성공 여부다
 bool MatterController::removeDeviceRegistration(const std::string& serialNumber) {
     // 조회와 삭제를 한 락 블록에서 한다. 따로 하면 그 사이 다른 스레드가 매핑을 바꿀 수 있다(TOCTOU)
     std::optional<uint64_t> foundNodeId;
@@ -153,7 +154,7 @@ bool MatterController::removeDeviceRegistration(const std::string& serialNumber)
     if (!foundNodeId) {
         // 매핑이 없으면 노드 번호를 알 수 없다. 0번 노드에 unpair를 보내지 않도록 건너뛴다
         std::cerr << "[MatterController] 시리얼 매핑 없음, 페어링 해제 건너뜀: " << serialNumber << std::endl;
-        return true; // 기존 응답 유지: 등록 정보 정리는 끝났다
+        return false; // 기기 쪽에는 아무것도 보내지 못했다
     }
     const uint64_t deviceId = *foundNodeId;
     const std::string deviceIdStr = std::to_string(deviceId);
@@ -164,9 +165,9 @@ bool MatterController::removeDeviceRegistration(const std::string& serialNumber)
     const ChipToolOutcome result = runChipTool({"pairing", "unpair", deviceIdStr}, kSlowCommandTimeout);
     if (!result.ok || result.output.find("Timeout") != std::string::npos || result.output.find("Error") != std::string::npos) {
         std::cerr << "[MatterController] 기기(" << deviceIdStr << ") 오프라인 상태. 로컬에서 강제 페어링 해제 완료." << std::endl;
-    } else {
-        std::cout << "[MatterController] 기기(" << deviceIdStr << ") 정상 페어링 해제 완료" << std::endl;
+        return false; // 기기는 아직 이 fabric에 남아 있다(초기화 필요)
     }
+    std::cout << "[MatterController] 기기(" << deviceIdStr << ") 정상 페어링 해제 완료" << std::endl;
     return true;
 }
 bool MatterController::checkDeviceRegistered(uint64_t nodeId) {

@@ -311,11 +311,11 @@ TEST_F(MatterControllerTest, UnpairRemovesMappingAndFileLineThenRunsUnpairWithSl
     EXPECT_EQ(controller->readEnergy("SN-1").error.code, ErrorCode::DeviceNotFound);  // 매핑도 사라짐
 }
 
-// 오프라인 기기: chip-tool이 시간 초과여도 등록 정보는 정리되고 true
-TEST_F(MatterControllerTest, UnpairOfOfflineDeviceStillReturnsTrueAndCleansUp) {
+// 오프라인 기기: chip-tool이 시간 초과면 등록 정보는 정리하되 false(기기 쪽 해제 실패)
+TEST_F(MatterControllerTest, UnpairOfOfflineDeviceReturnsFalseButCleansUp) {
     runner.respond = [](const std::vector<std::string>&) { return FakeChipToolOutput::timeout(); };
 
-    EXPECT_TRUE(controller->unpairDevice("SN-1"));
+    EXPECT_FALSE(controller->unpairDevice("SN-1"));
 
     EXPECT_EQ(runner.callsSnapshot().size(), 1u);
     EXPECT_EQ(readConfig(), "SN-2,102\n");
@@ -329,7 +329,7 @@ TEST_F(MatterControllerTest, UnpairAfterCancelAllReturnsImmediately) {
     runner.cancelAll();
 
     const auto begin = std::chrono::steady_clock::now();
-    EXPECT_TRUE(controller->unpairDevice("SN-2"));
+    EXPECT_FALSE(controller->unpairDevice("SN-2"));
 
     EXPECT_LT(std::chrono::steady_clock::now() - begin, std::chrono::seconds(1));
     EXPECT_EQ(readConfig(), "SN-1,101\n");
@@ -337,7 +337,7 @@ TEST_F(MatterControllerTest, UnpairAfterCancelAllReturnsImmediately) {
 
 // G8: 매핑이 없는 시리얼은 0번 노드에 unpair를 보내지 않는다
 TEST_F(MatterControllerTest, UnpairOfUnknownSerialRunsNothing) {
-    EXPECT_TRUE(controller->unpairDevice("NOPE"));
+    EXPECT_FALSE(controller->unpairDevice("NOPE"));
     EXPECT_TRUE(runner.callsSnapshot().empty());
     EXPECT_EQ(readConfig(), "SN-1,101\nSN-2,102\n");
 }

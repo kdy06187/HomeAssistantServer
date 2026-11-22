@@ -18,6 +18,8 @@
 #include "Command.hpp"
 #include <unordered_set>
 #include <optional>
+#include "EnergyAggregation.hpp"
+#include "RequestValidation.hpp"
 
 // E6 응답에 쓰는 값. totalEnergy_mWh는 DB 보정이 끝난 누적값
 struct EnergySnapshot {
@@ -26,14 +28,26 @@ struct EnergySnapshot {
     int64_t totalEnergy_mWh = 0;
 };
 
-// E7 응답에 쓰는 값. logs는 오래된 것부터
+// E7 응답에 쓰는 값. period가 없으면 원본(logs, truncated), 있으면 집계(buckets)
 struct HistoryResult {
     std::string deviceState;
-    std::vector<EnergyLog> logs;
+    std::vector<EnergyLog> logs; // 오래된 것부터
+    bool truncated = false;
+    std::optional<HistoryPeriod> period;
+    std::vector<EnergyBucket> buckets;
+};
+
+// E4 응답에 쓰는 값. deletedAtUtc는 DB 시각 형식
+struct DeleteOutcome {
+    std::string deletedAtUtc;
+    bool unpaired = false; // 기기 쪽 연결 해제 성공 여부. false여도 숨김은 끝났다
 };
 
 class DeviceManager {
 public:
+    // 이력 보관 기간이자 숨김 기기의 복구 가능 기간
+    static constexpr int kRetentionDays = 90;
+
     // 프로토콜 드라이버·스케줄러는 main이 소유한다. 이들을 쓰는 스레드(HTTP·스케줄러·주기 작업)를
     // 모두 멈춘 뒤에 DeviceManager와 드라이버를 소멸시켜야 락 밖에서 쓰는 ProtocolDriver*가 안전하다.
     DeviceManager(DatabaseManager& db, DriverManager& deviceDrivers,
@@ -60,7 +74,8 @@ public:
     bool startCommissioning(ProtocolType type, std::string name, std::string payload, const std::string& ssid = "", const std::string& password = "",const std::vector<DriverType>& driverTypes ={});
     // 디바이스 제어 API - 디바이스 ID와 명령을 받아 해당 디바이스를 제어
     CommandResult executeCommand(std::string id, std::string command);
-    bool removeDevice(std::string id);
+    // 숨김 삭제. 없는(이미 숨긴) 기기는 DeviceNotFound, 숨김 저장 실패는 Internal(기기는 그대로 남는다)
+    Result<DeleteOutcome> removeDevice(const std::string& id);
     std::unordered_set<std::string> activeDeviceIds();
 
     // 종료가 시작됐음을 알린다. 이후 드라이버 호출 실패(취소된 chip-tool 등)는 기기 상태·DB에 기록하지 않는다
@@ -73,7 +88,11 @@ public:
     // (미등록 DeviceNotFound, 전력 조회 미지원 UnsupportedOperation, 드라이버가 돌려준 코드는 그대로 전달.
     //  단 드라이버의 DeviceNotFound는 서버 내부 불일치라 Internal)
     Result<EnergySnapshot> readEnergy(const std::string& deviceId);
-    Result<HistoryResult> getEnergyHistory(const std::string& deviceId, int limit = 50);
+    // 없는·숨긴 기기 DeviceNotFound, 전력 미지원 프로토콜 UnsupportedOperation(readEnergy와 같은 판정)
+    Result<HistoryResult> getEnergyHistory(const std::string& deviceId, const HistoryQuery& query);
+
+    // 보관 기간이 지난 이력·숨김 기기를 지운다. 주기 호출은 PeriodicTasks가 맡는다
+    Result<PurgeResult> runRetentionCleanup();
 
 private:
     std::unordered_map<ProtocolType, ProtocolDriver*> protocolDriversSnapshot();
@@ -81,6 +100,10 @@ private:
     // 드라이버에 명령을 보내고 결과에 따라 상태를 갱신한다. 즉시 실행과 지연 만기 실행이 함께 쓴다
     CommandResult executeHardware(const std::string& id, const std::string& command,
                                   ProtocolDriver* protocolDriver, const std::string& currentState);
+    static bool supportsEnergy(ProtocolType type);
+    // 락 밖에서 부른다. 실패·예외는 false
+    bool unpairQuietly(ProtocolDriver* protocolDriver, const std::string& id);
+    Result<HistoryResult> aggregateHistory(const std::string& deviceId, const HistoryQuery& query, HistoryResult history);
     std::shared_ptr<std::mutex> energyLockFor(const std::string& deviceId);
 
     DatabaseManager& db_;

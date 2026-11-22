@@ -103,7 +103,7 @@ TEST_F(LockRulesTest, RemoveDeviceDoesNotBlockOtherRequestsWhileUnpairing) {
 
     EXPECT_EQ(status, std::future_status::ready) << "해제 중에 다른 요청이 1초 넘게 막혔다";
     EXPECT_TRUE(otherRequests.get());
-    EXPECT_TRUE(removal.get());
+    EXPECT_TRUE(removal.get().ok());
     EXPECT_TRUE(database.loadActiveDevices().size() == 1u);
 }
 
@@ -128,7 +128,7 @@ TEST_F(LockRulesTest, DeviceIsHiddenFromListAsSoonAsUnpairStarts) {
     releaseUnpair.set_value();
 
     EXPECT_EQ(control.error.code, ErrorCode::DeviceNotFound);
-    EXPECT_TRUE(removal.get());
+    EXPECT_TRUE(removal.get().ok());
 }
 
 // 여러 스레드가 제어·조회·점검·삭제·재등록을 동시에 반복해도 교착·데이터 경쟁이 없어야 한다(TSan 빌드에서 의미가 크다)
@@ -269,12 +269,15 @@ TEST_F(LockRulesTest, ConcurrentRemoveAndAddOfSameIdRecoversConsistency) {
     EXPECT_TRUE(inDatabase());
 }
 
-// 해제가 예외를 던져도 DB 삭제는 이미 끝나 있다(재시작 뒤 되살아나지 않음)
+// 해제가 예외를 던져도 숨김은 이미 끝나 있다(재시작 뒤 되살아나지 않음). 결과는 unpaired=false
 TEST_F(LockRulesTest, UnpairExceptionStillLeavesDeviceDeletedFromDatabase) {
     addTcpDevice("A");
     tcpFake.throwOnUnpair = true;
 
-    EXPECT_THROW(manager.removeDevice("A"), std::runtime_error);
+    const auto outcome = manager.removeDevice("A");
+
+    ASSERT_TRUE(outcome.ok());
+    EXPECT_FALSE(outcome.value->unpaired);
 
     EXPECT_TRUE(manager.getAllDevices().empty());
     EXPECT_TRUE(database.loadActiveDevices().empty());

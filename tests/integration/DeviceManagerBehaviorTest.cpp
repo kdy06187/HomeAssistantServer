@@ -162,15 +162,18 @@ TEST_F(DeviceManagerBehaviorTest, ActiveDeviceIdsReflectsRegistrationAndRemoval)
 }
 
 TEST_F(DeviceManagerBehaviorTest, RemoveUnknownDeviceReturnsFalse) {
-    EXPECT_FALSE(manager.removeDevice("NOPE"));
+    EXPECT_FALSE(manager.removeDevice("NOPE").ok());
 }
 
-// 오프라인 기기는 해제가 실패하지만 DB·메모리에서 지웠으면 삭제 성공이다
+// 오프라인 기기는 해제가 실패하지만 DB·메모리에서 숨겼으면 삭제 성공이다(unpaired=false)
 TEST_F(DeviceManagerBehaviorTest, RemoveSucceedsWhenUnpairFails) {
     manager.addDevice("ARD_1", "lamp", ProtocolType::TCP_DIY, {}, &tcpFake);
     tcpFake.unpairResult = false;
 
-    EXPECT_TRUE(manager.removeDevice("ARD_1"));
+    const auto outcome = manager.removeDevice("ARD_1");
+
+    ASSERT_TRUE(outcome.ok());
+    EXPECT_FALSE(outcome.value->unpaired);
 
     Device device;
     EXPECT_FALSE(manager.getDevice("ARD_1", device));
@@ -196,7 +199,9 @@ TEST_F(DeviceManagerBehaviorTest, HealthCheckOfflineStoresInactiveOnce) {
 TEST_F(DeviceManagerBehaviorTest, EnergyHistoryKeepsDbErrorCode) {
     manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {}, &matterFake);
 
-    const auto history = manager.getEnergyHistory("PLUG", 0);
+    HistoryQuery query;
+    query.limit = 0;
+    const auto history = manager.getEnergyHistory("PLUG", query);
 
     ASSERT_FALSE(history.ok());
     EXPECT_EQ(history.error.code, ErrorCode::InvalidRequest);

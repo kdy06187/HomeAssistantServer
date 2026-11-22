@@ -366,7 +366,7 @@ ApiResponse HTTPServer::handleDeleteDevice(const std::string& requestBody) {
     const auto deviceId = body ? readStringField(*body, "deviceId") : std::nullopt;
     if (!deviceId) return ApiResponse::error(ErrorCode::InvalidRequest);
     std::cout << "[HTTPServer] 기기 삭제(POST) 요청: 기기 " << RequestValidation::sanitizeForLog(*deviceId) << std::endl;
-    if (mDeviceManager.removeDevice(*deviceId)) {
+    if (mDeviceManager.removeDevice(*deviceId).ok()) {
         return ApiResponse::ok(json{{"result", "success"}, {"message", "기기 삭제 성공!"}});
     }
     return ApiResponse::ok(json{{"result", "error"}, {"message", "기기 삭제 실패 또는 기기 없음"}}, 400);
@@ -409,7 +409,7 @@ ApiResponse HTTPServer::handleGetDeviceEnergyHistory(const httplib::Request& req
     const auto query = RequestValidation::parseHistoryQuery(request.params);
     if (!query.ok()) return ApiResponse::error(query.error.code);
 
-    const auto history = mDeviceManager.getEnergyHistory(deviceId, static_cast<int>(query.value->limit));
+    const auto history = mDeviceManager.getEnergyHistory(deviceId, *query.value);
     if (!history.ok()) return ApiResponse::error(history.error.code);
     json logsArray = json::array();
     for (const auto& log : history.value->logs) {

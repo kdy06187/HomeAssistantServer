@@ -159,7 +159,7 @@ TEST_F(DeviceManagerIntegrationTest, GetDeviceStateReadsDriverAndUpdatesState) {
 TEST_F(DeviceManagerIntegrationTest, RemoveDeviceUnpairsAndDeletesFromListAndDatabase) {
     manager.startCommissioning(ProtocolType::TCP_DIY, "lamp", "");
 
-    EXPECT_TRUE(manager.removeDevice("FAKE_1"));
+    EXPECT_TRUE(manager.removeDevice("FAKE_1").ok());
 
     ASSERT_EQ(tcpFake.unpairedIds.size(), 1u);
     EXPECT_EQ(tcpFake.unpairedIds[0], "FAKE_1");
@@ -319,7 +319,7 @@ TEST_F(DeviceManagerDelayedTest, SecondOffSendsShutdownMessageOnceAndReturnsRema
 TEST_F(DeviceManagerDelayedTest, RemovingDeviceCancelsPendingCommand) {
     manager.executeCommand("PC", "OFF");
 
-    ASSERT_TRUE(manager.removeDevice("PC"));
+    ASSERT_TRUE(manager.removeDevice("PC").ok());
     elapse(std::chrono::seconds(60));
 
     EXPECT_FALSE(scheduler.pending("PC").has_value());
