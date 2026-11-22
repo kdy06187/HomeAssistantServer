@@ -660,6 +660,20 @@ Result<PurgeResult> DatabaseManager::purgeLocked(const std::string& cutoffUtc, d
         return Purge::success(skipped);
     }
 
+    // 안전장치 1-2: 이력이 아예 없으면 시계를 비교할 근거가 없다. 숨김 기기가 전부 기준일을 지났다면
+    // 시계가 틀려 전부 만료로 보일 수 있으므로 건너뛴다(가장 최근에 숨긴 기기마저 기준일보다 오래된 경우)
+    if (!latest.value->has_value()) {
+        auto stmt = prepareStatement(db_, "SELECT MAX(deleted_at) FROM devices WHERE deleted_at IS NOT NULL;");
+        if (!stmt || sqlite3_step(stmt.get()) != SQLITE_ROW) return fail("마지막 숨김 시각 조회");
+        const char* newestHidden = reinterpret_cast<const char*>(sqlite3_column_text(stmt.get(), 0));
+        if (newestHidden && std::string(newestHidden) < cutoffUtc) {
+            PurgeResult skipped;
+            skipped.skipped = true;
+            skipped.reason = "이력이 없고 숨김 기기가 모두 기준일보다 오래됨(시계 이상 의심)";
+            return Purge::success(skipped);
+        }
+    }
+
     // 안전장치 2: 지울 이력이 전체의 maxDeleteRatio를 넘으면 건너뛴다
     const auto totalLogs = countLocked("SELECT COUNT(*) FROM state_history_logs;", nullptr);
     const auto expiredLogs = countLocked("SELECT COUNT(*) FROM state_history_logs WHERE timestamp < ?;", &cutoffUtc);

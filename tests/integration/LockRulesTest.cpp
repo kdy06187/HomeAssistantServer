@@ -188,6 +188,51 @@ TEST_F(LockRulesTest, ConcurrentOperationsFinishWithoutDeadlock) {
     EXPECT_EQ(manager.executeCommand("D0", "ON").outcome, CommandOutcome::Succeeded);
 }
 
+// 이력 조회·집계·정리가 헬스체크 기록·삭제와 동시에 돌아도 교착·충돌 없이 끝난다
+TEST_F(LockRulesTest, ConcurrentHistoryQueryAndCleanupWithWritesAndRemovesFinish) {
+    DeadlockWatchdog watchdog(std::chrono::seconds(60));
+    manager.addDevice("M0", "plug", ProtocolType::MATTER, {}, &matterFake);
+    matterFake.energyResult = Result<EnergyReading>::success(EnergyReading{1500, 2000});
+    HistoryQuery aggregate;
+    aggregate.from = CivilDate{1970, 1, 1};
+    aggregate.to = CivilDate{1970, 1, 10};
+    aggregate.period = HistoryPeriod::Day;
+
+    constexpr int kIterations = 100;
+    std::atomic<bool> startFlag{false};
+    auto waitStart = [&startFlag] { while (!startFlag.load()) std::this_thread::yield(); };
+
+    std::vector<std::thread> workers;
+    workers.emplace_back([&] {
+        waitStart();
+        for (int i = 0; i < kIterations; ++i) manager.runHealthCheck();
+    });
+    workers.emplace_back([&] {
+        waitStart();
+        for (int i = 0; i < kIterations; ++i) {
+            manager.getEnergyHistory("M0", HistoryQuery{});
+            manager.getEnergyHistory("M0", aggregate);
+        }
+    });
+    workers.emplace_back([&] {
+        waitStart();
+        for (int i = 0; i < kIterations; ++i) manager.runRetentionCleanup();
+    });
+    workers.emplace_back([&] {
+        waitStart();
+        for (int i = 0; i < kIterations; ++i) {
+            manager.removeDevice("T0");
+            addTcpDevice("T0");
+        }
+    });
+    startFlag = true;
+    for (auto& worker : workers) worker.join();
+
+    EXPECT_TRUE(manager.getEnergyHistory("M0", HistoryQuery{}).ok());
+    EXPECT_TRUE(manager.runRetentionCleanup().ok());
+    EXPECT_EQ(database.loadActiveDevices().size(), manager.getAllDevices().size());
+}
+
 // 한 기기의 하드웨어 통신(제어·상태 읽기)이 멈춰 있어도 목록 조회와 다른 기기 제어는 1초 안에 끝난다
 TEST_F(LockRulesTest, SlowHardwareCallDoesNotBlockOtherDevices) {
     DeadlockWatchdog watchdog(std::chrono::seconds(20));

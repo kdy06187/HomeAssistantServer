@@ -879,4 +879,120 @@ TEST_F(HttpServerTest, E7InvalidQueryDoesNotTouchTheDatabase) {
     EXPECT_EQ(response->status, 400);
 }
 
+TEST_F(HttpServerTest, E4HiddenDeviceIsAbsentFromListButOthersRemain) {
+    addDevice(ProtocolType::MATTER, "PLUG_1", "plug");
+    addDevice(ProtocolType::TCP_DIY, "FAKE_1", "lamp");
+    ASSERT_TRUE(post("/api/devices/delete", R"({"deviceId":"PLUG_1"})"));
+
+    auto list = httplib::Client("127.0.0.1", port).Get("/api/devices", authHeaders());
+
+    ASSERT_TRUE(list);
+    EXPECT_EQ(list->status, 200);
+    const std::string body = list->body;
+    EXPECT_EQ(body.find("PLUG_1"), std::string::npos);
+    EXPECT_NE(body.find("FAKE_1"), std::string::npos);
+}
+
+TEST_F(HttpServerTest, E7RawHistoryFiltersByLocalDateRange) {
+    addDevice(ProtocolType::MATTER, "PLUG_1", "plug");
+    // 현지 정오(= UTC 03:00)에 하루 한 건
+    database.insertEnergyLog("PLUG_1", 100, "2026-11-15 03:00:00");
+    database.insertEnergyLog("PLUG_1", 200, "2026-11-16 03:00:00");
+    database.insertEnergyLog("PLUG_1", 300, "2026-11-17 03:00:00");
+    httplib::Client client("127.0.0.1", port);
+
+    const auto totals = [&](const std::string& query) {
+        auto response = client.Get("/api/devices/PLUG_1/energy/history?" + query, authHeaders());
+        std::vector<int64_t> result;
+        if (!response || response->status != 200) return result;
+        const json body = json::parse(response->body);
+        for (const auto& log : body["logs"]) result.push_back(log["totalEnergy_mWh"]);
+        return result;
+    };
+
+    EXPECT_EQ(totals("from=2026-11-16&to=2026-11-16"), (std::vector<int64_t>{200}));
+    EXPECT_EQ(totals("from=2026-11-16"), (std::vector<int64_t>{200, 300}));
+    EXPECT_EQ(totals("to=2026-11-15"), (std::vector<int64_t>{100}));
+}
+
+TEST_F(HttpServerTest, E7DayAggregationIgnoresLimit) {
+    addDevice(ProtocolType::MATTER, "PLUG_1", "plug");
+    database.insertEnergyLog("PLUG_1", 100, "2026-11-16 03:00:00");
+    database.insertEnergyLog("PLUG_1", 160, "2026-11-17 03:00:00");
+
+    auto response = httplib::Client("127.0.0.1", port).Get(
+        "/api/devices/PLUG_1/energy/history?from=2026-11-16&to=2026-11-18&period=day&limit=1", authHeaders());
+
+    ASSERT_TRUE(response);
+    EXPECT_EQ(response->status, 200);
+    EXPECT_EQ(json::parse(response->body)["buckets"], json::parse(R"([
+        {"start":"2026-11-16","end":"2026-11-16","energyUsed_mWh":0,"sampleCount":1},
+        {"start":"2026-11-17","end":"2026-11-17","energyUsed_mWh":60,"sampleCount":1},
+        {"start":"2026-11-18","end":"2026-11-18","energyUsed_mWh":0,"sampleCount":0}])"));
+}
+
+// 한도(1000)를 넘는 limit은 거절하지 않고 1000건으로 줄인다
+TEST_F(HttpServerTest, E7LimitAboveMaximumIsClampedTo1000) {
+    addDevice(ProtocolType::MATTER, "PLUG_1", "plug");
+    for (int i = 0; i < 1005; ++i) {
+        ASSERT_TRUE(database.insertEnergyLog("PLUG_1", i, "2026-11-19 00:00:00"));
+    }
+
+    auto response = httplib::Client("127.0.0.1", port).Get("/api/devices/PLUG_1/energy/history?limit=5000", authHeaders());
+
+    ASSERT_TRUE(response);
+    EXPECT_EQ(response->status, 200);
+    const json body = json::parse(response->body);
+    EXPECT_EQ(body["logs"].size(), 1000u);
+    EXPECT_EQ(body["truncated"], true);
+}
+
+TEST_F(HttpServerTest, E7RangeOf367DaysAndOutOfRangeYearsReturn400) {
+    addDevice(ProtocolType::MATTER, "PLUG_1", "plug");
+    httplib::Client client("127.0.0.1", port);
+    for (const std::string query : {"from=2026-01-01&to=2027-01-02&period=day", "from=2300-01-01&to=2300-01-02&period=day",
+                                    "from=1999-12-31&to=2000-01-02&period=day", "from=2101-01-01", "to=1600-01-01"}) {
+        auto response = client.Get("/api/devices/PLUG_1/energy/history?" + query, authHeaders());
+        ASSERT_TRUE(response) << query;
+        EXPECT_EQ(response->status, 400) << query;
+        EXPECT_EQ(json::parse(response->body), json::parse(kInvalidRequestBody)) << query;
+    }
+    auto boundary = client.Get("/api/devices/PLUG_1/energy/history?from=2000-01-01&to=2000-01-02&period=day", authHeaders());
+    ASSERT_TRUE(boundary);
+    EXPECT_EQ(boundary->status, 200);
+}
+
+// 누적계가 줄어들면(기기 카운터 초기화) 그 차이는 0으로 보고 다음 증가부터 센다
+TEST_F(HttpServerTest, E7CounterResetCountsAsZeroUsage) {
+    addDevice(ProtocolType::MATTER, "PLUG_1", "plug");
+    database.insertEnergyLog("PLUG_1", 100, "2026-11-16 01:00:00");
+    database.insertEnergyLog("PLUG_1", 150, "2026-11-16 02:00:00");
+    database.insertEnergyLog("PLUG_1", 20, "2026-11-16 03:00:00");
+    database.insertEnergyLog("PLUG_1", 70, "2026-11-16 04:00:00");
+
+    auto response = httplib::Client("127.0.0.1", port).Get(
+        "/api/devices/PLUG_1/energy/history?from=2026-11-16&to=2026-11-16&period=day", authHeaders());
+
+    ASSERT_TRUE(response);
+    EXPECT_EQ(json::parse(response->body)["buckets"], json::parse(R"([
+        {"start":"2026-11-16","end":"2026-11-16","energyUsed_mWh":100,"sampleCount":4}])"));
+}
+
+// 기록이 없는 날은 0건·0으로 남고, 긴 공백 뒤 첫 기록의 증가분은 그 기록이 속한 날에 붙는다
+TEST_F(HttpServerTest, E7GapDaysAreEmptyAndUsageLandsOnLaterDay) {
+    addDevice(ProtocolType::MATTER, "PLUG_1", "plug");
+    database.insertEnergyLog("PLUG_1", 100, "2026-11-16 03:00:00");
+    database.insertEnergyLog("PLUG_1", 400, "2026-11-19 03:00:00");
+
+    auto response = httplib::Client("127.0.0.1", port).Get(
+        "/api/devices/PLUG_1/energy/history?from=2026-11-16&to=2026-11-19&period=day", authHeaders());
+
+    ASSERT_TRUE(response);
+    EXPECT_EQ(json::parse(response->body)["buckets"], json::parse(R"([
+        {"start":"2026-11-16","end":"2026-11-16","energyUsed_mWh":0,"sampleCount":1},
+        {"start":"2026-11-17","end":"2026-11-17","energyUsed_mWh":0,"sampleCount":0},
+        {"start":"2026-11-18","end":"2026-11-18","energyUsed_mWh":0,"sampleCount":0},
+        {"start":"2026-11-19","end":"2026-11-19","energyUsed_mWh":300,"sampleCount":1}])"));
+}
+
 }  // namespace

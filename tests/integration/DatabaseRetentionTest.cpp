@@ -1,5 +1,8 @@
 #include <gtest/gtest.h>
+#include <sqlite3.h>
+#include <unistd.h>
 #include <chrono>
+#include <filesystem>
 #include <string>
 #include "DatabaseManager.hpp"
 #include "UtcTime.hpp"
@@ -246,4 +249,111 @@ TEST_F(DatabaseRetentionTest, LatestHistoryTimeIsEmptyThenMax) {
     addLog("A", 1, kNow - hours(1));
     addLog("A", 2, kNow);
     EXPECT_EQ(**db.latestHistoryTime().value, textAt(kNow));
+}
+
+// 이력이 없고 숨김 기기가 전부 기준일을 지났다면 시계를 믿을 근거가 없어 건너뛴다
+TEST_F(DatabaseRetentionTest, SkipsWhenNoHistoryAndEveryHiddenDeviceIsPastCutoff) {
+    addDevice("OLD");
+    ASSERT_TRUE(db.markDeleted("OLD", textAt(kCutoff - hours(24))).ok());
+
+    const auto purge = db.purgeExpired(textAt(kCutoff));
+
+    ASSERT_TRUE(purge.ok());
+    EXPECT_TRUE(purge.value->skipped);
+    EXPECT_FALSE(purge.value->reason.empty());
+    EXPECT_EQ(purge.value->deletedDevices, 0);
+}
+
+// 이력이 없어도 최근에 숨긴 기기가 하나라도 있으면 시계가 맞다고 보고 오래된 숨김 기기를 지운다
+TEST_F(DatabaseRetentionTest, NoHistoryButRecentlyHiddenDeviceLetsOldHiddenBePurged) {
+    addDevice("OLD");
+    addDevice("RECENT");
+    ASSERT_TRUE(db.markDeleted("OLD", textAt(kCutoff - hours(24))).ok());
+    ASSERT_TRUE(db.markDeleted("RECENT", textAt(kNow - hours(1))).ok());
+
+    const auto purge = db.purgeExpired(textAt(kCutoff));
+
+    ASSERT_TRUE(purge.ok());
+    EXPECT_FALSE(purge.value->skipped);
+    EXPECT_EQ(purge.value->deletedDevices, 1);
+}
+
+// 건너뜀(50% 초과)이면 숨김 기기도 고아도 그대로 둔다
+TEST_F(DatabaseRetentionTest, HalfRuleSkipLeavesHiddenDevicesAndOrphansUntouched) {
+    addDevice("A");
+    addDevice("HIDDEN");
+    for (int i = 0; i < 8; ++i) addLog("A", i, kCutoff - hours(1 + i));
+    addRecentLogs("A", 4);
+    addLog("HIDDEN", 1, kNow - hours(1));
+    ASSERT_TRUE(db.markDeleted("HIDDEN", textAt(kCutoff - hours(24))).ok());
+    addLog("GHOST", 1, kNow - hours(1));
+
+    const auto purge = db.purgeExpired(textAt(kCutoff));
+
+    ASSERT_TRUE(purge.ok());
+    EXPECT_TRUE(purge.value->skipped);
+    EXPECT_EQ(logCount("HIDDEN"), 1u);
+    EXPECT_EQ(logCount("GHOST"), 1u);
+    EXPECT_EQ(logCount("A"), 12u);
+}
+
+// 기준 시각과 정확히 같은 숨김 시각은 아직 지우지 않는다
+TEST_F(DatabaseRetentionTest, HiddenAtExactlyCutoffIsKept) {
+    addDevice("EDGE");
+    addDevice("LIVE");
+    addRecentLogs("LIVE", 3);
+    addLog("EDGE", 1, kNow - hours(1));
+    ASSERT_TRUE(db.markDeleted("EDGE", textAt(kCutoff)).ok());
+
+    const auto purge = db.purgeExpired(textAt(kCutoff));
+
+    ASSERT_TRUE(purge.ok());
+    EXPECT_EQ(purge.value->deletedDevices, 0);
+    EXPECT_EQ(logCount("EDGE"), 1u);
+}
+
+// 고아 행은 50% 안전장치 대상이 아니다: 고아가 전체 이력의 대부분이어도 지워진다
+TEST_F(DatabaseRetentionTest, OrphansAreNotCountedInHalfRule) {
+    addDevice("LIVE");
+    addRecentLogs("LIVE", 1);
+    for (int i = 0; i < 10; ++i) addLog("GHOST", i, kNow - seconds(60 * (i + 1)));
+
+    const auto purge = db.purgeExpired(textAt(kCutoff));
+
+    ASSERT_TRUE(purge.ok());
+    EXPECT_FALSE(purge.value->skipped);
+    EXPECT_EQ(purge.value->deletedOrphans, 10);
+    EXPECT_EQ(logCount("LIVE"), 1u);
+}
+
+// 정리 도중 실패하면 앞 단계에서 지운 것까지 모두 되돌린다
+TEST(DatabasePurgeRollbackTest, MidwayFailureRollsBackEverything) {
+    namespace fs = std::filesystem;
+    const fs::path path = fs::temp_directory_path() / ("hac_purge_rollback_" + std::to_string(::getpid()) + ".db");
+    fs::remove(path);
+    DatabaseManager db;
+    ASSERT_TRUE(db.init(path.string()));
+    Device live("LIVE", "LIVE", ProtocolType::MATTER);
+    Device old("OLD", "OLD", ProtocolType::MATTER);
+    ASSERT_TRUE(db.insertDevice(live));
+    ASSERT_TRUE(db.insertDevice(old));
+    ASSERT_TRUE(db.insertEnergyLog("LIVE", 1, textAt(kCutoff - hours(1)))); // 지울 이력(전체의 1/4)
+    for (int i = 0; i < 3; ++i) ASSERT_TRUE(db.insertEnergyLog("LIVE", 2 + i, textAt(kNow - seconds(60 * (i + 1)))));
+    ASSERT_TRUE(db.markDeleted("OLD", textAt(kCutoff - hours(24))).ok());
+    ASSERT_TRUE(db.insertEnergyLog("OLD", 9, textAt(kNow - hours(1))));
+
+    // 같은 파일을 직접 열어 기기 행 삭제를 막는 트리거를 건다(마지막 단계에서 실패)
+    sqlite3* raw = nullptr;
+    ASSERT_EQ(sqlite3_open(path.c_str(), &raw), SQLITE_OK);
+    ASSERT_EQ(sqlite3_exec(raw, "CREATE TRIGGER block_purge BEFORE DELETE ON devices "
+                                "BEGIN SELECT RAISE(ABORT, 'blocked'); END;", nullptr, nullptr, nullptr), SQLITE_OK);
+    sqlite3_close(raw);
+
+    const auto purge = db.purgeExpired(textAt(kCutoff));
+
+    EXPECT_FALSE(purge.ok());
+    EXPECT_EQ(latestLogs(db, "LIVE", 1000).value->size(), 4u); // 오래된 이력 삭제도 취소
+    EXPECT_EQ(latestLogs(db, "OLD", 1000).value->size(), 1u);
+    db.close();
+    fs::remove(path);
 }

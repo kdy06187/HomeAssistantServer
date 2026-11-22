@@ -166,6 +166,18 @@ TEST_F(DeviceRetentionFlowTest, UnknownProtocolDeviceHistoryIsUnsupported) {
     EXPECT_EQ(manager.getEnergyHistory("FAKE_U", HistoryQuery{}).error.code, ErrorCode::UnsupportedOperation);
 }
 
+TEST_F(DeviceRetentionFlowTest, CleanupDuringShutdownIsCancelledAndDeletesNothing) {
+    addPlug("PLUG");
+    ASSERT_TRUE(database.insertEnergyLog("PLUG", 1, UtcTime::toDbText(kStart - hours(24 * 100))));
+    manager.beginShutdown();
+
+    const auto cleanup = manager.runRetentionCleanup();
+
+    ASSERT_FALSE(cleanup.ok());
+    EXPECT_EQ(cleanup.error.code, ErrorCode::Cancelled);
+    EXPECT_EQ(latestLogs(database, "PLUG").value->size(), 1u);
+}
+
 TEST_F(DeviceRetentionFlowTest, TcpDeviceHistoryIsUnsupported) {
     ASSERT_TRUE(manager.addDevice("FAKE_1", "lamp", ProtocolType::TCP_DIY, {}, &tcpFake));
 
