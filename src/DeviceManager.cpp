@@ -270,8 +270,8 @@ Result<std::string> DeviceManager::refreshState(const std::string& id, bool isMa
     if (!protocolDriver) return Result<std::string>::success("UNKNOWN");
 
     std::string realState = protocolDriver->readDeviceState(id, isManualRefresh); // 통신은 락 밖
-    // 종료 중의 OFFLINE은 취소된 조회일 수 있어 기록하지 않는다
-    if (isShuttingDown_ && realState == "OFFLINE") {
+    // 종료 중의 OFFLINE·UNKNOWN은 취소된 조회일 수 있다(Matter는 취소되면 UNKNOWN). 기록하지 않고 취소로 답한다
+    if (isShuttingDown_ && (realState == "OFFLINE" || realState == "UNKNOWN")) {
         return Result<std::string>::failure(ErrorCode::Cancelled, "server shutting down");
     }
     if (realState != "UNKNOWN") updateDeviceState(id, realState);

@@ -379,6 +379,26 @@ TEST_F(DeviceManagerDelayedTest, RefreshAndHealthCheckDoNotRecordOfflineDuringSh
     EXPECT_TRUE(tcpFake.energyReadIds.empty());
 }
 
+TEST_F(DeviceManagerDelayedTest, RefreshReturningUnknownDuringShutdownIsCancelled) {
+    tcpFake.stateToReturn = "UNKNOWN"; // 취소된 Matter 조회가 돌려주는 값
+    manager.beginShutdown();
+
+    const auto refreshed = manager.refreshState("PC", true);
+
+    EXPECT_FALSE(refreshed.ok());
+    EXPECT_EQ(refreshed.error.code, ErrorCode::Cancelled);
+    EXPECT_EQ(stateOf("PC"), "ON");
+}
+
+TEST_F(DeviceManagerDelayedTest, UnknownStateOutsideShutdownStaysSuccessful) {
+    tcpFake.stateToReturn = "UNKNOWN";
+
+    const auto refreshed = manager.refreshState("PC", true);
+
+    ASSERT_TRUE(refreshed.ok());
+    EXPECT_EQ(*refreshed.value, "UNKNOWN");
+}
+
 TEST_F(DeviceManagerDelayedTest, OffAfterSchedulerStoppedFailsAsCancelled) {
     manager.beginShutdown();
     scheduler.stopAndCancelAll();
