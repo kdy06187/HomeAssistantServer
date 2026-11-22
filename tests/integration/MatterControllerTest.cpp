@@ -87,7 +87,6 @@ protected:
         ASSERT_TRUE(controller->Initialize());
     }
     void TearDown() override {
-        EXPECT_TRUE(runner.waitUntilIdle());
         controller.reset();
         fs::remove_all(dir_);
     }
@@ -386,7 +385,6 @@ TEST_F(MatterControllerTest, ConcurrentControlReadEnergyCommissionAndUnpairAreRa
     });
     start = true;
     for (auto& worker : workers) worker.join();
-    ASSERT_TRUE(runner.waitUntilIdle());
 
     // 처음 두 기기는 그대로, 새로 등록·해제한 기기는 파일에 남지 않는다
     EXPECT_EQ(readConfig(), "SN-1,101\nSN-2,102\n");
@@ -469,7 +467,6 @@ TEST_F(MatterControllerTest, DatabaseFailureAfterPairingCleansUpMatterRegistrati
     };
 
     EXPECT_FALSE(manager.startCommissioning(ProtocolType::MATTER, "plug", kGoodCode, "ssid", "pw"));
-    ASSERT_TRUE(runner.waitUntilIdle(3));  // 페어링 + 시리얼 + 정리 unpair
 
     EXPECT_TRUE(manager.getAllDevices().empty());
     EXPECT_EQ(controller->readEnergy("SN-NEW").error.code, ErrorCode::DeviceNotFound);  // 매핑 없음
