@@ -37,6 +37,7 @@ public:
     // 만기가 된 작업을 만기 순서로 실행한다. 스레드가 부르며, 테스트는 FakeClock을 움직인 뒤 직접 부른다
     void tick(std::chrono::steady_clock::time_point now);
 
+    // 스레드는 SystemClock일 때만 의미가 있다(wait_until이 실제 steady 시계를 쓴다). FakeClock을 주입했다면 start()하지 말고 tick만 부른다
     void start();
     // 새 예약을 막고 남은 작업을 취소한 뒤, 실행 중인 작업이 끝나기를 기다려 스레드를 join한다
     void stopAndCancelAll();
@@ -52,6 +53,7 @@ private:
     std::optional<std::chrono::steady_clock::time_point> earliestDueAtLocked() const;
 
     Clock& clock_;
+    std::mutex lifecycleMutex_;        // start·stopAndCancelAll 직렬화(thread_ 생명). mutex_보다 먼저 잡는다
     std::mutex mutex_;
     std::condition_variable wakeUp_;   // 새 예약·취소·정지 때 스레드를 깨운다
     std::condition_variable idle_;     // 실행 중인 작업이 끝났을 때

@@ -46,16 +46,16 @@ std::optional<PendingCommand> DelayedCommandScheduler::pending(const std::string
 }
 
 bool DelayedCommandScheduler::cancel(const std::string& deviceId, const std::string& reason) {
-    std::string command;
+    Entry removed; // 락 밖에서 소멸한다: task가 잡고 있던 객체의 소멸자가 락 안에서 돌면 안 된다
     {
         std::lock_guard<std::mutex> lock(mutex_);
         const auto it = entries_.find(deviceId);
         if (it == entries_.end()) return false;
-        command = it->second.command;
+        removed = std::move(it->second);
         entries_.erase(it);
     }
     wakeUp_.notify_all();
-    std::cout << "[Scheduler] 지연 " << command << " 취소: " << deviceId << ", "
+    std::cout << "[Scheduler] 지연 " << removed.command << " 취소: " << deviceId << ", "
               << formatClockTime(clock_.utcNow()) << " (사유: " << reason << ")" << std::endl;
     return true;
 }
@@ -101,15 +101,18 @@ void DelayedCommandScheduler::tick(std::chrono::steady_clock::time_point now) {
 }
 
 void DelayedCommandScheduler::start() {
+    std::lock_guard<std::mutex> lifecycle(lifecycleMutex_);
     std::lock_guard<std::mutex> lock(mutex_);
     if (thread_.joinable() || isStopping_) return;
     thread_ = std::thread(&DelayedCommandScheduler::run, this);
 }
 
 void DelayedCommandScheduler::stopAndCancelAll() {
+    // 동시에 두 번 불려도 둘 다 정리가 끝난 뒤에 돌아가도록, 처음부터 끝(join)까지 한 락으로 직렬화한다
+    std::lock_guard<std::mutex> lifecycle(lifecycleMutex_);
     std::unordered_map<std::string, Entry> cancelled;
     {
-        std::unique_lock<std::mutex> lock(mutex_);
+        std::lock_guard<std::mutex> lock(mutex_);
         if (!isStopping_) {
             isStopping_ = true;
             cancelled.swap(entries_);
@@ -121,13 +124,12 @@ void DelayedCommandScheduler::stopAndCancelAll() {
     }
     wakeUp_.notify_all();
 
-    std::unique_lock<std::mutex> lock(mutex_);
-    idle_.wait(lock, [this] { return runningTasks_ == 0; });
-    if (thread_.joinable()) {
-        std::thread worker = std::move(thread_);
-        lock.unlock();
-        worker.join();
+    // tick을 스레드 밖에서 직접 부르는 경우(테스트)도 있어 실행 중 작업 수로도 기다린다
+    {
+        std::unique_lock<std::mutex> lock(mutex_);
+        idle_.wait(lock, [this] { return runningTasks_ == 0; });
     }
+    if (thread_.joinable()) thread_.join();
 }
 
 std::optional<std::chrono::steady_clock::time_point> DelayedCommandScheduler::earliestDueAtLocked() const {
