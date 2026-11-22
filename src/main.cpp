@@ -15,6 +15,7 @@
 #include "ApiAuth.hpp"
 #include "PeriodicTasks.hpp"
 #include "Clock.hpp"
+#include "DelayedCommandScheduler.hpp"
 #include <csignal>
 #include <cstdlib>
 #include <unistd.h>
@@ -57,7 +58,9 @@ int main() {
     // 1. 시스템 두뇌(DeviceManager) 조립
     DriverManager deviceDrivers;
     SystemClock clock;
-    DeviceManager manager(database, deviceDrivers, clock);
+    DelayedCommandScheduler scheduler(clock);
+    DeviceManager manager(database, deviceDrivers, scheduler, clock);
+    scheduler.start();
     // 2. TCP 드라이버 생성 및 포트 8080으로 서버 시작
     TCPDriver tcpDriver;
     // 포트를 못 열면(이전 프로세스가 남아 있는 등) 반쯤 켜진 채 돌지 않고 바로 끝낸다

@@ -34,7 +34,8 @@ protected:
     DatabaseManager database;
     DriverManager deviceDrivers;
     FakeClock clock;
-    DeviceManager manager{database, deviceDrivers, clock};
+    DelayedCommandScheduler scheduler{clock};
+    DeviceManager manager{database, deviceDrivers, scheduler, clock};
     FakeProtocolDriver tcpFake;
     int port = 0;
 };

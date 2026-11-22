@@ -25,7 +25,8 @@ protected:
     DatabaseManager database;
     DriverManager deviceDrivers;
     FakeClock clock;
-    DeviceManager manager{database, deviceDrivers, clock};
+    DelayedCommandScheduler scheduler{clock};
+    DeviceManager manager{database, deviceDrivers, scheduler, clock};
     FakeProtocolDriver matterFake;
     FakeProtocolDriver tcpFake;
 };
@@ -34,7 +35,8 @@ TEST_F(DeviceManagerBehaviorTest, CommissioningWithoutRegisteredDriverReturnsFal
     DatabaseManager db2;
     ASSERT_TRUE(db2.init(":memory:"));
     DriverManager drivers2;
-    DeviceManager bare(db2, drivers2, clock);
+    DelayedCommandScheduler bareScheduler{clock};
+    DeviceManager bare(db2, drivers2, bareScheduler, clock);
 
     EXPECT_FALSE(bare.startCommissioning(ProtocolType::MATTER, "plug", ""));
 }
@@ -90,7 +92,8 @@ TEST_F(DeviceManagerBehaviorTest, EnergyWithoutProtocolDriverFailsAsInternal) {
     DatabaseManager db2;
     ASSERT_TRUE(db2.init(":memory:"));
     DriverManager drivers2;
-    DeviceManager bare(db2, drivers2, clock);
+    DelayedCommandScheduler bareScheduler{clock};
+    DeviceManager bare(db2, drivers2, bareScheduler, clock);
     bare.addDevice("PLUG", "plug", ProtocolType::MATTER, {}, nullptr);
 
     const auto energy = bare.readEnergy("PLUG");

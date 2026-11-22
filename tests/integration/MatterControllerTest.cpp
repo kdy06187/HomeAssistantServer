@@ -453,7 +453,8 @@ TEST_F(MatterControllerTest, DatabaseFailureAfterPairingCleansUpMatterRegistrati
     }
     DriverManager deviceDrivers;
     FakeClock clock;
-    DeviceManager manager(database, deviceDrivers, clock);
+    DelayedCommandScheduler scheduler{clock};
+    DeviceManager manager(database, deviceDrivers, scheduler, clock);
     manager.registerDriver(ProtocolType::MATTER, controller.get());
     runner.respond = [](const std::vector<std::string>& sub) {
         if (startsWith(sub, {"pairing", "ble-wifi"})) return FakeChipToolOutput::ok("Device commissioning completed with success");
@@ -505,7 +506,8 @@ protected:
     DatabaseManager database;
     DriverManager deviceDrivers;
     FakeClock clock;
-    DeviceManager manager{database, deviceDrivers, clock};
+    DelayedCommandScheduler scheduler{clock};
+    DeviceManager manager{database, deviceDrivers, scheduler, clock};
     FakeProtocolDriver tcpFake;
 };
 

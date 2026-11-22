@@ -93,7 +93,8 @@ protected:
     DatabaseManager database;
     DriverManager deviceDrivers;
     FakeClock clock;
-    DeviceManager manager{database, deviceDrivers, clock};
+    DelayedCommandScheduler scheduler{clock};
+    DeviceManager manager{database, deviceDrivers, scheduler, clock};
     FakeProtocolDriver matterFake;
     FakeProtocolDriver tcpFake;
     std::unique_ptr<HTTPServer> server;

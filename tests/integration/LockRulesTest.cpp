@@ -69,7 +69,8 @@ protected:
     DatabaseManager database;
     DriverManager deviceDrivers;
     FakeClock clock;
-    DeviceManager manager{database, deviceDrivers, clock};
+    DelayedCommandScheduler scheduler{clock};
+    DeviceManager manager{database, deviceDrivers, scheduler, clock};
     FakeProtocolDriver matterFake;
     FakeProtocolDriver tcpFake;
 };
@@ -308,7 +309,8 @@ TEST_F(LockRulesTest, CommandResultStateIsCurrentStateWhenBlocked) {
 }
 
 TEST_F(LockRulesTest, CommandResultStateIsCurrentStateWhenProtocolDriverMissing) {
-    DeviceManager bareManager(database, deviceDrivers, clock);
+    DelayedCommandScheduler bareManagerScheduler{clock};
+    DeviceManager bareManager(database, deviceDrivers, bareManagerScheduler, clock);
     bareManager.addDevice("BARE", "bare", ProtocolType::TCP_DIY, {}, nullptr);
 
     const auto result = bareManager.executeCommand("BARE", "ON");
@@ -317,22 +319,22 @@ TEST_F(LockRulesTest, CommandResultStateIsCurrentStateWhenProtocolDriverMissing)
     EXPECT_EQ(result.state, "UNKNOWN");
 }
 
-// 45초 지연 스레드가 테스트 객체보다 오래 살 수 있어, 이 테스트의 객체는 일부러 해제하지 않는다
 TEST(LockRulesDelayedTest, CommandResultStateIsCurrentStateWhenDelayed) {
-    auto* database = new DatabaseManager();
-    auto* deviceDrivers = new DriverManager();
-    auto* clock = new FakeClock();
-    auto* manager = new DeviceManager(*database, *deviceDrivers, *clock);
-    auto* tcpFake = new FakeProtocolDriver();
-    ASSERT_TRUE(database->init(":memory:"));
-    manager->registerDriver(ProtocolType::TCP_DIY, tcpFake);
-    deviceDrivers->registerDriver(DriverType::PC_DRIVER, [tcpFake](IMessageSender*) {
-        return std::make_shared<PCDriver>(tcpFake);
+    DatabaseManager database;
+    DriverManager deviceDrivers;
+    FakeClock clock;
+    DelayedCommandScheduler scheduler{clock};
+    DeviceManager manager{database, deviceDrivers, scheduler, clock};
+    FakeProtocolDriver tcpFake;
+    ASSERT_TRUE(database.init(":memory:"));
+    manager.registerDriver(ProtocolType::TCP_DIY, &tcpFake);
+    deviceDrivers.registerDriver(DriverType::PC_DRIVER, [&tcpFake](IMessageSender*) {
+        return std::make_shared<PCDriver>(&tcpFake);
     });
-    manager->addDevice("PC", "pc", ProtocolType::TCP_DIY, {DriverType::PC_DRIVER}, tcpFake);
-    manager->updateDeviceState("PC", "ON");
+    manager.addDevice("PC", "pc", ProtocolType::TCP_DIY, {DriverType::PC_DRIVER}, &tcpFake);
+    manager.updateDeviceState("PC", "ON");
 
-    const auto result = manager->executeCommand("PC", "OFF");
+    const auto result = manager.executeCommand("PC", "OFF");
 
     EXPECT_EQ(result.outcome, CommandOutcome::Accepted);
     EXPECT_EQ(result.state, "ON");

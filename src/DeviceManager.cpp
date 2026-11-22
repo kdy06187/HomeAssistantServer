@@ -4,8 +4,9 @@
 #include <iostream>
 #include <chrono>
 #include <thread>
-DeviceManager::DeviceManager(DatabaseManager& db, DriverManager& deviceDrivers, Clock& clock)
-    : db_(db), deviceDrivers_(deviceDrivers), clock_(clock) {
+DeviceManager::DeviceManager(DatabaseManager& db, DriverManager& deviceDrivers,
+                             DelayedCommandScheduler& scheduler, Clock& clock)
+    : db_(db), deviceDrivers_(deviceDrivers), scheduler_(scheduler), clock_(clock) {
     std::cout << "DeviceManager 인스턴스 생성" << std::endl;
 }
 
@@ -130,37 +131,53 @@ CommandResult DeviceManager::executeCommand(std::string id, std::string command)
         auto driverIt = drivers_.find(targetDevice.protocol_type);
         if (driverIt != drivers_.end()) protocolDriver = driverIt->second;
     }
-    DriverResult action = deviceDrivers_.executeDriversForDevice(targetDevice, command);
-
     const std::string currentState = targetDevice.state;
+
+    // 같은 명령이 이미 대기 중이면 기기 드라이버를 다시 부르지 않는다(PC 종료 메시지가 한 번만 가도록)
+    const auto pendingCommand = scheduler_.pending(id);
+    if (pendingCommand && pendingCommand->command == command) {
+        return CommandResult{CommandOutcome::Accepted, Error{}, currentState, pendingCommand->remainingSeconds};
+    }
+    if (pendingCommand) scheduler_.cancel(id, "다른 명령");
+
+    DriverResult action = deviceDrivers_.executeDriversForDevice(targetDevice, command);
     if (!action.proceed_hardware) {
         return CommandResult{CommandOutcome::Failed, Error{ErrorCode::CommandBlocked, "blocked by device driver"}, currentState, 0};
     }
-    auto execute_hardware = [this, id, command, protocolDriver, currentState]() {
-        if (!protocolDriver) {
-            std::cerr << "[DeviceManager] 에러 : 프로토콜 드라이버를 찾을 수 없습니다\n";
-            return CommandResult{CommandOutcome::Failed, Error{ErrorCode::Internal, "protocol driver not found"}, currentState, 0};
-        }
-        if (protocolDriver->sendCommand(id, command)) {
-            std::string newState = (command == "ON") ? "ON" : "OFF";
-            this->updateDeviceState(id, newState); // DB 및 서버 상태 변경
-            return CommandResult{CommandOutcome::Succeeded, Error{}, newState, 0};
-        }
-        this->updateDeviceState(id, "OFFLINE");
-        return CommandResult{CommandOutcome::Failed, Error{ErrorCode::DeviceUnreachable, "device did not respond"}, "OFFLINE", 0};
-    };
 
     if (action.delay_seconds > 0) {
-        int delay = action.delay_seconds;
-        // 서버가 멈추지 않도록 스레드를 생성하여 대기 후 하드웨어 제어
-        std::thread([execute_hardware, delay]() {
-            std::this_thread::sleep_for(std::chrono::seconds(delay));
-            execute_hardware();
-        }).detach();
-        return CommandResult{CommandOutcome::Accepted, Error{}, currentState, delay};
+        const bool isScheduled = scheduler_.schedule(id, command, std::chrono::seconds(action.delay_seconds),
+            [this, id, command, protocolDriver, currentState]() {
+                executeHardware(id, command, protocolDriver, currentState);
+            });
+        if (isScheduled) {
+            return CommandResult{CommandOutcome::Accepted, Error{}, currentState, action.delay_seconds};
+        }
+        // 동시에 들어온 같은 기기 요청이 먼저 예약했거나 스케줄러가 멈춘 경우
+        const auto existing = scheduler_.pending(id);
+        if (existing) return CommandResult{CommandOutcome::Accepted, Error{}, currentState, existing->remainingSeconds};
+        return CommandResult{CommandOutcome::Failed, Error{ErrorCode::Cancelled, "scheduler stopped"}, currentState, 0};
     }
-    // 대기 시간이 없다면 즉시 실행
-    return execute_hardware();
+    return executeHardware(id, command, protocolDriver, currentState);
+}
+
+CommandResult DeviceManager::executeHardware(const std::string& id, const std::string& command,
+                                             ProtocolDriver* protocolDriver, const std::string& currentState) {
+    if (!protocolDriver) {
+        std::cerr << "[DeviceManager] 에러 : 프로토콜 드라이버를 찾을 수 없습니다\n";
+        return CommandResult{CommandOutcome::Failed, Error{ErrorCode::Internal, "protocol driver not found"}, currentState, 0};
+    }
+    if (protocolDriver->sendCommand(id, command)) {
+        std::string newState = (command == "ON") ? "ON" : "OFF";
+        updateDeviceState(id, newState); // DB 및 서버 상태 변경
+        return CommandResult{CommandOutcome::Succeeded, Error{}, newState, 0};
+    }
+    // 종료 중의 실패는 취소된 호출일 수 있다. OFFLINE으로 기록하면 재시작 뒤 DB 상태가 틀어진다
+    if (isShuttingDown_) {
+        return CommandResult{CommandOutcome::Failed, Error{ErrorCode::Cancelled, "server shutting down"}, currentState, 0};
+    }
+    updateDeviceState(id, "OFFLINE");
+    return CommandResult{CommandOutcome::Failed, Error{ErrorCode::DeviceUnreachable, "device did not respond"}, "OFFLINE", 0};
 }
 bool DeviceManager::startCommissioning(ProtocolType type, std::string name, std::string payload
         , const std::string& ssid, const std::string& password, const std::vector<DriverType>& driverTypes){
@@ -214,6 +231,7 @@ bool DeviceManager::removeDevice(std::string id){
         removedDevice = std::move(it->second);
         devices_.erase(it);
     }
+    scheduler_.cancel(id, "삭제"); // 삭제된 기기에 대기 중이던 명령이 가지 않게
     if (!db_.removeDevice(id)) {
         std::cerr << "[DeviceManager] 에러 : DB 삭제 실패, 기기를 되돌립니다 (" << id << ")" << std::endl;
         std::lock_guard<std::mutex> lock(mutex_);
@@ -244,6 +262,10 @@ Result<std::string> DeviceManager::refreshState(const std::string& id, bool isMa
     if (!protocolDriver) return Result<std::string>::success("UNKNOWN");
 
     std::string realState = protocolDriver->readDeviceState(id, isManualRefresh); // 통신은 락 밖
+    // 종료 중의 OFFLINE은 취소된 조회일 수 있어 기록하지 않는다
+    if (isShuttingDown_ && realState == "OFFLINE") {
+        return Result<std::string>::failure(ErrorCode::Cancelled, "server shutting down");
+    }
     if (realState != "UNKNOWN") updateDeviceState(id, realState);
     return Result<std::string>::success(std::move(realState));
 }
@@ -259,6 +281,7 @@ void DeviceManager::runHealthCheck() {
     const std::vector<Device> devices = getAllDevices();
 
     for (const auto& device : devices) {
+        if (isShuttingDown_) break;
         try {
             const auto& id = device.id;
             // 우리가 예전에 최적화해 둔 그 함수! (알아서 통신하고, 알아서 DB 업데이트까지 다 함)

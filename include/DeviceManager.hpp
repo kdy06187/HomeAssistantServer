@@ -12,6 +12,8 @@
 #include "DriverType.hpp"
 #include "IMessageSender.hpp"
 #include "Clock.hpp"
+#include "DelayedCommandScheduler.hpp"
+#include <atomic>
 #include "DriverManager.hpp"
 #include "Command.hpp"
 #include <unordered_set>
@@ -32,7 +34,10 @@ struct HistoryResult {
 
 class DeviceManager {
 public:
-    DeviceManager(DatabaseManager& db, DriverManager& deviceDrivers, Clock& clock);
+    // 프로토콜 드라이버·스케줄러는 main이 소유한다. 이들을 쓰는 스레드(HTTP·스케줄러·주기 작업)를
+    // 모두 멈춘 뒤에 DeviceManager와 드라이버를 소멸시켜야 락 밖에서 쓰는 ProtocolDriver*가 안전하다.
+    DeviceManager(DatabaseManager& db, DriverManager& deviceDrivers,
+                  DelayedCommandScheduler& scheduler, Clock& clock);
     DeviceManager(const DeviceManager&) = delete;
     DeviceManager& operator=(const DeviceManager&) = delete;
 
@@ -58,6 +63,9 @@ public:
     bool removeDevice(std::string id);
     std::unordered_set<std::string> activeDeviceIds();
 
+    // 종료가 시작됐음을 알린다. 이후 드라이버 호출 실패(취소된 chip-tool 등)는 기기 상태·DB에 기록하지 않는다
+    void beginShutdown() { isShuttingDown_ = true; }
+
     // 모든 기기를 한 번 점검한다. 주기 호출은 PeriodicTasks가 맡는다
     void runHealthCheck();
 
@@ -69,11 +77,16 @@ public:
 
 private:
     std::unordered_map<ProtocolType, ProtocolDriver*> protocolDriversSnapshot();
+    // 드라이버에 명령을 보내고 결과에 따라 상태를 갱신한다. 즉시 실행과 지연 만기 실행이 함께 쓴다
+    CommandResult executeHardware(const std::string& id, const std::string& command,
+                                  ProtocolDriver* protocolDriver, const std::string& currentState);
     std::shared_ptr<std::mutex> energyLockFor(const std::string& deviceId);
 
     DatabaseManager& db_;
     DriverManager& deviceDrivers_;
-    [[maybe_unused]] Clock& clock_;
+    DelayedCommandScheduler& scheduler_;
+    Clock& clock_;
+    std::atomic<bool> isShuttingDown_{false};
 
     std::unordered_map<std::string,Device> devices_;
     std::unordered_map<ProtocolType, ProtocolDriver*> drivers_;

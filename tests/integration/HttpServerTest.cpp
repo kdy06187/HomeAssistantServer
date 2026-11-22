@@ -82,7 +82,8 @@ protected:
     DatabaseManager database;
     DriverManager deviceDrivers;
     FakeClock clock;
-    DeviceManager manager{database, deviceDrivers, clock};
+    DelayedCommandScheduler scheduler{clock};
+    DeviceManager manager{database, deviceDrivers, scheduler, clock};
     FakeProtocolDriver tcpFake;
     FakeProtocolDriver matterFake;
     std::unique_ptr<HTTPServer> server;
@@ -244,7 +245,8 @@ TEST_F(HttpServerTest, Http10RequestWithoutTokenGets401) {
 }
 
 TEST_F(HttpServerTest, StopTwiceAndStopBeforeStartAreSafe) {
-    DeviceManager other(database, deviceDrivers, clock);
+    DelayedCommandScheduler otherScheduler{clock};
+    DeviceManager other(database, deviceDrivers, otherScheduler, clock);
     HTTPServer neverStarted(other, kToken, findFreePort());
     neverStarted.stop();
     HTTPServer started(other, kToken, findFreePort());
@@ -361,7 +363,8 @@ TEST_F(HttpServerTest, E2UnreachableDeviceReturns502) {
 }
 
 TEST_F(HttpServerTest, E2MissingProtocolDriverReturns500) {
-    DeviceManager bareManager(database, deviceDrivers, clock);
+    DelayedCommandScheduler bareManagerScheduler{clock};
+    DeviceManager bareManager(database, deviceDrivers, bareManagerScheduler, clock);
     bareManager.addDevice("BARE_1", "bare", ProtocolType::TCP_DIY, {}, nullptr);
     const int barePort = findFreePort();
     HTTPServer bareServer(bareManager, kToken, barePort);
@@ -388,23 +391,22 @@ TEST_F(HttpServerTest, E2BlockedByDeviceDriverReturns409) {
     EXPECT_TRUE(tcpFake.sentCommands.empty());
 }
 
-// 45초 뒤에 깨어나는 분리 스레드가 DeviceManager·DB·가짜 드라이버를 계속 쓴다. 픽스처가 소멸한 뒤 접근하지 않도록
-// 이 객체들은 일부러 해제하지 않는다(근본 해결은 지연 명령을 스레드 대신 스케줄러가 관리하는 것).
 TEST(HttpServerDelayedCommandTest, E2DelayedCommandReturns202WithPendingCommand) {
-    auto* database = new DatabaseManager();
-    auto* deviceDrivers = new DriverManager();
-    auto* clock = new FakeClock();
-    auto* manager = new DeviceManager(*database, *deviceDrivers, *clock);
-    auto* tcpFake = new FakeProtocolDriver();
-    ASSERT_TRUE(database->init(":memory:"));
-    manager->registerDriver(ProtocolType::TCP_DIY, tcpFake);
-    deviceDrivers->registerDriver(DriverType::PC_DRIVER, [tcpFake](IMessageSender*) {
-        return std::make_shared<PCDriver>(tcpFake);
+    DatabaseManager database;
+    DriverManager deviceDrivers;
+    FakeClock clock;
+    DelayedCommandScheduler scheduler{clock};
+    DeviceManager manager{database, deviceDrivers, scheduler, clock};
+    FakeProtocolDriver tcpFake;
+    ASSERT_TRUE(database.init(":memory:"));
+    manager.registerDriver(ProtocolType::TCP_DIY, &tcpFake);
+    deviceDrivers.registerDriver(DriverType::PC_DRIVER, [&tcpFake](IMessageSender*) {
+        return std::make_shared<PCDriver>(&tcpFake);
     });
-    manager->addDevice("FAKE_1", "pc", ProtocolType::TCP_DIY, {DriverType::PC_DRIVER}, tcpFake);
-    manager->updateDeviceState("FAKE_1", "ON");
+    manager.addDevice("FAKE_1", "pc", ProtocolType::TCP_DIY, {DriverType::PC_DRIVER}, &tcpFake);
+    manager.updateDeviceState("FAKE_1", "ON");
     const int serverPort = findFreePort();
-    HTTPServer server(*manager, kToken, serverPort);
+    HTTPServer server(manager, kToken, serverPort);
     ASSERT_TRUE(server.start());
     ASSERT_TRUE(server.waitUntilReady(std::chrono::seconds(3)));
 
@@ -416,7 +418,42 @@ TEST(HttpServerDelayedCommandTest, E2DelayedCommandReturns202WithPendingCommand)
     EXPECT_EQ(response->status, 202);
     EXPECT_EQ(json::parse(response->body),
               json::parse(R"({"deviceId":"FAKE_1","state":"ON","pendingCommand":"OFF","delaySeconds":45})"));
-    EXPECT_TRUE(tcpFake->sentCommands.empty());
+    EXPECT_TRUE(tcpFake.sentCommands.empty());
+}
+
+TEST(HttpServerDelayedCommandTest, E2SameCommandWhilePendingReturns202WithRemainingSeconds) {
+    DatabaseManager database;
+    DriverManager deviceDrivers;
+    FakeClock clock;
+    DelayedCommandScheduler scheduler{clock};
+    DeviceManager manager{database, deviceDrivers, scheduler, clock};
+    FakeProtocolDriver tcpFake;
+    ASSERT_TRUE(database.init(":memory:"));
+    manager.registerDriver(ProtocolType::TCP_DIY, &tcpFake);
+    deviceDrivers.registerDriver(DriverType::PC_DRIVER, [&tcpFake](IMessageSender*) {
+        return std::make_shared<PCDriver>(&tcpFake);
+    });
+    manager.addDevice("FAKE_1", "pc", ProtocolType::TCP_DIY, {DriverType::PC_DRIVER}, &tcpFake);
+    manager.updateDeviceState("FAKE_1", "ON");
+    const int serverPort = findFreePort();
+    HTTPServer server(manager, kToken, serverPort);
+    ASSERT_TRUE(server.start());
+    ASSERT_TRUE(server.waitUntilReady(std::chrono::seconds(3)));
+
+    httplib::Client client("127.0.0.1", serverPort);
+    const httplib::Headers headers{{"Authorization", "Bearer " + kToken}};
+    const std::string body = R"({"deviceId":"FAKE_1","command":"OFF"})";
+    auto first = client.Post("/api/control", headers, body, "application/json");
+    clock.advance(std::chrono::seconds(10));
+    auto second = client.Post("/api/control", headers, body, "application/json");
+    server.stop();
+
+    ASSERT_TRUE(first);
+    ASSERT_TRUE(second);
+    EXPECT_EQ(second->status, 202);
+    EXPECT_EQ(json::parse(second->body),
+              json::parse(R"({"deviceId":"FAKE_1","state":"ON","pendingCommand":"OFF","delaySeconds":35})"));
+    EXPECT_EQ(tcpFake.broadcastMessages.size(), 1u);
 }
 
 TEST_F(HttpServerTest, E2InvalidRequestsReturn400Envelope) {

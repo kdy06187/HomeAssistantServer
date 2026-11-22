@@ -29,7 +29,8 @@ protected:
     DatabaseManager database;
     DriverManager deviceDrivers;
     FakeClock clock;
-    DeviceManager manager{database, deviceDrivers, clock};
+    DelayedCommandScheduler scheduler{clock};
+    DeviceManager manager{database, deviceDrivers, scheduler, clock};
     FakeProtocolDriver matterFake;
     FakeProtocolDriver tcpFake;
 };
@@ -118,30 +119,30 @@ TEST_F(DeviceManagerIntegrationTest, ControlUnknownDeviceReturnsDeviceNotFound) 
     EXPECT_EQ(result.error.code, ErrorCode::DeviceNotFound);
 }
 
-// 45초 지연 스레드가 테스트 객체보다 오래 살 수 있어, 이 테스트의 객체는 일부러 해제하지 않는다
 TEST(DeviceManagerPcDriverTest, OffOnRunningPcSendsShutdownMessageAndDefersHardware) {
-    auto* database = new DatabaseManager();
-    auto* deviceDrivers = new DriverManager();
-    auto* clock = new FakeClock();
-    auto* manager = new DeviceManager(*database, *deviceDrivers, *clock);
-    auto* tcpFake = new FakeProtocolDriver();
-    ASSERT_TRUE(database->init(":memory:"));
-    manager->registerDriver(ProtocolType::TCP_DIY, tcpFake);
-    deviceDrivers->registerDriver(DriverType::PC_DRIVER, [tcpFake](IMessageSender*) {
-        return std::make_shared<PCDriver>(tcpFake);
+    DatabaseManager database;
+    DriverManager deviceDrivers;
+    FakeClock clock;
+    DelayedCommandScheduler scheduler{clock};
+    DeviceManager manager{database, deviceDrivers, scheduler, clock};
+    FakeProtocolDriver tcpFake;
+    ASSERT_TRUE(database.init(":memory:"));
+    manager.registerDriver(ProtocolType::TCP_DIY, &tcpFake);
+    deviceDrivers.registerDriver(DriverType::PC_DRIVER, [&tcpFake](IMessageSender*) {
+        return std::make_shared<PCDriver>(&tcpFake);
     });
-    manager->startCommissioning(ProtocolType::TCP_DIY, "pc", "", "", "", {DriverType::PC_DRIVER});
-    manager->updateDeviceState("FAKE_1", "ON");
+    manager.startCommissioning(ProtocolType::TCP_DIY, "pc", "", "", "", {DriverType::PC_DRIVER});
+    manager.updateDeviceState("FAKE_1", "ON");
 
-    const CommandResult result = manager->executeCommand("FAKE_1", "OFF");
+    const CommandResult result = manager.executeCommand("FAKE_1", "OFF");
 
     EXPECT_EQ(result.outcome, CommandOutcome::Accepted);
     EXPECT_EQ(result.delaySeconds, 45);
 
-    ASSERT_EQ(tcpFake->broadcastMessages.size(), 1u);
-    EXPECT_NE(tcpFake->broadcastMessages[0].find("SHUTDOWN"), std::string::npos);
-    EXPECT_TRUE(tcpFake->sentMessages.empty());
-    EXPECT_TRUE(tcpFake->sentCommands.empty());
+    ASSERT_EQ(tcpFake.broadcastMessages.size(), 1u);
+    EXPECT_NE(tcpFake.broadcastMessages[0].find("SHUTDOWN"), std::string::npos);
+    EXPECT_TRUE(tcpFake.sentMessages.empty());
+    EXPECT_TRUE(tcpFake.sentCommands.empty());
 }
 
 TEST_F(DeviceManagerIntegrationTest, GetDeviceStateReadsDriverAndUpdatesState) {
@@ -249,3 +250,141 @@ TEST_F(DeviceManagerIntegrationTest, PeriodicTasksStopReturnsQuickly) {
 }
 
 } // namespace
+
+// ---- 지연 명령(스케줄러) ----
+
+class DeviceManagerDelayedTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        ASSERT_TRUE(database.init(":memory:"));
+        manager.registerDriver(ProtocolType::TCP_DIY, &tcpFake);
+        deviceDrivers.registerDriver(DriverType::PC_DRIVER, [this](IMessageSender*) {
+            return std::make_shared<PCDriver>(&tcpFake);
+        });
+        ASSERT_TRUE(manager.addDevice("PC", "pc", ProtocolType::TCP_DIY, {DriverType::PC_DRIVER}, &tcpFake));
+        manager.updateDeviceState("PC", "ON");
+    }
+    // 시간을 흘리고 만기 작업을 실행한다(스케줄러 스레드는 켜지 않는다)
+    void elapse(std::chrono::seconds amount) {
+        clock.advance(amount);
+        scheduler.tick(clock.steadyNow());
+    }
+    std::string storedState(const std::string& id) {
+        for (const auto& device : database.loadAllDevices()) {
+            if (device.id == id) return device.state;
+        }
+        return "";
+    }
+    std::string stateOf(const std::string& id) {
+        Device device;
+        manager.getDevice(id, device);
+        return device.state;
+    }
+
+    DatabaseManager database;
+    DriverManager deviceDrivers;
+    FakeClock clock;
+    DelayedCommandScheduler scheduler{clock};
+    DeviceManager manager{database, deviceDrivers, scheduler, clock};
+    FakeProtocolDriver tcpFake;
+};
+
+TEST_F(DeviceManagerDelayedTest, OnDuringPendingOffCancelsTheOff) {
+    ASSERT_EQ(manager.executeCommand("PC", "OFF").outcome, CommandOutcome::Accepted);
+
+    const auto onResult = manager.executeCommand("PC", "ON");
+    elapse(std::chrono::seconds(60));
+
+    EXPECT_EQ(onResult.outcome, CommandOutcome::Succeeded);
+    EXPECT_FALSE(scheduler.pending("PC").has_value());
+    ASSERT_EQ(tcpFake.sentCommands.size(), 1u);
+    EXPECT_EQ(tcpFake.sentCommands[0].second, "ON"); // 만기에도 OFF는 가지 않는다
+}
+
+TEST_F(DeviceManagerDelayedTest, SecondOffSendsShutdownMessageOnceAndReturnsRemainingSeconds) {
+    const auto first = manager.executeCommand("PC", "OFF");
+    clock.advance(std::chrono::seconds(10));
+    const auto second = manager.executeCommand("PC", "OFF");
+
+    EXPECT_EQ(first.outcome, CommandOutcome::Accepted);
+    EXPECT_EQ(first.delaySeconds, 45);
+    EXPECT_EQ(second.outcome, CommandOutcome::Accepted);
+    EXPECT_EQ(second.delaySeconds, 35);
+    EXPECT_EQ(tcpFake.broadcastMessages.size(), 1u);
+}
+
+TEST_F(DeviceManagerDelayedTest, RemovingDeviceCancelsPendingCommand) {
+    manager.executeCommand("PC", "OFF");
+
+    ASSERT_TRUE(manager.removeDevice("PC"));
+    elapse(std::chrono::seconds(60));
+
+    EXPECT_FALSE(scheduler.pending("PC").has_value());
+    EXPECT_TRUE(tcpFake.sentCommands.empty());
+}
+
+TEST_F(DeviceManagerDelayedTest, DueCommandSuccessSetsStateOff) {
+    manager.executeCommand("PC", "OFF");
+    elapse(std::chrono::seconds(44));
+    EXPECT_EQ(stateOf("PC"), "ON");
+    EXPECT_TRUE(tcpFake.sentCommands.empty());
+
+    elapse(std::chrono::seconds(1));
+
+    EXPECT_EQ(stateOf("PC"), "OFF");
+    ASSERT_EQ(tcpFake.sentCommands.size(), 1u);
+    EXPECT_EQ(tcpFake.sentCommands[0].second, "OFF");
+}
+
+TEST_F(DeviceManagerDelayedTest, DueCommandFailureSetsStateOffline) {
+    tcpFake.sendCommandResult = false;
+    manager.executeCommand("PC", "OFF");
+
+    elapse(std::chrono::seconds(45));
+
+    EXPECT_EQ(stateOf("PC"), "OFFLINE");
+}
+
+TEST_F(DeviceManagerDelayedTest, FailureDuringShutdownIsCancelledAndKeepsState) {
+    tcpFake.sendCommandResult = false;
+    manager.beginShutdown();
+
+    const auto result = manager.executeCommand("PC", "ON");
+
+    EXPECT_EQ(result.outcome, CommandOutcome::Failed);
+    EXPECT_EQ(result.error.code, ErrorCode::Cancelled);
+    EXPECT_EQ(stateOf("PC"), "ON");
+    EXPECT_EQ(storedState("PC"), "ON"); // DB의 is_active도 그대로
+}
+
+TEST_F(DeviceManagerDelayedTest, DueCommandFailureDuringShutdownKeepsState) {
+    tcpFake.sendCommandResult = false;
+    manager.executeCommand("PC", "OFF");
+    manager.beginShutdown();
+
+    elapse(std::chrono::seconds(45));
+
+    EXPECT_EQ(stateOf("PC"), "ON");
+}
+
+TEST_F(DeviceManagerDelayedTest, RefreshAndHealthCheckDoNotRecordOfflineDuringShutdown) {
+    tcpFake.stateToReturn = "OFFLINE";
+    manager.beginShutdown();
+
+    const auto refreshed = manager.refreshState("PC", true);
+    manager.runHealthCheck();
+
+    EXPECT_FALSE(refreshed.ok());
+    EXPECT_EQ(stateOf("PC"), "ON");
+    EXPECT_TRUE(tcpFake.energyReadIds.empty());
+}
+
+TEST_F(DeviceManagerDelayedTest, OffAfterSchedulerStoppedFailsAsCancelled) {
+    scheduler.stopAndCancelAll();
+
+    const auto result = manager.executeCommand("PC", "OFF");
+
+    EXPECT_EQ(result.outcome, CommandOutcome::Failed);
+    EXPECT_EQ(result.error.code, ErrorCode::Cancelled);
+    EXPECT_TRUE(tcpFake.sentCommands.empty());
+}
