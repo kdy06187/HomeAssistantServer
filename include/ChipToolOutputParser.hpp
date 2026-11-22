@@ -34,7 +34,7 @@ bool isCommissioningSuccessful(const std::string& output);
 
 // 전력 조회 결과 두 문자열(getPowerUsage·getCumulativeEnergy 반환값)을 해석한다.
 // OFFLINE·PAIRING → DeviceUnreachable / 누적값 UNKNOWN·빈 값 → DeviceUnreachable /
-// 실시간 전력만 UNKNOWN·빈 값 → 0 / 숫자가 아님·음수 누적값 → Internal
+// 실시간 전력만 UNKNOWN·빈 값 → 0 / 숫자가 아님·음수 누적값 → DeviceUnreachable(기기 출력을 읽지 못함)
 Result<EnergyReading> parseEnergyReading(const std::string& activePowerText, const std::string& cumulativeText);
 
 // 기기에 닿지 못했음을 뜻하는 표지 문자열인가("OFFLINE", "PAIRING")

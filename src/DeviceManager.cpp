@@ -229,28 +229,29 @@ bool DeviceManager::removeDevice(std::string id){
     std::cout << "[DeviceManager] 기기 삭제 완료 : "<< id << std::endl;
     return true;
 }
-std::string DeviceManager::getDeviceState(std::string id, bool isManualRefresh) {
+// 없는 기기는 DeviceNotFound. 드라이버가 없거나 상태를 모르면 성공이되 "UNKNOWN"(저장된 상태는 바꾸지 않는다)
+Result<std::string> DeviceManager::refreshState(const std::string& id, bool isManualRefresh) {
     ProtocolDriver* protocolDriver = nullptr;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = devices_.find(id);
         if (it == devices_.end()) {
-            return "UNKNOWN"; // 기기가 없으면 바로 종료
+            return Result<std::string>::failure(ErrorCode::DeviceNotFound, "device not found");
         }
         auto driverIt = drivers_.find(it->second.protocol_type);
         if (driverIt != drivers_.end()) protocolDriver = driverIt->second;
     }
-    if (protocolDriver) {
-        std::string realState = protocolDriver->readDeviceState(id, isManualRefresh); // 통신은 락 밖
-  
-        if (realState != "UNKNOWN") {
-            this->updateDeviceState(id, realState); 
-        }
-        
-        return realState;
-    }
-    
-    return "UNKNOWN";
+    if (!protocolDriver) return Result<std::string>::success("UNKNOWN");
+
+    std::string realState = protocolDriver->readDeviceState(id, isManualRefresh); // 통신은 락 밖
+    if (realState != "UNKNOWN") updateDeviceState(id, realState);
+    return Result<std::string>::success(std::move(realState));
+}
+
+// 기기가 없을 때도 "UNKNOWN"을 돌려주는 단순 버전(헬스체크용)
+std::string DeviceManager::getDeviceState(std::string id, bool isManualRefresh) {
+    const auto result = refreshState(id, isManualRefresh);
+    return result.ok() ? *result.value : "UNKNOWN";
 }
 void DeviceManager::runHealthCheck() {
     std::cout << "\n[DeviceManager] 모든 기기의 상태 점검 시작..." << std::endl;
@@ -320,11 +321,10 @@ Result<EnergySnapshot> DeviceManager::readEnergy(const std::string& deviceId) {
     const auto reading = protocolDriver->readEnergy(deviceId); // chip-tool 실행 중이므로 상태 락 밖
     if (!reading.ok()) {
         std::cerr << "[DeviceManager] 기기(" << deviceId << ") 전력 조회 실패: " << reading.error.message << std::endl;
-        // 기기 존재는 위에서 확인했다. 드라이버의 "모름"(매핑 없음)은 내부 불일치(Internal)로 보고,
-        // 그 밖의 읽기·해석 실패는 호출자에게 모두 "기기에서 값을 못 읽음"(DeviceUnreachable)으로 알린다
-        ErrorCode code = ErrorCode::DeviceUnreachable;
-        if (reading.error.code == ErrorCode::DeviceNotFound) code = ErrorCode::Internal;
-        if (reading.error.code == ErrorCode::UnsupportedOperation) code = ErrorCode::UnsupportedOperation;
+        // 기기 존재는 위에서 확인했으므로 드라이버의 DeviceNotFound(매핑 없음)는 서버 내부 불일치다.
+        // 그 밖의 코드는 드라이버가 정한 그대로 전달한다
+        ErrorCode code = reading.error.code;
+        if (code == ErrorCode::DeviceNotFound) code = ErrorCode::Internal;
         return Result<EnergySnapshot>::failure(code, reading.error.message);
     }
 

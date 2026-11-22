@@ -176,12 +176,12 @@ Result<EnergyReading> parseEnergyReading(const std::string& activePowerText, con
     EnergyReading reading{0, 0};
     if (activePowerText != "UNKNOWN" && !activePowerText.empty()) {
         const auto parsedPower = parseInteger(activePowerText);
-        if (!parsedPower.ok()) return Result<EnergyReading>::failure(ErrorCode::Internal, "실시간 전력 값 해석 실패");
+        if (!parsedPower.ok()) return Result<EnergyReading>::failure(ErrorCode::DeviceUnreachable, "실시간 전력 값 해석 실패");
         reading.activePower_mW = *parsedPower.value;
     }
     const auto parsedEnergy = parseInteger(cumulativeText);
-    if (!parsedEnergy.ok()) return Result<EnergyReading>::failure(ErrorCode::Internal, "누적 전력 값 해석 실패");
-    if (*parsedEnergy.value < 0) return Result<EnergyReading>::failure(ErrorCode::Internal, "음수 누적 전력 값");
+    if (!parsedEnergy.ok()) return Result<EnergyReading>::failure(ErrorCode::DeviceUnreachable, "누적 전력 값 해석 실패");
+    if (*parsedEnergy.value < 0) return Result<EnergyReading>::failure(ErrorCode::DeviceUnreachable, "음수 누적 전력 값");
     reading.cumulative_mWh = *parsedEnergy.value;
     return Result<EnergyReading>::success(reading);
 }

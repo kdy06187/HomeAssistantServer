@@ -37,7 +37,10 @@ HttpErrorInfo ErrorMapping::describe(ErrorCode code) {
 }
 
 nlohmann::json ErrorMapping::buildErrorJson(ErrorCode code) {
-    const HttpErrorInfo info = describe(code);
+    return buildErrorJson(describe(code));
+}
+
+nlohmann::json ErrorMapping::buildErrorJson(const HttpErrorInfo& info) {
     nlohmann::json body;
     body["error"]["code"] = info.code;
     body["error"]["message"] = info.message;

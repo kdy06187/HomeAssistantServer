@@ -273,6 +273,18 @@ TEST_F(EnergyPathTest, DriverDeviceNotFoundIsReportedAsInternal) {
     EXPECT_EQ(energy.error.code, ErrorCode::Internal);
 }
 
+// 드라이버가 돌려준 코드는 DeviceNotFound를 뺀 나머지를 그대로 전달한다(Cancelled 등이 왜곡되지 않게)
+TEST_F(EnergyPathTest, DriverFailureCodesArePassedThroughUnchanged) {
+    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {}, &matterFake);
+    for (ErrorCode code : {ErrorCode::DeviceUnreachable, ErrorCode::Cancelled, ErrorCode::UnsupportedOperation,
+                           ErrorCode::Internal}) {
+        matterFake.energyResult = Result<EnergyReading>::failure(code, "driver failure");
+        const auto energy = manager.readEnergy("PLUG");
+        ASSERT_FALSE(energy.ok());
+        EXPECT_EQ(energy.error.code, code);
+    }
+}
+
 // 상태를 확인하지 못한 기기(PAIRING·ERROR 포함)는 헬스체크에서 전력을 조회하지 않는다
 TEST_F(EnergyPathTest, HealthCheckSkipsEnergyForUnconfirmedStates) {
     manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {}, &matterFake);

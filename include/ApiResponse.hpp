@@ -13,6 +13,7 @@ struct ApiResponse {
     }
     // 상태 코드와 {"error":{"code","message"}} 본문은 ErrorMapping이 정한다
     static ApiResponse error(ErrorCode code) {
-        return ApiResponse{ErrorMapping::describe(code).httpStatus, ErrorMapping::buildErrorJson(code)};
+        const HttpErrorInfo info = ErrorMapping::describe(code);
+        return ApiResponse{info.httpStatus, ErrorMapping::buildErrorJson(info)};
     }
 };

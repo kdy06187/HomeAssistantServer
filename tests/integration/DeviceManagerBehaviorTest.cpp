@@ -71,7 +71,7 @@ TEST_F(DeviceManagerBehaviorTest, EnergyForUnregisteredIdFailsWithoutReadingDriv
     EXPECT_TRUE(matterFake.energyReadIds.empty());
 }
 
-// TCP 기기는 자기 드라이버(전력 조회 미지원)에 묻고, Matter 드라이버는 부르지 않는다
+// TCP 기기는 프로토콜을 보고 곧바로 거부한다. 어느 드라이버에도 묻지 않는다
 TEST_F(DeviceManagerBehaviorTest, EnergyForTcpDeviceIsUnsupportedWithoutAskingAnyDriver) {
     tcpFake.commissionResult = Result<CommissionOutcome>::success(CommissionOutcome{"ARD_1"});
     manager.startCommissioning(ProtocolType::TCP_DIY, "lamp", "");

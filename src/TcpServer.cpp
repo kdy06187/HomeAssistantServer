@@ -1,4 +1,5 @@
 #include "TcpServer.hpp"
+#include "RequestValidation.hpp"
 #include <arpa/inet.h>
 #include <cerrno>
 #include <cstring>
@@ -50,7 +51,8 @@ bool TcpServer::start(int port, const std::string& bindAddress) {
     sockaddr_in address{};
     address.sin_family = AF_INET;
     address.sin_port = htons(static_cast<uint16_t>(port));
-    if (inet_pton(AF_INET, bindAddress.c_str(), &address.sin_addr) != 1) {
+    if (!RequestValidation::isValidIpv4Address(bindAddress) ||
+        inet_pton(AF_INET, bindAddress.c_str(), &address.sin_addr) != 1) {
         std::cerr << "[TCPDriver] 에러 : 바인딩 주소 형식 오류 (포트 " << port << ")" << std::endl;
         closeListenSocket();
         return false;

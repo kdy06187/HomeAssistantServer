@@ -125,10 +125,6 @@ namespace {
     }
 }
 
-Result<std::string> parseHttpBindAddress(const char* environmentValue) {
-    return RequestValidation::parseBindAddress(environmentValue);
-}
-
 namespace {
     const SystemClock& systemClock() {
         static const SystemClock clock;
@@ -288,7 +284,7 @@ void HTTPServer::addRoute(httplib::Server& svr, HttpMethod method, const std::st
             writeApiResponse(res, handler(req));
         } catch (const std::exception& e) {
             std::cerr << "[HTTPServer] 처리 중 예외: " << RequestValidation::sanitizeForLog(req.method) << " "
-                      << RequestValidation::sanitizeForLog(req.path) << " (" << e.what() << ")" << std::endl;
+                      << RequestValidation::sanitizeForLog(req.path) << " (" << RequestValidation::sanitizeForLog(e.what()) << ")" << std::endl;
             respondInternalError(res);
         } catch (...) {
             std::cerr << "[HTTPServer] 처리 중 알 수 없는 예외: " << RequestValidation::sanitizeForLog(req.method) << " "
@@ -377,10 +373,9 @@ ApiResponse HTTPServer::handleGetDeviceState(const httplib::Request& request) {
     // 안드로이드가 ?isManualRefresh=true 형태로 보냈을 때만 수동 새로고침
     const bool isManualRefresh = request.get_param_value("isManualRefresh") == "true";
 
-    Device device;
-    if (!mDeviceManager.getDevice(deviceId, device)) return ApiResponse::error(ErrorCode::DeviceNotFound);
-    const std::string state = mDeviceManager.getDeviceState(deviceId, isManualRefresh);
-    return ApiResponse::ok(json{{"deviceId", deviceId}, {"state", state}});
+    const auto state = mDeviceManager.refreshState(deviceId, isManualRefresh);
+    if (!state.ok()) return ApiResponse::error(state.error.code);
+    return ApiResponse::ok(json{{"deviceId", deviceId}, {"state", *state.value}});
 }
 
 ApiResponse HTTPServer::handleGetDeviceEnergy(const httplib::Request& request) {

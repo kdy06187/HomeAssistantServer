@@ -40,6 +40,7 @@ public:
     std::vector<std::pair<std::string, std::string>> sentMessages;   // sendTo: (deviceId, jsonLine)
     std::vector<std::string> broadcastMessages;                      // broadcast: jsonLine
     std::vector<std::string> energyReadIds;
+    std::vector<bool> readStateManualFlags;                          // readDeviceState의 isManualRequest
 
     bool sendCommand(const std::string& deviceId, const std::string& command) override {
         if (onSendCommand) onSendCommand(deviceId);
@@ -62,7 +63,11 @@ public:
         unpairedIds.push_back(deviceId);
         return unpairResult;
     }
-    std::string readDeviceState(const std::string& deviceId, bool) override {
+    std::string readDeviceState(const std::string& deviceId, bool isManualRequest) override {
+        {
+            std::lock_guard<std::mutex> lock(recordMutex);
+            readStateManualFlags.push_back(isManualRequest);
+        }
         if (onReadState) onReadState(deviceId);
         if (throwOnReadState) throw std::runtime_error("fake readDeviceState failure");
         return stateToReturn;

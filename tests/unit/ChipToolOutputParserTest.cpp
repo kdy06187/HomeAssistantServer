@@ -136,14 +136,15 @@ TEST(ParseEnergyReadingTest, OfflineOrPairingInEitherIsUnreachable) {
     }
 }
 
-TEST(ParseEnergyReadingTest, NonNumericIsInternal) {
-    EXPECT_EQ(parseEnergyReading("abc", "100").error.code, ErrorCode::Internal);
-    EXPECT_EQ(parseEnergyReading("10", "ERROR").error.code, ErrorCode::Internal);
-    EXPECT_EQ(parseEnergyReading("10", "99999999999999999999").error.code, ErrorCode::Internal);
+// 기기 출력을 해석하지 못한 것은 기기 쪽 문제라 처음부터 DeviceUnreachable이다
+TEST(ParseEnergyReadingTest, NonNumericIsDeviceUnreachable) {
+    EXPECT_EQ(parseEnergyReading("abc", "100").error.code, ErrorCode::DeviceUnreachable);
+    EXPECT_EQ(parseEnergyReading("10", "ERROR").error.code, ErrorCode::DeviceUnreachable);
+    EXPECT_EQ(parseEnergyReading("10", "99999999999999999999").error.code, ErrorCode::DeviceUnreachable);
 }
 
 TEST(ParseEnergyReadingTest, NegativeCumulativeFailsButNegativePowerIsAllowed) {
-    EXPECT_EQ(parseEnergyReading("10", "-5").error.code, ErrorCode::Internal);
+    EXPECT_EQ(parseEnergyReading("10", "-5").error.code, ErrorCode::DeviceUnreachable);
     const auto exporting = parseEnergyReading("-200", "100"); // 역송전 등으로 음수 전력은 가능
     ASSERT_TRUE(exporting.ok());
     EXPECT_EQ(exporting.value->activePower_mW, -200);

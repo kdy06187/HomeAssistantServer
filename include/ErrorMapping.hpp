@@ -17,5 +17,7 @@ namespace ErrorMapping {
 
     // {"error":{"code":...,"message":...}} 본문
     nlohmann::json buildErrorJson(ErrorCode code);
+    // describe 결과를 이미 가진 호출자가 다시 찾지 않도록
+    nlohmann::json buildErrorJson(const HttpErrorInfo& info);
     std::string buildErrorBody(ErrorCode code);
 }

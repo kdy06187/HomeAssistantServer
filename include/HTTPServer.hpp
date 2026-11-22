@@ -14,9 +14,6 @@
 class DeviceManager;
 namespace httplib { class Server; struct Request; struct Response; }
 
-// HAC_HTTP_BIND 환경 변수 값을 바인딩 주소로 바꾼다. 없거나 빈 값이면 기본 0.0.0.0, IPv4 형식이 아니면 실패.
-Result<std::string> parseHttpBindAddress(const char* environmentValue);
-
 class HTTPServer{
 public:
     HTTPServer(DeviceManager& deviceManager, std::string apiToken, int port = 8000,
@@ -27,6 +24,7 @@ public:
                std::string bindAddress, const Clock& clock);
     ~HTTPServer();
 
+    // 락: start는 생명주기 락을 쥔 채 실행 상태 락을 잡는다(생명주기 → 실행 상태).
     // 포트 바인딩까지 이 호출 안에서 끝내고, 성공하면 수락 스레드를 띄운다(TcpServer::start와 같은 규약:
     // true는 이번 호출이 시작했다는 뜻). 이미 실행 중이거나 포트가 1~65535 밖이거나 바인딩에 실패하면 false.
     // stop 뒤나 바인딩 실패 뒤에 다시 부를 수 있다. 여러 스레드가 동시에 불러도 안전하다.
@@ -44,7 +42,8 @@ DeviceManager& mDeviceManager;
     std::string mBindAddress;
     // 한 번의 start가 만드는 서버 객체와 종료 표시. 스레드·waitUntilReady가 shared_ptr로 함께 쥔다
     struct RunState;
-    // start/stop 호출끼리만 직렬화한다(안에서 join까지 하므로 다른 락과 겹쳐 잡지 않는다)
+    // start/stop 호출끼리 직렬화한다(안에서 join까지 한다). start는 이 락을 쥔 채 mRunStateMutex를 잡는다
+    // (생명주기 락 → 실행 상태 락). 반대 순서로 잡는 곳은 없다
     std::mutex mLifecycleMutex;
     std::thread mServerThread;
     // mRunState 포인터 자체만 보호한다(복사·교체 순간에만 잡고 대기·join은 락 밖)

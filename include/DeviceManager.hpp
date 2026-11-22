@@ -45,6 +45,9 @@ public:
     bool addDevice(std::string id, std::string name, ProtocolType protocol_type,
                    const std::vector<DriverType>& driverTypes, IMessageSender* sender);
     bool getDevice(std::string id, Device& outDevice);
+    // 드라이버에 실제 상태를 묻고 바뀌었으면 저장한다. 없는 기기는 DeviceNotFound
+    Result<std::string> refreshState(const std::string& id, bool isManualRefresh);
+    // refreshState의 결과를 문자열로만 돌려준다(오류는 "UNKNOWN")
     std::string getDeviceState(std::string id, bool isManualRefresh = false);
     std::vector<Device> getAllDevices();
     std::string getProtocolString(ProtocolType type);
@@ -59,7 +62,8 @@ public:
     void runHealthCheck();
 
     // 존재·드라이버 확인 → 락 밖에서 조회 → 성공할 때만 통계 반영. 실패하면 DB는 그대로다
-    // (미등록 DeviceNotFound, 전력 조회 미지원 UnsupportedOperation, 조회·저장 실패 그 밖의 코드)
+    // (미등록 DeviceNotFound, 전력 조회 미지원 UnsupportedOperation, 드라이버가 돌려준 코드는 그대로 전달.
+    //  단 드라이버의 DeviceNotFound는 서버 내부 불일치라 Internal)
     Result<EnergySnapshot> readEnergy(const std::string& deviceId);
     Result<HistoryResult> getEnergyHistory(const std::string& deviceId, int limit = 50);
 

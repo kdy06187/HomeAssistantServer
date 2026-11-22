@@ -99,6 +99,7 @@ TEST(TcpServerLifecycle, BindFailureLogsAddressPortAndErrno) {
 TEST(TcpServerLifecycle, InvalidBindAddressFailsWithoutLeavingStateBehind) {
     TcpServer server;
     EXPECT_FALSE(server.start(0, "not-an-ip"));
+    EXPECT_FALSE(server.start(0, std::string("127.0.0.1\0junk", 14))); // NUL 뒤를 무시하고 통과시키지 않는다
     EXPECT_TRUE(server.start(0, "127.0.0.1"));
     server.stop();
 }

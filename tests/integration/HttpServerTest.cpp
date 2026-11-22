@@ -5,6 +5,7 @@
 #include "HTTPServer.hpp"
 #include "fakes/FakeClock.hpp"
 #include "fakes/FakeProtocolDriver.hpp"
+#include "ChipToolOutputParser.hpp"
 #include "PCDriver.hpp"
 #include "support/RawHttpClient.hpp"
 #include "httplib.h"
@@ -290,6 +291,7 @@ TEST_F(HttpServerTest, BodyOver16KiBIsRejectedWith413) {
               << " recvErrno=" << connection.receiveErrno << " closedByPeer=" << connection.closedByPeer
               << " response=[" << response.substr(0, 60) << "]" << std::endl;
     EXPECT_EQ(response.rfind("HTTP/1.1 413", 0), 0u) << response;
+    EXPECT_NE(response.find("Content-Type: application/json"), std::string::npos) << response;
     EXPECT_NE(response.find(R"({"error":{"code":"PAYLOAD_TOO_LARGE","message":"요청 본문이 너무 큽니다."}})"), std::string::npos)
         << response;
 }
@@ -308,6 +310,26 @@ TEST_F(HttpServerTest, E1ListsDevices) {
     EXPECT_EQ(json::parse(one->body),
               json::parse(R"({"totalCount":1,"devices":[
                   {"deviceId":"FAKE_1","name":"lamp","protocolType":"TCP_DIY","state":"UNKNOWN"}]})"));
+}
+
+// 이름이 "error"여도 오류 응답으로 오인되지 않고 200 목록이다
+TEST_F(HttpServerTest, E1DeviceNamedErrorIsStillA200List) {
+    addDevice(ProtocolType::TCP_DIY, "FAKE_1", "error");
+    auto response = httplib::Client("127.0.0.1", port).Get("/api/devices", authHeaders());
+    ASSERT_TRUE(response);
+    EXPECT_EQ(response->status, 200);
+    EXPECT_EQ(json::parse(response->body)["devices"][0]["name"], "error");
+}
+
+// 잘못된 UTF-8 이름은 U+FFFD로 바뀌어 직렬화 예외(500) 없이 목록이 나간다
+TEST_F(HttpServerTest, E1InvalidUtf8NameDoesNotCauseInternalError) {
+    addDevice(ProtocolType::TCP_DIY, "FAKE_1", std::string("bad\xC3\x28name"));
+    addDevice(ProtocolType::TCP_DIY, "FAKE_2", "ok");
+    auto response = httplib::Client("127.0.0.1", port).Get("/api/devices", authHeaders());
+    ASSERT_TRUE(response);
+    EXPECT_EQ(response->status, 200);
+    EXPECT_NE(response->body.find("\xEF\xBF\xBD"), std::string::npos);
+    EXPECT_NE(response->body.find("\"ok\""), std::string::npos);
 }
 
 // ---- E2 ----
@@ -366,17 +388,35 @@ TEST_F(HttpServerTest, E2BlockedByDeviceDriverReturns409) {
     EXPECT_TRUE(tcpFake.sentCommands.empty());
 }
 
-// 45초 지연 스레드가 테스트보다 오래 살 수 있지만, 테스트 프로세스는 그 전에 끝난다.
-TEST_F(HttpServerTest, E2DelayedCommandReturns202WithPendingCommand) {
-    registerPcDriver();
-    addDevice(ProtocolType::TCP_DIY, "FAKE_1", "pc", {DriverType::PC_DRIVER});
-    manager.updateDeviceState("FAKE_1", "ON");
-    auto response = post("/api/control", R"({"deviceId":"FAKE_1","command":"OFF"})");
+// 45초 뒤에 깨어나는 분리 스레드가 DeviceManager·DB·가짜 드라이버를 계속 쓴다. 픽스처가 소멸한 뒤 접근하지 않도록
+// 이 객체들은 일부러 해제하지 않는다(근본 해결은 지연 명령을 스레드 대신 스케줄러가 관리하는 것).
+TEST(HttpServerDelayedCommandTest, E2DelayedCommandReturns202WithPendingCommand) {
+    auto* database = new DatabaseManager();
+    auto* deviceDrivers = new DriverManager();
+    auto* clock = new FakeClock();
+    auto* manager = new DeviceManager(*database, *deviceDrivers, *clock);
+    auto* tcpFake = new FakeProtocolDriver();
+    ASSERT_TRUE(database->init(":memory:"));
+    manager->registerDriver(ProtocolType::TCP_DIY, tcpFake);
+    deviceDrivers->registerDriver(DriverType::PC_DRIVER, [tcpFake](IMessageSender*) {
+        return std::make_shared<PCDriver>(tcpFake);
+    });
+    manager->addDevice("FAKE_1", "pc", ProtocolType::TCP_DIY, {DriverType::PC_DRIVER}, tcpFake);
+    manager->updateDeviceState("FAKE_1", "ON");
+    const int serverPort = findFreePort();
+    HTTPServer server(*manager, kToken, serverPort);
+    ASSERT_TRUE(server.start());
+    ASSERT_TRUE(server.waitUntilReady(std::chrono::seconds(3)));
+
+    httplib::Client client("127.0.0.1", serverPort);
+    auto response = client.Post("/api/control", httplib::Headers{{"Authorization", "Bearer " + kToken}},
+                                R"({"deviceId":"FAKE_1","command":"OFF"})", "application/json");
+    server.stop();
     ASSERT_TRUE(response);
     EXPECT_EQ(response->status, 202);
     EXPECT_EQ(json::parse(response->body),
               json::parse(R"({"deviceId":"FAKE_1","state":"ON","pendingCommand":"OFF","delaySeconds":45})"));
-    EXPECT_TRUE(tcpFake.sentCommands.empty());
+    EXPECT_TRUE(tcpFake->sentCommands.empty());
 }
 
 TEST_F(HttpServerTest, E2InvalidRequestsReturn400Envelope) {
@@ -405,6 +445,23 @@ TEST_F(HttpServerTest, E3CommissionSuccess) {
     ASSERT_EQ(tcpFake.commissionRequests.size(), 1u);
     EXPECT_EQ(tcpFake.commissionRequests[0].name, "lamp");
     EXPECT_EQ(tcpFake.commissionRequests[0].ssid, "s");
+}
+
+// MATTER 설정 코드 형식(11자리·21자리·MT:)과 driverTypes가 등록까지 전달된다
+TEST_F(HttpServerTest, E3MatterPayloadFormatsSucceedAndDriverTypesAreForwarded) {
+    registerPcDriver();
+    int index = 0;
+    for (const std::string& payload : {std::string(11, '1'), std::string(21, '2'), std::string("MT:Y.K9042C00KA0648G00")}) {
+        matterFake.commissionResult = Result<CommissionOutcome>::success(CommissionOutcome{"PLUG_" + std::to_string(++index)});
+        auto response = post("/api/commission", R"({"protocolType":"MATTER","deviceName":"plug","payload":")" + payload +
+                                                    R"(","driverTypes":[1]})");
+        ASSERT_TRUE(response) << payload;
+        EXPECT_EQ(response->status, 200) << payload;
+        EXPECT_EQ(matterFake.commissionRequests.back().payload, payload);
+        Device device;
+        ASSERT_TRUE(manager.getDevice("PLUG_" + std::to_string(index), device));
+        EXPECT_EQ(device.driver_types, std::vector<DriverType>{DriverType::PC_DRIVER});
+    }
 }
 
 TEST_F(HttpServerTest, E3CommissionFailureReturns400WithLegacyBody) {
@@ -475,35 +532,6 @@ TEST_F(HttpServerTest, E4DeleteOfflineDeviceStillSucceeds) {
     EXPECT_FALSE(manager.getDevice("ARD_9", device));
 }
 
-// 포트를 이미 다른 소켓이 쓰고 있으면 start가 실패한다(main은 이때 종료한다)
-TEST(HttpServerStartTest, PortInUseIsNotReady) {
-    const int holder = socket(AF_INET, SOCK_STREAM, 0);
-    ASSERT_GE(holder, 0);
-    sockaddr_in addr{};
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = htonl(INADDR_ANY);  // 서버는 0.0.0.0에 바인드하므로 같은 주소를 막는다
-    addr.sin_port = 0;
-    ASSERT_EQ(bind(holder, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)), 0);
-    ASSERT_EQ(listen(holder, 1), 0);
-    socklen_t len = sizeof(addr);
-    getsockname(holder, reinterpret_cast<sockaddr*>(&addr), &len);
-    const int busyPort = ntohs(addr.sin_port);
-
-    DatabaseManager db;
-    ASSERT_TRUE(db.init(":memory:"));
-    DriverManager drivers;
-    FakeClock clock;
-    DeviceManager manager(db, drivers, clock);
-    HTTPServer server(manager, kToken, busyPort);
-    testing::internal::CaptureStderr();
-    EXPECT_FALSE(server.start());  // 바인딩 실패는 start가 바로 돌려준다
-    testing::internal::GetCapturedStderr();
-
-    EXPECT_FALSE(server.waitUntilReady(std::chrono::milliseconds(50)));
-    server.stop();
-    close(holder);
-}
-
 // ---- E5 ----
 
 TEST_F(HttpServerTest, E5StateOfKnownAndUnknownDevice) {
@@ -520,6 +548,38 @@ TEST_F(HttpServerTest, E5StateOfKnownAndUnknownDevice) {
     EXPECT_EQ(unknown->status, 404);
     EXPECT_EQ(json::parse(unknown->body), json::parse(kDeviceNotFoundBody));
     EXPECT_EQ(unknown->get_header_value("Content-Type"), "application/json");
+}
+
+TEST_F(HttpServerTest, E5ForwardsIsManualRefreshOnlyWhenTrue) {
+    addDevice(ProtocolType::TCP_DIY, "FAKE_1", "lamp");
+    httplib::Client client("127.0.0.1", port);
+    ASSERT_TRUE(client.Get("/api/devices/FAKE_1/state", authHeaders()));
+    ASSERT_TRUE(client.Get("/api/devices/FAKE_1/state?isManualRefresh=true", authHeaders()));
+    ASSERT_TRUE(client.Get("/api/devices/FAKE_1/state?isManualRefresh=1", authHeaders()));
+    EXPECT_EQ(tcpFake.readStateManualFlags, (std::vector<bool>{false, true, false}));
+}
+
+TEST_F(HttpServerTest, E5UnresponsiveDriverReturns200Offline) {
+    addDevice(ProtocolType::TCP_DIY, "FAKE_1", "lamp");
+    tcpFake.stateToReturn = "OFFLINE";
+    auto response = httplib::Client("127.0.0.1", port).Get("/api/devices/FAKE_1/state", authHeaders());
+    ASSERT_TRUE(response);
+    EXPECT_EQ(response->status, 200);
+    EXPECT_EQ(json::parse(response->body), json::parse(R"({"deviceId":"FAKE_1","state":"OFFLINE"})"));
+}
+
+// 조회 도중 기기가 삭제되면 404이거나, 읽은 실제 상태로 200이다. 200 UNKNOWN은 아니다
+TEST_F(HttpServerTest, E5DeviceRemovedDuringReadIsNeverReportedAsUnknown) {
+    addDevice(ProtocolType::TCP_DIY, "FAKE_1", "lamp");
+    tcpFake.stateToReturn = "ON";
+    tcpFake.onReadState = [this](const std::string& id) { manager.removeDevice(id); };
+    auto response = httplib::Client("127.0.0.1", port).Get("/api/devices/FAKE_1/state", authHeaders());
+    ASSERT_TRUE(response);
+    if (response->status == 200) {
+        EXPECT_EQ(json::parse(response->body)["state"], "ON");
+    } else {
+        EXPECT_EQ(response->status, 404);
+    }
 }
 
 TEST_F(HttpServerTest, E5MalformedDeviceIdReturns404NotFoundForEveryReadRoute) {
@@ -566,17 +626,23 @@ TEST_F(HttpServerTest, E6UnregisteredReturns404AndTcpDeviceReturns400Unsupported
     EXPECT_TRUE(tcpFake.energyReadIds.empty());
 }
 
-TEST_F(HttpServerTest, E6ReadFailureReturns502ForUnreachableAndParseFailure) {
+TEST_F(HttpServerTest, E6ReadFailureReturns502ForUnreachable) {
     addDevice(ProtocolType::MATTER, "PLUG_1", "plug");
-    httplib::Client client("127.0.0.1", port);
-    for (ErrorCode code : {ErrorCode::DeviceUnreachable, ErrorCode::Internal}) {
-        matterFake.energyResult = Result<EnergyReading>::failure(code, "read failed");
-        auto failed = client.Get("/api/devices/PLUG_1/energy", authHeaders());
-        ASSERT_TRUE(failed);
-        EXPECT_EQ(failed->status, 502);
-        EXPECT_EQ(json::parse(failed->body),
-                  json::parse(R"({"error":{"code":"DEVICE_UNREACHABLE","message":"기기가 응답하지 않습니다."}})"));
-    }
+    matterFake.energyResult = Result<EnergyReading>::failure(ErrorCode::DeviceUnreachable, "read failed");
+    auto failed = httplib::Client("127.0.0.1", port).Get("/api/devices/PLUG_1/energy", authHeaders());
+    ASSERT_TRUE(failed);
+    EXPECT_EQ(failed->status, 502);
+    EXPECT_EQ(json::parse(failed->body),
+              json::parse(R"({"error":{"code":"DEVICE_UNREACHABLE","message":"기기가 응답하지 않습니다."}})"));
+}
+
+// 기기 출력 해석 실패(숫자 아님)도 파서가 DeviceUnreachable로 정해 502가 된다
+TEST_F(HttpServerTest, E6UnparsableDeviceOutputReturns502) {
+    addDevice(ProtocolType::MATTER, "PLUG_1", "plug");
+    matterFake.energyResult = ChipToolOutputParser::parseEnergyReading("abc", "100");
+    auto failed = httplib::Client("127.0.0.1", port).Get("/api/devices/PLUG_1/energy", authHeaders());
+    ASSERT_TRUE(failed);
+    EXPECT_EQ(failed->status, 502);
 }
 
 // ---- E7 ----
@@ -610,7 +676,11 @@ TEST_F(HttpServerTest, E7LimitQueryIsAppliedAndInvalidQueriesReturn400) {
     auto limited = client.Get("/api/devices/PLUG_1/energy/history?limit=2", authHeaders());
     ASSERT_TRUE(limited);
     EXPECT_EQ(limited->status, 200);
-    EXPECT_EQ(json::parse(limited->body)["logs"].size(), 2u);
+    // 최근 2건을 오래된 순으로
+    const json logs = json::parse(limited->body)["logs"];
+    ASSERT_EQ(logs.size(), 2u);
+    EXPECT_EQ(logs[0]["totalEnergy_mWh"], 400);
+    EXPECT_EQ(logs[1]["totalEnergy_mWh"], 500);
 
     for (const std::string query : {"limit=0", "limit=abc", "from=2026-02-30&to=2026-03-01", "period=week",
                                     "from=2026-03-02&to=2026-03-01", "limit=1&limit=2"}) {

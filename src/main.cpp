@@ -34,7 +34,7 @@ int main() {
 
     // 잘못된 주소로 조용히 기본값(모든 NIC)에 열리지 않도록, 형식 오류는 시작 실패로 처리한다.
     // 로그에는 변수 이름만 남긴다.
-    const auto httpBindAddress = parseHttpBindAddress(std::getenv("HAC_HTTP_BIND"));
+    const auto httpBindAddress = RequestValidation::parseBindAddress(std::getenv("HAC_HTTP_BIND"));
     if (!httpBindAddress.ok()) {
         std::cerr << "❌ 환경 변수 HAC_HTTP_BIND 형식 오류(IPv4 주소 필요). 서버를 시작하지 않습니다." << std::endl;
         return 1;
