@@ -5,8 +5,8 @@
 #include <chrono>
 #include <thread>
 DeviceManager::DeviceManager(DatabaseManager& db, DriverManager& deviceDrivers,
-                             DelayedCommandScheduler& scheduler, Clock& clock)
-    : db_(db), deviceDrivers_(deviceDrivers), scheduler_(scheduler), clock_(clock) {
+                             DelayedCommandScheduler& scheduler, Clock& /*clock*/)
+    : db_(db), deviceDrivers_(deviceDrivers), scheduler_(scheduler) {
     std::cout << "DeviceManager 인스턴스 생성" << std::endl;
 }
 
