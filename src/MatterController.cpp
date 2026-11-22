@@ -160,17 +160,13 @@ bool MatterController::removeDeviceRegistration(const std::string& serialNumber)
 
     // 2. chip-tool의 내부 KVS 데이터베이스에서도 이별 통보 (unpair)
     std::cout << "[MatterController] 기기(" << deviceIdStr << ") 페어링 해제 중..." << std::endl;
-    std::thread([this,deviceId](){
-        std::string deviceIdStr = std::to_string(deviceId);
-        const ChipToolOutcome result = this->runChipTool({"pairing", "unpair", deviceIdStr}, kSlowCommandTimeout);
-
-        // 오프라인이어서 타임아웃이 나더라도 KVS에서는 지워지므로 상황에 맞게 로그만 분기
-        if (!result.ok || result.output.find("Timeout") != std::string::npos || result.output.find("Error") != std::string::npos) {
-            std::cerr << "[MatterController] 기기(" << deviceIdStr << ") 오프라인 상태. 로컬에서 강제 페어링 해제 완료." << std::endl;
-        } else {
-            std::cout << "[MatterController] 기기(" << deviceIdStr << ") 정상 페어링 해제 완료" << std::endl;
-        }
-    }).detach();
+    // 호출한 스레드에서 끝까지 실행한다(최대 kSlowCommandTimeout). 오프라인이어서 타임아웃이 나도 등록 정보는 이미 정리됐다
+    const ChipToolOutcome result = runChipTool({"pairing", "unpair", deviceIdStr}, kSlowCommandTimeout);
+    if (!result.ok || result.output.find("Timeout") != std::string::npos || result.output.find("Error") != std::string::npos) {
+        std::cerr << "[MatterController] 기기(" << deviceIdStr << ") 오프라인 상태. 로컬에서 강제 페어링 해제 완료." << std::endl;
+    } else {
+        std::cout << "[MatterController] 기기(" << deviceIdStr << ") 정상 페어링 해제 완료" << std::endl;
+    }
     return true;
 }
 bool MatterController::checkDeviceRegistered(uint64_t nodeId) {

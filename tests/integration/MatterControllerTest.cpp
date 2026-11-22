@@ -87,16 +87,11 @@ protected:
         ASSERT_TRUE(controller->Initialize());
     }
     void TearDown() override {
-        // unpair의 분리 스레드가 controller를 쓰는 동안 해제하지 않는다. 해제를 부른 테스트는
-        // expectedUnpairs_를 올려 두어, 그 스레드가 run에 들어와 끝날 때까지 기다린다
-        EXPECT_TRUE(runner.waitUntilIdle(minimumStartedCalls()));
+        EXPECT_TRUE(runner.waitUntilIdle());
         controller.reset();
         fs::remove_all(dir_);
     }
 
-    void waitForRunnerIdle() { runner.waitUntilIdle(minimumStartedCalls()); }
-    int minimumStartedCalls() { return static_cast<int>(runner.callsSnapshot().size()) + expectedUnpairs_.exchange(0); }
-    std::atomic<int> expectedUnpairs_{0};  // 아직 시작 안 했을 수 있는 unpair 분리 스레드 수
     std::string readConfig() {
         std::ifstream in(configPath_);
         std::stringstream ss;
@@ -189,9 +184,7 @@ TEST_F(MatterControllerTest, EveryChipToolCallUsesStorageDirectory) {
     controller->readDeviceState("SN-1", true);
     controller->readEnergy("SN-1");
     ASSERT_TRUE(controller->commission(CommissionRequest{"plug", kGoodCode, "wifi", "pw"}, {}).ok());
-    expectedUnpairs_ = 1;
     EXPECT_TRUE(controller->unpairDevice("SN-2"));
-    waitForRunnerIdle();
 
     std::set<std::string> kinds;
     for (const auto& call : runner.callsSnapshot()) {
@@ -309,8 +302,8 @@ TEST_F(MatterControllerTest, ConcurrentCommissionsGetDistinctNodeIds) {
 
 TEST_F(MatterControllerTest, UnpairRemovesMappingAndFileLineThenRunsUnpairWithSlowTimeout) {
     EXPECT_TRUE(controller->unpairDevice("SN-1"));
-    ASSERT_TRUE(runner.waitUntilIdle(1));
 
+    // 반환 시점에 chip-tool 호출이 이미 끝나 있다(기다릴 필요 없음)
     EXPECT_EQ(readConfig(), "SN-2,102\n");
     const auto calls = runner.callsSnapshot();
     ASSERT_EQ(calls.size(), 1u);
@@ -319,10 +312,33 @@ TEST_F(MatterControllerTest, UnpairRemovesMappingAndFileLineThenRunsUnpairWithSl
     EXPECT_EQ(controller->readEnergy("SN-1").error.code, ErrorCode::DeviceNotFound);  // 매핑도 사라짐
 }
 
+// 오프라인 기기: chip-tool이 시간 초과여도 등록 정보는 정리되고 true
+TEST_F(MatterControllerTest, UnpairOfOfflineDeviceStillReturnsTrueAndCleansUp) {
+    runner.respond = [](const std::vector<std::string>&) { return FakeChipToolOutput::timeout(); };
+
+    EXPECT_TRUE(controller->unpairDevice("SN-1"));
+
+    EXPECT_EQ(runner.callsSnapshot().size(), 1u);
+    EXPECT_EQ(readConfig(), "SN-2,102\n");
+}
+
+// 종료 중(cancelAll 뒤)에는 러너가 바로 취소 결과를 돌려주므로 unpair도 즉시 끝난다
+TEST_F(MatterControllerTest, UnpairAfterCancelAllReturnsImmediately) {
+    runner.respond = [this](const std::vector<std::string>&) {
+        return runner.cancelled ? ProcessResult{-1, "", false, true, false} : FakeChipToolOutput::ok("");
+    };
+    runner.cancelAll();
+
+    const auto begin = std::chrono::steady_clock::now();
+    EXPECT_TRUE(controller->unpairDevice("SN-2"));
+
+    EXPECT_LT(std::chrono::steady_clock::now() - begin, std::chrono::seconds(1));
+    EXPECT_EQ(readConfig(), "SN-1,101\n");
+}
+
 // G8: 매핑이 없는 시리얼은 0번 노드에 unpair를 보내지 않는다
 TEST_F(MatterControllerTest, UnpairOfUnknownSerialRunsNothing) {
     EXPECT_TRUE(controller->unpairDevice("NOPE"));
-    std::this_thread::sleep_for(50ms);
     EXPECT_TRUE(runner.callsSnapshot().empty());
     EXPECT_EQ(readConfig(), "SN-1,101\nSN-2,102\n");
 }
@@ -353,7 +369,6 @@ TEST_F(MatterControllerTest, ConcurrentControlReadEnergyCommissionAndUnpairAreRa
         return FakeChipToolOutput::ok("");
     };
     constexpr int kIterations = 40;
-    std::atomic<int> unpairsRequested{0};
     std::atomic<bool> start{false};
     auto waitStart = [&] { while (!start) std::this_thread::yield(); };
     std::vector<std::thread> workers;
@@ -365,21 +380,12 @@ TEST_F(MatterControllerTest, ConcurrentControlReadEnergyCommissionAndUnpairAreRa
         for (int i = 0; i < kIterations / 4; ++i) {
             auto outcome = controller->commission(CommissionRequest{"plug", kGoodCode, "ssid", "pw"}, {});
             if (outcome.ok()) {
-                ++unpairsRequested;
                 controller->unpairDevice(outcome.value->deviceId);
             }
         }
     });
     start = true;
     for (auto& worker : workers) worker.join();
-    // 동기 호출 수(이미 기록됨) + 아직 run에 못 들어왔을 수 있는 unpair 분리 스레드 수만큼 기다린다
-    ASSERT_TRUE(runner.waitUntilIdle(static_cast<int>(runner.callsSnapshot().size()) + 0));
-    for (int i = 0; i < 500; ++i) {
-        int unpairCalls = 0;
-        for (const auto& sub : subcommands()) if (startsWith(sub, {"pairing", "unpair"})) ++unpairCalls;
-        if (unpairCalls >= unpairsRequested.load()) break;
-        std::this_thread::sleep_for(5ms);
-    }
     ASSERT_TRUE(runner.waitUntilIdle());
 
     // 처음 두 기기는 그대로, 새로 등록·해제한 기기는 파일에 남지 않는다
@@ -463,7 +469,7 @@ TEST_F(MatterControllerTest, DatabaseFailureAfterPairingCleansUpMatterRegistrati
     };
 
     EXPECT_FALSE(manager.startCommissioning(ProtocolType::MATTER, "plug", kGoodCode, "ssid", "pw"));
-    ASSERT_TRUE(runner.waitUntilIdle(3));  // 페어링 + 시리얼 + 정리 과정의 unpair 분리 스레드까지 끝날 때까지
+    ASSERT_TRUE(runner.waitUntilIdle(3));  // 페어링 + 시리얼 + 정리 unpair
 
     EXPECT_TRUE(manager.getAllDevices().empty());
     EXPECT_EQ(controller->readEnergy("SN-NEW").error.code, ErrorCode::DeviceNotFound);  // 매핑 없음
