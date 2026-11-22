@@ -133,6 +133,11 @@ CommandResult DeviceManager::executeCommand(std::string id, std::string command)
     }
     const std::string currentState = targetDevice.state;
 
+    // 종료 중에는 기기 드라이버(PC 종료 메시지 발송)도 부르지 않는다. 메시지만 가고 전원 차단이 취소되는 일을 막는다
+    if (isShuttingDown_) {
+        return CommandResult{CommandOutcome::Failed, Error{ErrorCode::Cancelled, "server shutting down"}, currentState, 0};
+    }
+
     // 같은 명령이 이미 대기 중이면 기기 드라이버를 다시 부르지 않는다(PC 종료 메시지가 한 번만 가도록)
     const auto pendingCommand = scheduler_.pending(id);
     if (pendingCommand && pendingCommand->command == command) {
@@ -166,6 +171,9 @@ CommandResult DeviceManager::executeHardware(const std::string& id, const std::s
     if (!protocolDriver) {
         std::cerr << "[DeviceManager] 에러 : 프로토콜 드라이버를 찾을 수 없습니다\n";
         return CommandResult{CommandOutcome::Failed, Error{ErrorCode::Internal, "protocol driver not found"}, currentState, 0};
+    }
+    if (isShuttingDown_) {
+        return CommandResult{CommandOutcome::Failed, Error{ErrorCode::Cancelled, "server shutting down"}, currentState, 0};
     }
     if (protocolDriver->sendCommand(id, command)) {
         std::string newState = (command == "ON") ? "ON" : "OFF";

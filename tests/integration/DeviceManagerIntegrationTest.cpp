@@ -380,6 +380,7 @@ TEST_F(DeviceManagerDelayedTest, RefreshAndHealthCheckDoNotRecordOfflineDuringSh
 }
 
 TEST_F(DeviceManagerDelayedTest, OffAfterSchedulerStoppedFailsAsCancelled) {
+    manager.beginShutdown();
     scheduler.stopAndCancelAll();
 
     const auto result = manager.executeCommand("PC", "OFF");
@@ -387,4 +388,5 @@ TEST_F(DeviceManagerDelayedTest, OffAfterSchedulerStoppedFailsAsCancelled) {
     EXPECT_EQ(result.outcome, CommandOutcome::Failed);
     EXPECT_EQ(result.error.code, ErrorCode::Cancelled);
     EXPECT_TRUE(tcpFake.sentCommands.empty());
+    EXPECT_TRUE(tcpFake.broadcastMessages.empty()); // 종료 중에는 PC 종료 메시지도 보내지 않는다
 }

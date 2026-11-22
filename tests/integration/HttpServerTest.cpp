@@ -487,6 +487,7 @@ TEST(HttpServerDelayedCommandTest, E2DuringShutdownReturns502NotCancelled200) {
     EXPECT_EQ(response->status, 502);
     EXPECT_EQ(json::parse(response->body),
               json::parse(R"({"error":{"code":"DEVICE_UNREACHABLE","message":"기기가 응답하지 않습니다."}})"));
+    EXPECT_TRUE(tcpFake.broadcastMessages.empty());
 }
 
 TEST_F(HttpServerTest, E2InvalidRequestsReturn400Envelope) {
