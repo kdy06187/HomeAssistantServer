@@ -2,6 +2,8 @@
 #include "DriverManager.hpp"
 #include "DatabaseManager.hpp"
 #include "UtcTime.hpp"
+#include "RequestValidation.hpp"
+#include <algorithm>
 #include <iostream>
 #include <chrono>
 #include <thread>
@@ -240,13 +242,14 @@ bool DeviceManager::startCommissioning(ProtocolType type, std::string name, std:
 // 순서: [락] 맵에서 꺼냄 → 대기 명령 취소 → DB에 숨김 표시(실패 시 되돌림) → 락 없이 해제.
 // 숨김을 먼저 저장해, 해제가 실패하거나 예외를 던져도 재시작 뒤 기기가 되살아나지 않게 한다.
 Result<DeleteOutcome> DeviceManager::removeDevice(const std::string& id){
+    const std::string safeId = RequestValidation::sanitizeForLog(id);
     Device removedDevice;
     ProtocolDriver* protocolDriver = nullptr;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = devices_.find(id);
         if(it == devices_.end()){
-            std::cerr << "[DeviceManager] 에러 : 기기를 찾을 수 없습니다 (" << id << ")" << std::endl;
+            std::cerr << "[DeviceManager] 에러 : 기기를 찾을 수 없습니다 (" << safeId << ")" << std::endl;
             return Result<DeleteOutcome>::failure(ErrorCode::DeviceNotFound, "device not found");
         }
         auto driverIt = drivers_.find(it->second.protocol_type);
@@ -255,21 +258,22 @@ Result<DeleteOutcome> DeviceManager::removeDevice(const std::string& id){
         removedDevice = std::move(it->second);
         devices_.erase(it);
     }
-    scheduler_.cancel(id, "삭제"); // 삭제된 기기에 대기 중이던 명령이 가지 않게
     DeleteOutcome outcome;
     outcome.deletedAtUtc = UtcTime::toDbText(clock_.utcNow());
     const auto marked = db_.markDeleted(id, outcome.deletedAtUtc);
     // DeviceNotFound = DB에는 이미 숨겨져 있음(같은 ID의 동시 추가·삭제 뒤 메모리에만 남은 경우).
     // 되돌리면 이 기기를 영영 지울 수 없으므로 삭제를 계속한다. 응답 시각은 기존 숨김 시각이 아니라 지금 시각
     if (!marked.ok() && marked.error.code != ErrorCode::DeviceNotFound) {
-        std::cerr << "[DeviceManager] 에러 : DB 숨김 실패, 기기를 되돌립니다 (" << id << ")" << std::endl;
+        std::cerr << "[DeviceManager] 에러 : DB 숨김 실패, 기기를 되돌립니다 (" << safeId << ")" << std::endl;
         std::lock_guard<std::mutex> lock(mutex_);
         // 그 사이 같은 ID가 다시 등록됐다면 새 기기를 덮어쓰지 않는다
         devices_.emplace(id, std::move(removedDevice));
         return Result<DeleteOutcome>::failure(ErrorCode::Internal, "mark deleted failed");
     }
+    // 숨김이 확정된 뒤에 취소한다(DB 실패로 되돌릴 때 예약을 잃지 않게). 그 사이 만기된 명령은 isRegistered 확인이 막는다
+    scheduler_.cancel(id, "삭제");
     outcome.unpaired = unpairQuietly(protocolDriver, id);
-    std::cout << "[DeviceManager] 기기 삭제(숨김) 완료 : " << id << (outcome.unpaired ? "" : " (기기 쪽 해제 실패)") << std::endl;
+    std::cout << "[DeviceManager] 기기 삭제(숨김) 완료 : " << safeId << (outcome.unpaired ? "" : " (기기 쪽 해제 실패)") << std::endl;
     return Result<DeleteOutcome>::success(outcome);
 }
 
@@ -407,7 +411,7 @@ Result<EnergySnapshot> DeviceManager::readEnergy(const std::string& deviceId) {
 }
 
 bool DeviceManager::supportsEnergy(ProtocolType type) {
-    return type != ProtocolType::TCP_DIY;
+    return type == ProtocolType::MATTER; // 새 프로토콜은 전력 조회를 구현한 뒤에 추가한다
 }
 
 Result<HistoryResult> DeviceManager::getEnergyHistory(const std::string& deviceId, const HistoryQuery& query) {
@@ -430,7 +434,7 @@ Result<HistoryResult> DeviceManager::getEnergyHistory(const std::string& deviceI
     std::optional<std::string> toUtc;
     if (query.from) fromUtc = EnergyAggregation::localDateRangeToUtc(*query.from, *query.from).fromUtc;
     if (query.to) toUtc = EnergyAggregation::localDateRangeToUtc(*query.to, *query.to).toUtc;
-    auto page = db_.queryHistory(deviceId, fromUtc, toUtc, static_cast<int>(query.limit));
+    auto page = db_.queryHistory(deviceId, fromUtc, toUtc, static_cast<int>(std::min(query.limit, RequestValidation::kMaxHistoryLimit)));
     if (!page.ok()) return Result<HistoryResult>::failure(page.error.code, page.error.message);
     history.logs = std::move(page.value->logs);
     history.truncated = page.value->truncated;

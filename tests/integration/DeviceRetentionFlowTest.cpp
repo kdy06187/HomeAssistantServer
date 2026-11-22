@@ -137,6 +137,35 @@ TEST_F(DeviceRetentionFlowTest, DatabaseFailureRestoresDeviceAndReturnsInternal)
     EXPECT_EQ(database.loadActiveDevices().size(), 1u);
 }
 
+// DB 숨김이 실패해 되돌릴 때는 대기 중이던 지연 명령도 그대로 남아야 한다
+TEST_F(DeviceRetentionFlowTest, DatabaseFailureKeepsPendingDelayedCommand) {
+    addPlug("PLUG");
+    ASSERT_TRUE(scheduler.schedule("PLUG", "OFF", std::chrono::seconds(45), [] {}));
+    RawConnection raw(dbPath_);
+    raw.exec("CREATE TRIGGER block_hide BEFORE UPDATE OF deleted_at ON devices "
+             "BEGIN SELECT RAISE(ABORT, 'blocked'); END;");
+
+    ASSERT_FALSE(manager.removeDevice("PLUG").ok());
+
+    EXPECT_TRUE(scheduler.pending("PLUG").has_value());
+}
+
+TEST_F(DeviceRetentionFlowTest, SuccessfulRemoveCancelsPendingDelayedCommand) {
+    addPlug("PLUG");
+    ASSERT_TRUE(scheduler.schedule("PLUG", "OFF", std::chrono::seconds(45), [] {}));
+
+    ASSERT_TRUE(manager.removeDevice("PLUG").ok());
+
+    EXPECT_FALSE(scheduler.pending("PLUG").has_value());
+}
+
+// 전력은 Matter만 지원한다. 알 수 없는 프로토콜 기기는 조회 불가
+TEST_F(DeviceRetentionFlowTest, UnknownProtocolDeviceHistoryIsUnsupported) {
+    ASSERT_TRUE(manager.addDevice("FAKE_U", "x", ProtocolType::UNKNOWN, {}, &tcpFake));
+
+    EXPECT_EQ(manager.getEnergyHistory("FAKE_U", HistoryQuery{}).error.code, ErrorCode::UnsupportedOperation);
+}
+
 TEST_F(DeviceRetentionFlowTest, TcpDeviceHistoryIsUnsupported) {
     ASSERT_TRUE(manager.addDevice("FAKE_1", "lamp", ProtocolType::TCP_DIY, {}, &tcpFake));
 

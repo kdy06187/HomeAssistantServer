@@ -321,6 +321,19 @@ TEST_F(MatterControllerTest, UnpairOfOfflineDeviceReturnsFalseButCleansUp) {
     EXPECT_EQ(readConfig(), "SN-2,102\n");
 }
 
+// 성공은 종료 코드 0뿐이다. 출력에 Error 같은 단어가 있어도 코드가 0이면 성공
+TEST_F(MatterControllerTest, UnpairSucceedsOnExitCodeZeroEvenIfOutputMentionsError) {
+    runner.respond = [](const std::vector<std::string>&) {
+        return ProcessResult{0, "Error: harmless Timeout text", false, false, false};
+    };
+    EXPECT_TRUE(controller->unpairDevice("SN-1"));
+}
+
+TEST_F(MatterControllerTest, UnpairFailsOnNonZeroExitCode) {
+    runner.respond = [](const std::vector<std::string>&) { return ProcessResult{1, "CHIP_NO_ERROR", false, false, false}; };
+    EXPECT_FALSE(controller->unpairDevice("SN-1"));
+}
+
 // 종료 중(cancelAll 뒤)에는 러너가 바로 취소 결과를 돌려주므로 unpair도 즉시 끝난다
 TEST_F(MatterControllerTest, UnpairAfterCancelAllReturnsImmediately) {
     runner.respond = [this](const std::vector<std::string>&) {

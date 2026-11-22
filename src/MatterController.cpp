@@ -163,8 +163,9 @@ bool MatterController::removeDeviceRegistration(const std::string& serialNumber)
     std::cout << "[MatterController] 기기(" << deviceIdStr << ") 페어링 해제 중..." << std::endl;
     // 호출한 스레드에서 끝까지 실행한다(최대 kSlowCommandTimeout). 오프라인이어서 타임아웃이 나도 등록 정보는 이미 정리됐다
     const ChipToolOutcome result = runChipTool({"pairing", "unpair", deviceIdStr}, kSlowCommandTimeout);
-    if (!result.ok || result.output.find("Timeout") != std::string::npos || result.output.find("Error") != std::string::npos) {
-        std::cerr << "[MatterController] 기기(" << deviceIdStr << ") 오프라인 상태. 로컬에서 강제 페어링 해제 완료." << std::endl;
+    // 종료 코드 0만 성공으로 본다. 출력 문구는 성공 때도 Error 같은 단어를 담을 수 있어 판정에 쓰지 않는다
+    if (!result.ok) {
+        std::cerr << "[MatterController] 기기(" << deviceIdStr << ") 해제 명령 실패(오프라인 가능). 로컬에서 강제 페어링 해제 완료." << std::endl;
         return false; // 기기는 아직 이 fabric에 남아 있다(초기화 필요)
     }
     std::cout << "[MatterController] 기기(" << deviceIdStr << ") 정상 페어링 해제 완료" << std::endl;

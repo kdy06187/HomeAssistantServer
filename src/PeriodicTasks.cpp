@@ -1,5 +1,6 @@
 #include "PeriodicTasks.hpp"
 #include "DeviceManager.hpp"
+#include "RequestValidation.hpp"
 #include <iostream>
 
 namespace {
@@ -50,9 +51,20 @@ void PeriodicTasks::run() {
             // 종료 신호로 깨어나면 true. 락은 대기 중에만 잡고 점검은 락 밖에서 한다
             if (wakeUp_.wait_for(lock, interval, [this] { return !isRunning_; })) return;
         }
-        deviceManager_.runHealthCheck();
+        // 예외가 스레드 밖으로 나가면 서버가 종료되므로 로그만 남기고 다음 주기로 넘어간다
+        try {
+            deviceManager_.runHealthCheck();
+        } catch (const std::exception& e) {
+            std::cerr << "[PeriodicTasks] 경고 : 헬스체크 예외, 다음 주기에 다시 시도 (" << RequestValidation::sanitizeForLog(e.what()) << ")" << std::endl;
+        }
         ++tickCount;
         // 정리 중에 종료 신호가 와도 트랜잭션이 끝난 뒤 stop()의 join이 풀린다
-        if (shouldRunCleanup(tickCount)) deviceManager_.runRetentionCleanup();
+        if (shouldRunCleanup(tickCount)) {
+            try {
+                deviceManager_.runRetentionCleanup();
+            } catch (const std::exception& e) {
+                std::cerr << "[PeriodicTasks] 경고 : 기록 정리 예외, 다음 주기에 다시 시도 (" << RequestValidation::sanitizeForLog(e.what()) << ")" << std::endl;
+            }
+        }
     }
 }
