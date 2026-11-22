@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
+#include <algorithm>
 #include "DatabaseManager.hpp"
+#include "UtcTime.hpp"
 #include "support/HistoryTestHelper.hpp"
 #include "DeviceManager.hpp"
 #include "DriverManager.hpp"
@@ -567,18 +569,32 @@ TEST_F(HttpServerTest, E3ValidationErrorsReturn400EnvelopeWithoutCommissioning) 
 
 // ---- E4 ----
 
-TEST_F(HttpServerTest, E4DeleteSuccessAndMissingKeepLegacyBodies) {
+// 가짜 시계가 1970-01-01 00:00:00 UTC에 있으므로 숨김 시각과 복구 기한(+90일)이 고정된다
+TEST_F(HttpServerTest, E4DeleteReturnsHiddenBodyThenMissingReturns404) {
     addDevice(ProtocolType::TCP_DIY, "FAKE_1", "lamp");
     auto ok = post("/api/devices/delete", R"({"deviceId":"FAKE_1"})");
     ASSERT_TRUE(ok);
     EXPECT_EQ(ok->status, 200);
-    EXPECT_EQ(json::parse(ok->body), json::parse(R"({"result":"success","message":"기기 삭제 성공!"})"));
+    EXPECT_EQ(json::parse(ok->body), json::parse(R"({"deviceId":"FAKE_1","deletedAt":"1970-01-01T00:00:00Z",
+        "restorableUntil":"1970-04-01T00:00:00Z","unpaired":true})"));
 
     auto missing = post("/api/devices/delete", R"({"deviceId":"FAKE_1"})");
     ASSERT_TRUE(missing);
-    EXPECT_EQ(missing->status, 400);
-    EXPECT_EQ(json::parse(missing->body),
-              json::parse(R"({"result":"error","message":"기기 삭제 실패 또는 기기 없음"})"));
+    EXPECT_EQ(missing->status, 404);
+    EXPECT_EQ(json::parse(missing->body), json::parse(kDeviceNotFoundBody));
+}
+
+TEST_F(HttpServerTest, E4HiddenDeviceIsGoneFromListAndOtherEndpoints) {
+    addDevice(ProtocolType::MATTER, "PLUG_1", "plug");
+    ASSERT_TRUE(post("/api/devices/delete", R"({"deviceId":"PLUG_1"})"));
+    httplib::Client client("127.0.0.1", port);
+
+    for (const std::string suffix : {"/state", "/energy", "/energy/history"}) {
+        auto response = client.Get("/api/devices/PLUG_1" + suffix, authHeaders());
+        ASSERT_TRUE(response) << suffix;
+        EXPECT_EQ(response->status, 404) << suffix;
+        EXPECT_EQ(json::parse(response->body), json::parse(kDeviceNotFoundBody)) << suffix;
+    }
 }
 
 TEST_F(HttpServerTest, E4InvalidJsonReturns400Envelope) {
@@ -590,8 +606,8 @@ TEST_F(HttpServerTest, E4InvalidJsonReturns400Envelope) {
     }
 }
 
-// 오프라인 TCP 기기(연결 없음 → 해제 실패)도 삭제는 성공으로 답한다
-TEST_F(HttpServerTest, E4DeleteOfflineDeviceStillSucceeds) {
+// 오프라인 TCP 기기(연결 없음 → 해제 실패)도 숨김은 성공이고 unpaired만 false다
+TEST_F(HttpServerTest, E4DeleteOfflineDeviceStillSucceedsWithUnpairedFalse) {
     addDevice(ProtocolType::TCP_DIY, "ARD_9", "switch");
     tcpFake.unpairResult = false;
 
@@ -599,7 +615,7 @@ TEST_F(HttpServerTest, E4DeleteOfflineDeviceStillSucceeds) {
 
     ASSERT_TRUE(res);
     EXPECT_EQ(res->status, 200);
-    EXPECT_EQ(json::parse(res->body), json::parse(R"({"result":"success","message":"기기 삭제 성공!"})"));
+    EXPECT_EQ(json::parse(res->body)["unpaired"], false);
     Device device;
     EXPECT_FALSE(manager.getDevice("ARD_9", device));
 }
@@ -749,25 +765,87 @@ TEST_F(HttpServerTest, E6UnparsableDeviceOutputReturns502) {
 
 // ---- E7 ----
 
-// from·to·period와 v2.0 키·시각 형식은 12번에서 바꾼다. 지금은 v1.0 본문 + 새 오류 규약
-TEST_F(HttpServerTest, E7HistoryReturnsLogsAnd404ForUnknownDevice) {
+TEST_F(HttpServerTest, E7RawHistoryReturnsIsoLogsAndTruncatedFlag) {
     addDevice(ProtocolType::MATTER, "PLUG_1", "plug");
-    database.insertEnergyLog("PLUG_1", 100, "2026-11-19 00:00:00");
-    database.insertEnergyLog("PLUG_1", 200, "2026-11-19 00:00:00");
+    database.insertEnergyLog("PLUG_1", 100, "2026-11-16 00:20:00");
+    database.insertEnergyLog("PLUG_1", 200, "2026-11-16 00:21:00");
+    database.insertEnergyLog("PLUG_1", 300, "2026-11-16 00:22:00");
     httplib::Client client("127.0.0.1", port);
-    auto response = client.Get("/api/devices/PLUG_1/energy/history", authHeaders());
-    ASSERT_TRUE(response);
-    EXPECT_EQ(response->status, 200);
-    const json body = json::parse(response->body);
-    EXPECT_EQ(body["device_status"], "UNKNOWN");
-    ASSERT_EQ(body["logs"].size(), 2u);
-    EXPECT_EQ(body["logs"][0]["totalEnergy_mWh"], 100);
-    EXPECT_EQ(body["logs"][1]["totalEnergy_mWh"], 200);
+
+    auto all = client.Get("/api/devices/PLUG_1/energy/history", authHeaders());
+    ASSERT_TRUE(all);
+    EXPECT_EQ(all->status, 200);
+    EXPECT_EQ(json::parse(all->body), json::parse(R"({"deviceId":"PLUG_1","state":"UNKNOWN","logs":[
+        {"timestamp":"2026-11-16T00:20:00Z","totalEnergy_mWh":100},
+        {"timestamp":"2026-11-16T00:21:00Z","totalEnergy_mWh":200},
+        {"timestamp":"2026-11-16T00:22:00Z","totalEnergy_mWh":300}],"truncated":false})"));
+
+    auto cut = client.Get("/api/devices/PLUG_1/energy/history?limit=2", authHeaders());
+    ASSERT_TRUE(cut);
+    EXPECT_EQ(json::parse(cut->body), json::parse(R"({"deviceId":"PLUG_1","state":"UNKNOWN","logs":[
+        {"timestamp":"2026-11-16T00:21:00Z","totalEnergy_mWh":200},
+        {"timestamp":"2026-11-16T00:22:00Z","totalEnergy_mWh":300}],"truncated":true})"));
+
+    auto exact = client.Get("/api/devices/PLUG_1/energy/history?limit=3", authHeaders());
+    ASSERT_TRUE(exact);
+    EXPECT_EQ(json::parse(exact->body)["truncated"], false);
+}
+
+TEST_F(HttpServerTest, E7UnknownDeviceReturns404AndTcpDeviceReturns400) {
+    addDevice(ProtocolType::TCP_DIY, "FAKE_1", "lamp");
+    httplib::Client client("127.0.0.1", port);
 
     auto missing = client.Get("/api/devices/NOPE/energy/history", authHeaders());
     ASSERT_TRUE(missing);
     EXPECT_EQ(missing->status, 404);
     EXPECT_EQ(json::parse(missing->body), json::parse(kDeviceNotFoundBody));
+
+    auto tcp = client.Get("/api/devices/FAKE_1/energy/history", authHeaders());
+    ASSERT_TRUE(tcp);
+    EXPECT_EQ(tcp->status, 400);
+    EXPECT_EQ(json::parse(tcp->body),
+              json::parse(R"({"error":{"code":"UNSUPPORTED_OPERATION","message":"이 기기에서 지원하지 않는 요청입니다."}})"));
+}
+
+// 계약 예시(2026-11-01 일요일 ~ 11-17, week)를 분 단위 기록으로 그대로 만든다
+TEST_F(HttpServerTest, E7WeekAggregationReproducesContractExample) {
+    addDevice(ProtocolType::MATTER, "PLUG_1", "plug");
+    const auto localMidnight = *UtcTime::fromDbText("2026-10-31 15:00:00"); // 현지 11-01 00:00
+    ASSERT_TRUE(database.insertEnergyLog("PLUG_1", 0, UtcTime::toDbText(localMidnight - std::chrono::minutes(1))));
+    struct Segment { int samples; int64_t base; int64_t step; int64_t usage; };
+    const Segment segments[] = {{1440, 0, 1, 1200}, {10080, 1200, 1, 9100}, {10080, 10300, 1, 8800}, {2100, 19100, 2, 2500}};
+    int minute = 0;
+    for (const auto& segment : segments) {
+        for (int i = 0; i < segment.samples; ++i, ++minute) {
+            const int64_t total = segment.base + std::min<int64_t>(segment.step * (i + 1), segment.usage);
+            ASSERT_TRUE(database.insertEnergyLog("PLUG_1", total, UtcTime::toDbText(localMidnight + std::chrono::minutes(minute))));
+        }
+    }
+
+    auto response = httplib::Client("127.0.0.1", port).Get(
+        "/api/devices/PLUG_1/energy/history?from=2026-11-01&to=2026-11-17&period=week", authHeaders());
+
+    ASSERT_TRUE(response);
+    EXPECT_EQ(response->status, 200);
+    EXPECT_EQ(json::parse(response->body), json::parse(R"({"deviceId":"PLUG_1","state":"UNKNOWN","period":"week","utcOffset":"+09:00",
+      "buckets":[
+        {"start":"2026-11-01","end":"2026-11-01","energyUsed_mWh":1200,"sampleCount":1440},
+        {"start":"2026-11-02","end":"2026-11-08","energyUsed_mWh":9100,"sampleCount":10080},
+        {"start":"2026-11-09","end":"2026-11-15","energyUsed_mWh":8800,"sampleCount":10080},
+        {"start":"2026-11-16","end":"2026-11-17","energyUsed_mWh":2500,"sampleCount":2100}]})"));
+}
+
+TEST_F(HttpServerTest, E7MonthAggregationIncludesEmptyBuckets) {
+    addDevice(ProtocolType::MATTER, "PLUG_1", "plug");
+    httplib::Client client("127.0.0.1", port);
+
+    auto response = client.Get("/api/devices/PLUG_1/energy/history?from=2028-02-15&to=2028-03-02&period=month", authHeaders());
+
+    ASSERT_TRUE(response);
+    EXPECT_EQ(response->status, 200);
+    EXPECT_EQ(json::parse(response->body)["buckets"], json::parse(R"([
+        {"start":"2028-02-15","end":"2028-02-29","energyUsed_mWh":0,"sampleCount":0},
+        {"start":"2028-03-01","end":"2028-03-02","energyUsed_mWh":0,"sampleCount":0}])"));
 }
 
 TEST_F(HttpServerTest, E7LimitQueryIsAppliedAndInvalidQueriesReturn400) {
@@ -779,7 +857,9 @@ TEST_F(HttpServerTest, E7LimitQueryIsAppliedAndInvalidQueriesReturn400) {
     ASSERT_TRUE(limited);
     EXPECT_EQ(limited->status, 200);
     // 최근 2건을 오래된 순으로
-    const json logs = json::parse(limited->body)["logs"];
+    const json limitedBody = json::parse(limited->body);
+    EXPECT_EQ(limitedBody["truncated"], true);
+    const json logs = limitedBody["logs"];
     ASSERT_EQ(logs.size(), 2u);
     EXPECT_EQ(logs[0]["totalEnergy_mWh"], 400);
     EXPECT_EQ(logs[1]["totalEnergy_mWh"], 500);

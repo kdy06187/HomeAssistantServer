@@ -340,9 +340,9 @@ TEST_F(EnergyPathTest, E7ReturnsExactFieldsOldestFirst) {
 
     ASSERT_TRUE(response);
     EXPECT_EQ(response->status, 200);
-    EXPECT_EQ(json::parse(response->body), json::parse(R"({"device_status":"ON","logs":[
-        {"timestamp":"2026-11-16 09:20:00","totalEnergy_mWh":1040000},
-        {"timestamp":"2026-11-16 09:30:00","totalEnergy_mWh":1048576}]})"));
+    EXPECT_EQ(json::parse(response->body), json::parse(R"({"deviceId":"PLUG","state":"ON","logs":[
+        {"timestamp":"2026-11-16T09:20:00Z","totalEnergy_mWh":1040000},
+        {"timestamp":"2026-11-16T09:30:00Z","totalEnergy_mWh":1048576}],"truncated":false})"));
 }
 
 TEST_F(EnergyPathTest, E7UnregisteredDeviceReturns404) {
@@ -428,7 +428,7 @@ TEST_F(EnergyPathTest, E7EmptyHistoryIsStillSuccess) {
 
     ASSERT_TRUE(response);
     EXPECT_EQ(response->status, 200);
-    EXPECT_EQ(json::parse(response->body), json::parse(R"({"device_status":"UNKNOWN","logs":[]})"));
+    EXPECT_EQ(json::parse(response->body), json::parse(R"({"deviceId":"PLUG","state":"UNKNOWN","logs":[],"truncated":false})"));
 }
 
 // ---- D2: 재등록은 행을 지우지 않고 갱신한다 ----
@@ -488,3 +488,20 @@ TEST(EnergyPathClosedDbTest, CallsOnUnopenedOrClosedDatabaseFailSafely) {
 }
 
 }  // namespace
+
+// 숨김 저장이 실패하면 500이고 기기는 목록에 그대로 있다
+TEST_F(EnergyPathTest, E4HideFailureReturns500AndKeepsDevice) {
+    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {}, &matterFake);
+    RawDb raw(dbPath_);
+    raw.exec("CREATE TRIGGER block_hide BEFORE UPDATE OF deleted_at ON devices BEGIN SELECT RAISE(ABORT, 'blocked'); END;");
+    startServer();
+
+    httplib::Client client("127.0.0.1", port);
+    auto response = client.Post("/api/devices/delete", httplib::Headers{{"Authorization", "Bearer " + kToken}},
+                                R"({"deviceId":"PLUG"})", "application/json");
+
+    ASSERT_TRUE(response);
+    EXPECT_EQ(response->status, 500);
+    EXPECT_EQ(json::parse(response->body), json::parse(R"({"error":{"code":"INTERNAL_ERROR","message":"서버 내부 오류입니다."}})"));
+    EXPECT_EQ(manager.getAllDevices().size(), 1u);
+}

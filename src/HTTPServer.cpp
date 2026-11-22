@@ -2,7 +2,9 @@
 #include "ApiAuth.hpp"
 #include "DeviceManager.hpp"
 #include "httplib.h"
+#include "EnergyAggregation.hpp"
 #include "ErrorMapping.hpp"
+#include "UtcTime.hpp"
 #include "RequestValidation.hpp"
 #include "json.hpp"
 #include <arpa/inet.h>
@@ -44,6 +46,42 @@ namespace {
                 break;
         }
         return ApiResponse::error(deviceCallErrorCode(result.error.code));
+    }
+
+    // 숨김 시각(DB 형식)에서 복구 가능 기한을 ISO 8601로 만든다
+    std::string restorableUntilIso(const std::string& deletedAtUtc) {
+        const auto deletedAt = UtcTime::fromDbText(deletedAtUtc);
+        if (!deletedAt) return "";
+        const auto deadline = *deletedAt + std::chrono::hours(24 * DeviceManager::kRetentionDays);
+        return UtcTime::toIso8601(UtcTime::toDbText(deadline));
+    }
+
+    const char* periodName(HistoryPeriod period) {
+        switch (period) {
+            case HistoryPeriod::Day: return "day";
+            case HistoryPeriod::Week: return "week";
+            case HistoryPeriod::Month: return "month";
+        }
+        return "day";
+    }
+
+    json rawLogsJson(const HistoryResult& history) {
+        json logs = json::array();
+        for (const auto& log : history.logs) {
+            logs.push_back(json{{"timestamp", UtcTime::toIso8601(log.timestamp)}, {"totalEnergy_mWh", log.total_mwh}});
+        }
+        return logs;
+    }
+
+    json bucketsJson(const HistoryResult& history) {
+        json buckets = json::array();
+        for (const auto& bucket : history.buckets) {
+            buckets.push_back(json{{"start", EnergyAggregation::formatDate(bucket.start)},
+                                   {"end", EnergyAggregation::formatDate(bucket.end)},
+                                   {"energyUsed_mWh", bucket.energyUsed_mWh},
+                                   {"sampleCount", bucket.sampleCount}});
+        }
+        return buckets;
     }
 
     // 느린 연결이 작업 풀을 오래 잡지 못하게 하는 상한. 읽기·쓰기 타임아웃은 소켓 대기 시간만 세므로
@@ -360,16 +398,18 @@ ApiResponse HTTPServer::handleCommissionDevice(const std::string& requestBody){
     return ApiResponse::ok(json{{"result", "error"}, {"message", "기기 등록 실패!"}}, 400);
 }
 
-// 성공·실패 본문은 v1.0 그대로다(숨김 삭제는 12번). JSON 오류만 새 오류 봉투를 쓴다
 ApiResponse HTTPServer::handleDeleteDevice(const std::string& requestBody) {
     const auto body = parseJsonObject(requestBody);
     const auto deviceId = body ? readStringField(*body, "deviceId") : std::nullopt;
     if (!deviceId) return ApiResponse::error(ErrorCode::InvalidRequest);
     std::cout << "[HTTPServer] 기기 삭제(POST) 요청: 기기 " << RequestValidation::sanitizeForLog(*deviceId) << std::endl;
-    if (mDeviceManager.removeDevice(*deviceId).ok()) {
-        return ApiResponse::ok(json{{"result", "success"}, {"message", "기기 삭제 성공!"}});
-    }
-    return ApiResponse::ok(json{{"result", "error"}, {"message", "기기 삭제 실패 또는 기기 없음"}}, 400);
+
+    const auto outcome = mDeviceManager.removeDevice(*deviceId);
+    if (!outcome.ok()) return ApiResponse::error(outcome.error.code);
+    return ApiResponse::ok(json{{"deviceId", *deviceId},
+                                {"deletedAt", UtcTime::toIso8601(outcome.value->deletedAtUtc)},
+                                {"restorableUntil", restorableUntilIso(outcome.value->deletedAtUtc)},
+                                {"unpaired", outcome.value->unpaired}});
 }
 
 ApiResponse HTTPServer::handleGetDeviceState(const httplib::Request& request) {
@@ -400,7 +440,6 @@ ApiResponse HTTPServer::handleGetDeviceEnergy(const httplib::Request& request) {
     return ApiResponse::ok(std::move(response));
 }
 
-// from·to·period와 v2.0 키·시각 형식은 아직 적용하지 않는다(v1.0 본문). 파라미터 검사와 limit만 반영한다
 ApiResponse HTTPServer::handleGetDeviceEnergyHistory(const httplib::Request& request) {
     const std::string& deviceId = request.matches[1];
     if (!RequestValidation::isValidDeviceId(deviceId)) return ApiResponse::error(ErrorCode::NotFound);
@@ -411,12 +450,16 @@ ApiResponse HTTPServer::handleGetDeviceEnergyHistory(const httplib::Request& req
 
     const auto history = mDeviceManager.getEnergyHistory(deviceId, *query.value);
     if (!history.ok()) return ApiResponse::error(history.error.code);
-    json logsArray = json::array();
-    for (const auto& log : history.value->logs) {
-        logsArray.push_back(json{{"timestamp", log.timestamp}, {"totalEnergy_mWh", log.total_mwh}});
-    }
     json response;
-    response["device_status"] = history.value->deviceState;
-    response["logs"] = std::move(logsArray);
+    response["deviceId"] = deviceId;
+    response["state"] = history.value->deviceState;
+    if (history.value->period) {
+        response["period"] = periodName(*history.value->period);
+        response["utcOffset"] = "+09:00";
+        response["buckets"] = bucketsJson(*history.value);
+    } else {
+        response["logs"] = rawLogsJson(*history.value);
+        response["truncated"] = history.value->truncated;
+    }
     return ApiResponse::ok(std::move(response));
 }
