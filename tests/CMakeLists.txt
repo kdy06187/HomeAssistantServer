@@ -7,6 +7,7 @@ add_executable(hac_tests
     unit/PCDriverTest.cpp
     unit/ResultTest.cpp
     unit/UtcTimeTest.cpp
+    unit/PeriodicTasksTest.cpp
     unit/EnergyAggregationTest.cpp
     unit/FakeClockTest.cpp
     unit/DelayedCommandSchedulerTest.cpp

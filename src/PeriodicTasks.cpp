@@ -2,6 +2,16 @@
 #include "DeviceManager.hpp"
 #include <iostream>
 
+namespace {
+constexpr long long kFirstCleanupTick = 60;    // 60초 x 60 = 1시간
+constexpr long long kCleanupIntervalTicks = 1440; // 60초 x 1440 = 24시간
+}
+
+bool shouldRunCleanup(long long tickCount) {
+    if (tickCount < kFirstCleanupTick) return false;
+    return (tickCount - kFirstCleanupTick) % kCleanupIntervalTicks == 0;
+}
+
 PeriodicTasks::PeriodicTasks(DeviceManager& deviceManager) : deviceManager_(deviceManager) {}
 
 PeriodicTasks::~PeriodicTasks() {
@@ -15,7 +25,7 @@ void PeriodicTasks::start() {
         isRunning_ = true;
     }
     thread_ = std::thread(&PeriodicTasks::run, this);
-    std::cout << "[DeviceManager] 🛡️ 백그라운드 헬스 체크 데몬 가동 (주기: 60초)" << std::endl;
+    std::cout << "[DeviceManager] 🛡️ 백그라운드 헬스 체크 데몬 가동 (주기: 60초, 기록 정리: 1시간 뒤부터 24시간마다)" << std::endl;
 }
 
 void PeriodicTasks::stop() {
@@ -33,6 +43,7 @@ void PeriodicTasks::stop() {
 
 void PeriodicTasks::run() {
     const auto interval = std::chrono::seconds(60);
+    long long tickCount = 0;
     while (true) {
         {
             std::unique_lock<std::mutex> lock(mutex_);
@@ -40,5 +51,8 @@ void PeriodicTasks::run() {
             if (wakeUp_.wait_for(lock, interval, [this] { return !isRunning_; })) return;
         }
         deviceManager_.runHealthCheck();
+        ++tickCount;
+        // 정리 중에 종료 신호가 와도 트랜잭션이 끝난 뒤 stop()의 join이 풀린다
+        if (shouldRunCleanup(tickCount)) deviceManager_.runRetentionCleanup();
     }
 }
