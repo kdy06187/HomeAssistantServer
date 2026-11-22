@@ -33,6 +33,7 @@ add_library(hac_core OBJECT
     src/ApiAuth.cpp
     src/ChipToolOutputParser.cpp
     src/DatabaseManager.cpp
+    src/DelayedCommandScheduler.cpp
     src/DeviceManager.cpp
     src/ErrorMapping.cpp
     src/HTTPServer.cpp
