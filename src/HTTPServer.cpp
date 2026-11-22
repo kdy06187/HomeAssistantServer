@@ -26,6 +26,12 @@ namespace {
         return command == "ON" || command == "OFF";
     }
 
+    // 기기 호출이 서버 종료로 취소되면 앱에는 "기기 응답 없음"(502)으로 알린다.
+    // Cancelled의 기본 매핑(200)은 등록 작업 조회 본문 안에 넣는 용도라, 그대로 쓰면 성공 상태 코드로 나간다
+    ErrorCode deviceCallErrorCode(ErrorCode code) {
+        return code == ErrorCode::Cancelled ? ErrorCode::DeviceUnreachable : code;
+    }
+
     // 명령 결과를 응답으로 바꾼다. 성공 200, 지연 수락 202(state는 바뀌기 전 상태), 실패는 오류 코드대로
     ApiResponse controlResponseFor(const CommandResult& result, const std::string& deviceId, const std::string& command) {
         switch (result.outcome) {
@@ -37,7 +43,7 @@ namespace {
             case CommandOutcome::Failed:
                 break;
         }
-        return ApiResponse::error(result.error.code);
+        return ApiResponse::error(deviceCallErrorCode(result.error.code));
     }
 
     // 느린 연결이 작업 풀을 오래 잡지 못하게 하는 상한. 읽기·쓰기 타임아웃은 소켓 대기 시간만 세므로
@@ -374,7 +380,7 @@ ApiResponse HTTPServer::handleGetDeviceState(const httplib::Request& request) {
     const bool isManualRefresh = request.get_param_value("isManualRefresh") == "true";
 
     const auto state = mDeviceManager.refreshState(deviceId, isManualRefresh);
-    if (!state.ok()) return ApiResponse::error(state.error.code);
+    if (!state.ok()) return ApiResponse::error(deviceCallErrorCode(state.error.code));
     return ApiResponse::ok(json{{"deviceId", deviceId}, {"state", *state.value}});
 }
 
@@ -385,7 +391,7 @@ ApiResponse HTTPServer::handleGetDeviceEnergy(const httplib::Request& request) {
 
     // 존재 확인을 먼저 하므로, 없는 기기는 DB에 아무것도 남기지 않는다
     const auto energy = mDeviceManager.readEnergy(deviceId);
-    if (!energy.ok()) return ApiResponse::error(energy.error.code);
+    if (!energy.ok()) return ApiResponse::error(deviceCallErrorCode(energy.error.code));
     json response;
     response["deviceId"] = deviceId;
     response["state"] = energy.value->deviceState;

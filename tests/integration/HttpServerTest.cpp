@@ -456,6 +456,39 @@ TEST(HttpServerDelayedCommandTest, E2SameCommandWhilePendingReturns202WithRemain
     EXPECT_EQ(tcpFake.broadcastMessages.size(), 1u);
 }
 
+// 종료 중 취소된 기기 호출이 200(성공 상태 코드)으로 나가지 않고 502로 나간다
+TEST(HttpServerDelayedCommandTest, E2DuringShutdownReturns502NotCancelled200) {
+    DatabaseManager database;
+    DriverManager deviceDrivers;
+    FakeClock clock;
+    DelayedCommandScheduler scheduler{clock};
+    DeviceManager manager{database, deviceDrivers, scheduler, clock};
+    FakeProtocolDriver tcpFake;
+    ASSERT_TRUE(database.init(":memory:"));
+    manager.registerDriver(ProtocolType::TCP_DIY, &tcpFake);
+    deviceDrivers.registerDriver(DriverType::PC_DRIVER, [&tcpFake](IMessageSender*) {
+        return std::make_shared<PCDriver>(&tcpFake);
+    });
+    manager.addDevice("FAKE_1", "pc", ProtocolType::TCP_DIY, {DriverType::PC_DRIVER}, &tcpFake);
+    manager.updateDeviceState("FAKE_1", "ON");
+    manager.beginShutdown();
+    scheduler.stopAndCancelAll();
+    const int serverPort = findFreePort();
+    HTTPServer server(manager, kToken, serverPort);
+    ASSERT_TRUE(server.start());
+    ASSERT_TRUE(server.waitUntilReady(std::chrono::seconds(3)));
+
+    httplib::Client client("127.0.0.1", serverPort);
+    auto response = client.Post("/api/control", httplib::Headers{{"Authorization", "Bearer " + kToken}},
+                                R"({"deviceId":"FAKE_1","command":"OFF"})", "application/json");
+    server.stop();
+
+    ASSERT_TRUE(response);
+    EXPECT_EQ(response->status, 502);
+    EXPECT_EQ(json::parse(response->body),
+              json::parse(R"({"error":{"code":"DEVICE_UNREACHABLE","message":"기기가 응답하지 않습니다."}})"));
+}
+
 TEST_F(HttpServerTest, E2InvalidRequestsReturn400Envelope) {
     const std::vector<std::string> bodies = {
         R"({"deviceId":"FAKE_1","command":"REBOOT"})",  // 허용되지 않은 명령
