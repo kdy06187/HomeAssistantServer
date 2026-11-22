@@ -1,5 +1,4 @@
 #include <iostream>
-#include <thread>
 #include <chrono>
 #include <sqlite3.h>
 #include "DeviceManager.hpp"
@@ -21,6 +20,14 @@
 #include <unistd.h>
 #include <sys/stat.h>  // umask
 int main() {
+    // 어떤 스레드보다 먼저 막아야 이후 만드는 모든 스레드(와 chip-tool 자식 준비 단계)가 마스크를 물려받아,
+    // 종료 신호가 main의 sigwait 한 곳으로만 모인다
+    sigset_t terminationSignals;
+    sigemptyset(&terminationSignals);
+    sigaddset(&terminationSignals, SIGTERM);
+    sigaddset(&terminationSignals, SIGINT);
+    pthread_sigmask(SIG_BLOCK, &terminationSignals, nullptr);
+
     // 서버와 자식 chip-tool이 만드는 파일(DB·등록 파일·/tmp의 chip-tool 저장소)을 소유자만 읽게 한다
     umask(077);
     signal(SIGPIPE, SIG_IGN);
@@ -56,6 +63,8 @@ int main() {
     }
     std::cout << "✅ 데이터베이스 로드 완료!" << std::endl;
     // 1. 시스템 두뇌(DeviceManager) 조립
+    // 선언의 역순으로 소멸한다: httpServer → periodicTasks → 드라이버 → manager → scheduler → database.
+    // 객체를 쓰는 쪽이 먼저 사라져야 하므로 쓰이는 쪽(database, scheduler, manager)을 먼저 선언한다
     DriverManager deviceDrivers;
     SystemClock clock;
     DelayedCommandScheduler scheduler(clock);
@@ -80,7 +89,6 @@ int main() {
     } else {
         std::cerr << "[Main] MatterController 초기화 실패!" << std::endl;
     }
-    std::this_thread::sleep_for(std::chrono::seconds(3));
     // 어떤 프로토콜의 기기든 PC 종료 메시지는 TCP 드라이버로 보낸다
     deviceDrivers.registerDriver(DriverType::PC_DRIVER, [&tcpDriver](IMessageSender*) {
         return std::make_shared<PCDriver>(&tcpDriver);
@@ -102,12 +110,24 @@ int main() {
     // manager.addDevice("Arduino_1", "거실 전등", ProtocolType::TCP_DIY);
     // manager.addDevice("1", "스마트 플러그", ProtocolType::MATTER);
 
-    // 프로세스는 kill로 종료한다. 아래 종료 코드는 도달하지 않는다.
-    for (;;) pause();
+    // 종료 신호가 올 때까지 대기한다
+    int signalNumber = 0;
+    sigwait(&terminationSignals, &signalNumber);
+    // 종료가 늦어질 때 한 번 더 보내면 기본 동작으로 즉시 끝나도록, main 스레드만 마스크를 푼다
+    pthread_sigmask(SIG_UNBLOCK, &terminationSignals, nullptr);
+    std::cout << "[Main] 종료 신호 수신(" << (signalNumber == SIGTERM ? "SIGTERM" : "SIGINT")
+              << "), 종료를 시작합니다" << std::endl;
 
-    httpServer.stop();
+    // 0단계: 진행 중인 chip-tool을 끊고, 대기 중인 지연 명령을 취소한다.
+    // 이 단계가 HTTP 정지보다 먼저여야 종료 중에 45초가 만기되어 PC 전원이 꺼지는 일이 없다
+    manager.beginShutdown();
+    chipToolRunner.cancelAll();
+    scheduler.stopAndCancelAll();
     periodicTasks.stop();
+    httpServer.stop();
     matterController.shutdown();
     tcpDriver.stopServer();
+    database.close();
+    std::cout << "[Main] 종료 완료" << std::endl;
     return 0;
 }

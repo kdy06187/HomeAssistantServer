@@ -182,6 +182,12 @@ ProcessResult ProcessChipToolRunner::run(const std::vector<std::string>& args, c
             if (pid == 0) {
                 // 자식: 여기서는 신호 안전 함수만 쓴다. dup2된 0·1·2번은 CLOEXEC가 풀려 exec 뒤에도 남는다
                 ::setpgid(0, 0);
+                // 서버는 SIGTERM·SIGINT를 막은 스레드에서 fork하고 SIGPIPE를 무시한다. 둘 다 exec 뒤에도 남아
+                // chip-tool이 SIGTERM에 안 끝나 매번 SIGKILL까지 가므로 기본 상태로 되돌린다
+                sigset_t emptyMask;
+                ::sigemptyset(&emptyMask);
+                ::sigprocmask(SIG_SETMASK, &emptyMask, nullptr);
+                ::signal(SIGPIPE, SIG_DFL);
                 // 서버가 0~2번을 닫은 채 돌고 있으면 파이프가 0~2번을 받았을 수 있다. 그대로 dup2하면
                 // 순서에 따라 서로 덮어쓰므로, 먼저 3번 이상으로 옮긴다(CLOEXEC라 exec 뒤에는 남지 않는다)
                 int inputFd = childStdin;

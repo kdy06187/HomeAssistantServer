@@ -79,6 +79,41 @@ TEST(ProcessChipToolRunnerTest, TimeoutTerminatesWithSigterm) {
     EXPECT_LT(elapsed, 1500ms);
 }
 
+// SIGTERM·SIGINT를 막은 스레드(서버의 main이 만든 스레드와 같은 상태)에서 실행해도
+// 자식은 마스크를 물려받지 않아 SIGTERM으로 끝나야 한다(SIGKILL까지 가면 마스크가 남은 것)
+void blockTerminationSignalsInThisThread() {
+    sigset_t mask;
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGTERM);
+    sigaddset(&mask, SIGINT);
+    pthread_sigmask(SIG_BLOCK, &mask, nullptr);
+}
+
+TEST(ProcessChipToolRunnerTest, ChildDoesNotInheritBlockedTermSignalOnTimeout) {
+    ProcessChipToolRunner runner;
+    auto result = std::async(std::launch::async, [&] {
+        blockTerminationSignalsInThisThread();
+        return runner.run({"/bin/sleep", "10"}, "", 300ms);
+    }).get();
+    EXPECT_TRUE(result.timedOut);
+    EXPECT_EQ(result.exitCode, 128 + SIGTERM);
+}
+
+TEST(ProcessChipToolRunnerTest, ChildDoesNotInheritBlockedTermSignalOnCancelAll) {
+    ProcessChipToolRunner runner;
+    auto running = std::async(std::launch::async, [&] {
+        blockTerminationSignalsInThisThread();
+        return runner.run({"/bin/sleep", "10"}, "", 10000ms);
+    });
+    std::this_thread::sleep_for(300ms);
+    const auto started = std::chrono::steady_clock::now();
+    runner.cancelAll();
+    const auto result = running.get();
+    EXPECT_TRUE(result.cancelled);
+    EXPECT_EQ(result.exitCode, 128 + SIGTERM);
+    EXPECT_LT(std::chrono::steady_clock::now() - started, 900ms); // SIGKILL 유예(1초)까지 가지 않는다
+}
+
 // SIGTERM을 무시하는 프로그램은 1초 유예 뒤 SIGKILL로 끝낸다
 TEST(ProcessChipToolRunnerTest, IgnoredSigtermEscalatesToSigkill) {
     ProcessChipToolRunner runner;

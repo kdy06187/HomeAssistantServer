@@ -65,6 +65,24 @@ TEST_F(HttpServerSlowTest, HandlerSlowerThanSocketTimeoutStillAnswersAndKeepsCon
     EXPECT_FALSE(connection.closedByPeer);
 }
 
+// stop()은 진행 중인 핸들러가 끝날 때까지 기다리고, 그 요청은 정상 응답을 받는다.
+TEST_F(HttpServerSlowTest, StopWaitsForRunningHandlerToFinish) {
+    tcpFake.onReadState = [](const std::string&) { std::this_thread::sleep_for(2s); };
+    tcpFake.stateToReturn = "ON";
+    RawHttpClient connection(port, 30);
+    ASSERT_TRUE(connection.connected());
+    connection.sendAll(makeGetRequest("/api/devices/DEV_1/state?isManualRefresh=true", kToken));
+    std::this_thread::sleep_for(300ms);  // 핸들러가 시작할 시간
+
+    const auto stopStart = std::chrono::steady_clock::now();
+    server->stop();
+    const auto stopElapsed = std::chrono::steady_clock::now() - stopStart;
+    const std::string response = connection.readResponse();
+
+    EXPECT_GE(stopElapsed, 1s);
+    EXPECT_EQ(response.rfind("HTTP/1.1 200", 0), 0u) << response;
+}
+
 // 헤더 일부만 보내고 멈추면 읽기 타임아웃(5초)에 400 + Connection: close 응답이 오고,
 // httplib가 소켓을 실제로 닫는 것은 그 뒤 keep-alive 대기(5초)가 끝난 약 10초 시점이다.
 TEST_F(HttpServerSlowTest, StalledPartialHeaderConnectionIsAnsweredAtFiveSecondsAndClosedByTenSeconds) {
