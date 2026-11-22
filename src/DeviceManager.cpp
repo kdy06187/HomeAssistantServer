@@ -239,7 +239,7 @@ bool DeviceManager::startCommissioning(ProtocolType type, std::string name, std:
               << (isCommissioned ? "성공" : "실패") << std::endl;
     return isCommissioned;
 }
-// 순서: [락] 맵에서 꺼냄 → 대기 명령 취소 → DB에 숨김 표시(실패 시 되돌림) → 락 없이 해제.
+// 순서: [락] 맵에서 꺼냄 → DB에 숨김 표시(실패 시 되돌림) → 대기 명령 취소 → 락 없이 해제.
 // 숨김을 먼저 저장해, 해제가 실패하거나 예외를 던져도 재시작 뒤 기기가 되살아나지 않게 한다.
 Result<DeleteOutcome> DeviceManager::removeDevice(const std::string& id){
     const std::string safeId = RequestValidation::sanitizeForLog(id);

@@ -182,6 +182,32 @@ if (*totalDevices &gt; 0 &amp;&amp; (double)*expiredDevices &gt; maxDeleteRatio 
     return Purge::success(skipped);   // DELETE보다 앞이어야 한다
 }</code></pre></details>
 </section>
+<section>
+<h2>7. 12a-7 보완(리뷰 반영)</h2>
+<ul>
+<li><b>삭제 순서 변경</b>: 맵에서 꺼냄 → DB 숨김 확정 → 예약 취소 → unpair. 원칙은 "되돌릴 수 있는 일을 확정한 뒤에 되돌릴 수 없는 부작용". DB 숨김이 실패하면 예약은 그대로 유지된다. 맵에서 꺼낸 뒤 만기가 오는 짧은 틈은 <code>isRegistered</code>가 막는다.</li>
+<li><b>unpair 성공 판정</b>: 종료 코드 0만 성공이다. 출력 문구는 성공 때도 <code>Error</code> 단어를 포함할 수 있어 믿을 수 없다.</li>
+<li><b>정리 안전장치 3번째</b>: 이력이 0건이고 <code>MAX(deleted_at) &lt; cutoff</code>이면 건너뜀. 이력이 없으면 시계를 비교할 근거가 없어, 숨김 기기가 전부 만료로 보이는 시계 오류를 막는다.</li>
+<li><b>남은 위험</b>: 같은 ID의 삭제와 재등록이 동시에 실행되는 경우. 13번에서 ID별 직렬화로 해결한다.</li>
+</ul>
+<svg viewBox="0 0 860 230" role="img" aria-label="삭제 순서 전후">
+<text x="10" y="18">전(위험)</text>
+<rect class="b" x="10" y="26" width="190" height="40" rx="8"/><text x="20" y="51">맵에서 꺼냄</text>
+<rect class="r" x="230" y="26" width="190" height="40" rx="8"/><text x="240" y="51">unpair (되돌릴 수 없음)</text>
+<rect class="b" x="450" y="26" width="190" height="40" rx="8"/><text x="460" y="51">DB 숨김 (실패 가능)</text>
+<path class="l" d="M200 46H230M420 46H450"/>
+<text x="660" y="51">실패 시 기기만 해제됨</text>
+<text x="10" y="125">후(안전)</text>
+<rect class="b" x="10" y="133" width="150" height="40" rx="8"/><text x="20" y="158">맵에서 꺼냄</text>
+<rect class="g" x="190" y="133" width="150" height="40" rx="8"/><text x="200" y="158">DB 숨김 확정</text>
+<rect class="b" x="370" y="133" width="150" height="40" rx="8"/><text x="380" y="158">예약 취소</text>
+<rect class="w" x="550" y="133" width="150" height="40" rx="8"/><text x="560" y="158">unpair (마지막)</text>
+<path class="l" d="M160 153H190M340 153H370M520 153H550"/>
+<text x="10" y="205">DB 실패 시 예약 유지, 중간 만기는 isRegistered가 차단</text>
+</svg>
+<p><b>Q.</b> unpair의 출력에 "Error"가 있는데 종료 코드가 0이면 성공인가 실패인가? 왜?</p>
+<details><summary>정답</summary>성공이다. 출력 문구는 도구마다 성공 때도 경고·로그로 Error 단어를 찍을 수 있다. 종료 코드는 프로그램이 약속한 성공/실패 신호라 이것만 기준으로 삼아야 오판(성공을 실패로 보고 재시도·롤백)이 없다.</details>
+</section>
 </main>
 </body>
 </html>
