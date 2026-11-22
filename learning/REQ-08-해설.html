@@ -238,6 +238,22 @@ return best;</code></pre></details>
 <h3>(선택) 실습 C. 생각해 보기</h3>
 <p>한 작업이 chip-tool 5초를 쓰는 동안 다른 만기 작업은 밀린다(순차 실행, 수용한 위험). 작업마다 별도 스레드를 쓰면 무엇이 좋아지고, 종료 때 무엇이 어려워질지 세 줄로 적어 보세요.</p>
 </section>
+<section>
+<h2>7. 11f 보완 — 리뷰가 찾은 세 가지 빈틈</h2>
+<table>
+<tr><th>빈틈</th><th>어디서 막나</th><th>왜 거기인가</th></tr>
+<tr><td>종료 중에 들어온 OFF가 PC 종료 메시지를 보냄</td><td><code>executeCommand</code> 입구(기기 드라이버 호출 전)와 <code>executeHardware</code>의 <code>sendCommand</code> 직전에서 <code>isShuttingDown_</code> 확인</td><td>부수 효과(메시지·하드웨어 명령)가 일어나기 <b>직전</b>에 확인해야 한다. 결과만 나중에 무시하면 메시지는 이미 나간 뒤다</td></tr>
+<tr><td>삭제와 예약의 TOCTOU(확인한 때와 쓰는 때 사이에 상태가 바뀜)</td><td>예약 성공 직후, 만기 실행 직전에 기기 존재 재확인</td><td>기기 복사 → (다른 스레드가 삭제·취소) → 예약 순서가 가능하다. 락을 길게 잡는 대신 "쓰기 직후 다시 보기"로 좁은 창을 닫는다</td></tr>
+<tr><td>조기 <code>return 1</code>·예외 경로에서 스케줄러가 해제된 드라이버를 씀</td><td>main의 <code>SchedulerStopGuard</code>(RAII) + 선언 순서(쓰이는 쪽 먼저, 쓰는 쪽 나중)</td><td>C++ 지역 객체는 선언의 역순으로 소멸한다. 모든 return 경로에 수동 정지를 붙이는 것보다 소멸자 하나가 빠짐없다</td></tr>
+</table>
+<h3>질문</h3>
+<ol>
+<li><code>executeHardware</code>가 실패한 <b>뒤</b>에만 <code>isShuttingDown_</code>을 보던 11d 코드는 왜 PC 종료 메시지를 막지 못했나?</li>
+<li><code>SchedulerStopGuard</code>를 <code>manager</code>보다 <b>먼저</b> 선언하면 소멸 순서가 어떻게 되고 무엇이 위험해지나?</li>
+</ol>
+<h3>실습 D (짧게)</h3>
+<p><code>main.cpp</code>의 선언 목록을 보고 소멸 순서를 직접 적은 뒤, 주석(<code>httpServer → periodicTasks → 가드 → manager → scheduler → 드라이버·러너 → clock → database</code>)과 맞는지 확인해 보세요.</p>
+</section>
 </main>
 </body>
 </html>
