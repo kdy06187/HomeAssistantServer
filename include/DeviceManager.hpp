@@ -77,6 +77,7 @@ public:
 
 private:
     std::unordered_map<ProtocolType, ProtocolDriver*> protocolDriversSnapshot();
+    bool isRegistered(const std::string& id);
     // 드라이버에 명령을 보내고 결과에 따라 상태를 갱신한다. 즉시 실행과 지연 만기 실행이 함께 쓴다
     CommandResult executeHardware(const std::string& id, const std::string& command,
                                   ProtocolDriver* protocolDriver, const std::string& currentState);

@@ -6,7 +6,9 @@
 #include "PeriodicTasks.hpp"
 #include "fakes/FakeClock.hpp"
 #include "fakes/FakeProtocolDriver.hpp"
+#include <atomic>
 #include <chrono>
+#include <thread>
 
 namespace {
 
@@ -409,4 +411,29 @@ TEST_F(DeviceManagerDelayedTest, OffAfterSchedulerStoppedFailsAsCancelled) {
     EXPECT_EQ(result.error.code, ErrorCode::Cancelled);
     EXPECT_TRUE(tcpFake.sentCommands.empty());
     EXPECT_TRUE(tcpFake.broadcastMessages.empty()); // 종료 중에는 PC 종료 메시지도 보내지 않는다
+}
+
+// 삭제·재등록·예약·만기가 동시에 반복돼도 데이터 경쟁이 없고, 끝난 뒤 남은 예약이 없다(TSan에서 의미가 크다)
+TEST_F(DeviceManagerDelayedTest, ConcurrentRemoveScheduleAndTickAreRaceFree) {
+    std::atomic<bool> done{false};
+    std::thread ticker([&] {
+        while (!done) {
+            clock.advance(std::chrono::seconds(10));
+            scheduler.tick(clock.steadyNow());
+        }
+    });
+    std::thread controller([&] {
+        for (int i = 0; i < 300; ++i) manager.executeCommand("PC", "OFF");
+    });
+    for (int i = 0; i < 300; ++i) {
+        manager.removeDevice("PC");
+        manager.addDevice("PC", "pc", ProtocolType::TCP_DIY, {DriverType::PC_DRIVER}, &tcpFake);
+    }
+    controller.join();
+    done = true;
+    ticker.join();
+
+    manager.removeDevice("PC");
+    elapse(std::chrono::seconds(60));
+    EXPECT_FALSE(scheduler.pending("PC").has_value());
 }

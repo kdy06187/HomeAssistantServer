@@ -153,9 +153,19 @@ CommandResult DeviceManager::executeCommand(std::string id, std::string command)
     if (action.delay_seconds > 0) {
         const bool isScheduled = scheduler_.schedule(id, command, std::chrono::seconds(action.delay_seconds),
             [this, id, command, protocolDriver, currentState]() {
+                // 예약 뒤 삭제됐다면 보내지 않는다
+                if (!isRegistered(id)) {
+                    std::cerr << "[DeviceManager] 지연 명령 만기에 기기가 이미 삭제됨, 실행하지 않음 (" << id << ")" << std::endl;
+                    return;
+                }
                 executeHardware(id, command, protocolDriver, currentState);
             });
         if (isScheduled) {
+            // 위 기기 복사와 schedule 사이에 삭제됐다면 removeDevice의 cancel이 예약보다 먼저 지나갔을 수 있다
+            if (!isRegistered(id)) {
+                scheduler_.cancel(id, "삭제");
+                return CommandResult{CommandOutcome::Failed, Error{ErrorCode::DeviceNotFound, "device not found"}, "UNKNOWN", 0};
+            }
             return CommandResult{CommandOutcome::Accepted, Error{}, currentState, action.delay_seconds};
         }
         // 동시에 들어온 같은 기기 요청이 먼저 예약했거나 스케줄러가 멈춘 경우
@@ -164,6 +174,11 @@ CommandResult DeviceManager::executeCommand(std::string id, std::string command)
         return CommandResult{CommandOutcome::Failed, Error{ErrorCode::Cancelled, "scheduler stopped"}, currentState, 0};
     }
     return executeHardware(id, command, protocolDriver, currentState);
+}
+
+bool DeviceManager::isRegistered(const std::string& id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return devices_.count(id) > 0;
 }
 
 CommandResult DeviceManager::executeHardware(const std::string& id, const std::string& command,
