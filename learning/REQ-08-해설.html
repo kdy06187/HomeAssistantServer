@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>REQ-08 해설 - 지연 명령 스케줄러</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--fg:#1d2330;--sub:#5b6477;--ac:#2f6fed;--code:#0f1523;--codefg:#e6edf7;--add:#12391f;--del:#4a1620;--bd:#dde1e8}
+@media (prefers-color-scheme:dark){:root{--bg:#10131a;--card:#181d28;--fg:#e6e9ef;--sub:#9aa4b8;--ac:#6b9cff;--code:#0a0d14;--bd:#2a3142}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.65 -apple-system,"Noto Sans KR",sans-serif}
+main{max-width:920px;margin:0 auto;padding:20px 14px 60px}
+h1{font-size:2rem;margin:.4em 0 .1em}
+h2{font-size:1.3rem;margin:0 0 .6em;color:var(--ac)}
+h3{font-size:1.05rem;margin:1em 0 .3em}
+.lead{color:var(--sub);margin-bottom:20px}
+section{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:18px 20px;margin:16px 0}
+table{border-collapse:collapse;width:100%;font-size:.92rem;display:block;overflow-x:auto}
+th,td{border:1px solid var(--bd);padding:6px 10px;text-align:left;vertical-align:top}
+th{background:rgba(127,127,127,.12)}
+pre{background:var(--code);color:var(--codefg);padding:12px 14px;border-radius:8px;overflow-x:auto;font-size:.85rem;line-height:1.5;margin:8px 0}
+code{font-family:ui-monospace,Consolas,monospace}
+p code,li code,td code{background:rgba(127,127,127,.18);padding:1px 5px;border-radius:4px;font-size:.88em}
+.add{background:var(--add);display:block}.del{background:var(--del);display:block}
+.three{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+.three div{border:1px dashed var(--bd);border-radius:8px;padding:8px 10px;font-size:.92rem}
+.three b{display:block;color:var(--ac)}
+details{border:1px solid var(--bd);border-radius:8px;padding:6px 12px;margin:8px 0}
+summary{cursor:pointer;font-weight:600}
+svg{width:100%;height:auto;max-width:860px}
+svg text{fill:var(--fg);font-size:13px}
+svg .b{fill:var(--card);stroke:var(--ac);stroke-width:1.5}
+svg .w{fill:rgba(240,160,40,.15);stroke:#e0a030;stroke-width:1.5}
+svg .r{fill:rgba(220,60,60,.12);stroke:#d04040;stroke-width:1.5}
+svg .g{fill:rgba(60,170,90,.14);stroke:#3caa5a;stroke-width:1.5}
+svg .l{stroke:var(--sub);stroke-width:1.5;fill:none}
+svg .rl{stroke:#d04040;stroke-width:1.5;fill:none}
+</style>
+</head>
+<body>
+<main>
+<h1>REQ-08 해설: 지연 명령 스케줄러</h1>
+<p class="lead">"PC 끄기"를 누르면 45초 뒤에 꺼지게 하는 일을, 위험한 분리 스레드 대신 스레드 1개짜리 스케줄러로 바꾼 변경 (3단계 2차 11번, 학습 강도: 균형).</p>
+
+<section>
+<h2>1. 한눈에 보기</h2>
+<ul>
+<li><b>무엇</b>: 지연 명령을 들고 있다가 만기에 실행하는 <code>DelayedCommandScheduler</code>를 새로 만들고, <code>DeviceManager</code>가 이것을 쓰게 했다. 예전의 <code>std::thread(...).detach()</code>는 사라졌다.</li>
+<li><b>왜</b>: 분리(detach)된 스레드는 아무도 기다려 주지 않아서, 서버가 종료·소멸되는 중에 이미 사라진 객체를 만질 수 있다(use-after-free). 또 같은 기기에 OFF를 두 번 누르거나, OFF 중에 ON을 누르거나, 기기를 지워도 45초 뒤 OFF가 그대로 실행됐다.</li>
+<li><b>효과</b>: 대기 작업이 한 곳(표)에 있어서 조회·취소·일괄 취소가 되고, 종료 때 스레드를 join할 수 있다.</li>
+</ul>
+<table>
+<tr><th>파일</th><th>역할</th><th>변경 요약</th></tr>
+<tr><td><code>include/DelayedCommandScheduler.hpp</code>, <code>src/DelayedCommandScheduler.cpp</code></td><td>지연 작업 표 + 타이머 스레드</td><td>신규. 기기당 1개, <code>tick</code> 공개, 시각 로그</td></tr>
+<tr><td><code>src/DeviceManager.cpp</code> <code>executeCommand</code></td><td>명령 처리 본체</td><td>같은 명령 중복 방지, 다른 명령 취소, 지연은 <code>schedule</code>로, detach 삭제</td></tr>
+<tr><td><code>src/DeviceManager.cpp</code> <code>removeDevice</code></td><td>기기 삭제</td><td>맵에서 뺀 뒤 <code>cancel(id,"삭제")</code></td></tr>
+<tr><td><code>src/MatterController.cpp</code></td><td>Matter 드라이버</td><td>unpair도 detach 대신 호출한 스레드에서 동기 실행</td></tr>
+<tr><td><code>tests/unit/DelayedCommandSchedulerTest.cpp</code></td><td>단위 시험</td><td>신규. FakeClock + <code>tick</code></td></tr>
+</table>
+</section>
+
+<section>
+<h2>2. 흐름 그림</h2>
+<h3>(a) 지연 OFF 요청이 지나가는 길</h3>
+<svg viewBox="0 0 860 230" role="img" aria-label="지연 명령 흐름">
+<rect class="b" x="10" y="20" width="120" height="50" rx="8"/><text x="25" y="50">POST /control</text>
+<rect class="b" x="170" y="20" width="150" height="50" rx="8"/><text x="180" y="42">executeCommand</text><text x="180" y="58">(복사 → 2·3·4단계)</text>
+<rect class="b" x="360" y="20" width="150" height="50" rx="8"/><text x="372" y="42">PCDriver</text><text x="372" y="58">delay=45, 종료 메시지</text>
+<rect class="w" x="550" y="20" width="150" height="50" rx="8"/><text x="562" y="42">scheduler.schedule</text><text x="562" y="58">표: id→{cmd,dueAt,task}</text>
+<rect class="g" x="740" y="20" width="110" height="50" rx="8"/><text x="752" y="50">202 + 45초</text>
+<path class="l" d="M130 45H170M320 45H360M510 45H550M700 45H740"/>
+<rect class="w" x="550" y="130" width="150" height="50" rx="8"/><text x="560" y="152">스케줄러 스레드</text><text x="560" y="168">wait_until(dueAt)</text>
+<path class="l" d="M625 70V130"/>
+<rect class="b" x="340" y="130" width="170" height="50" rx="8"/><text x="350" y="152">표에서 꺼냄(락 안)</text><text x="350" y="168">task() 실행(락 밖)</text>
+<rect class="b" x="130" y="130" width="170" height="50" rx="8"/><text x="140" y="152">executeHardware</text><text x="140" y="168">sendCommand → 상태 기록</text>
+<path class="l" d="M550 155H510M340 155H300"/>
+<text x="10" y="215">45초 뒤, 같은 executeHardware 함수를 즉시 실행과 똑같이 부른다(분기 없이 한 경로).</text>
+</svg>
+<h3>(b) 표와 락</h3>
+<svg viewBox="0 0 860 150" role="img" aria-label="락 범위">
+<rect class="w" x="10" y="20" width="400" height="100" rx="8"/><text x="22" y="44">mutex_ 안(메모리만, 짧게)</text><text x="22" y="66">entries_ 조회·삽입·삭제</text><text x="22" y="86">가장 이른 dueAt 계산</text><text x="22" y="106">task를 std::move로 꺼내고 erase</text>
+<rect class="g" x="450" y="20" width="400" height="100" rx="8"/><text x="462" y="44">mutex_ 밖(느려도 되는 일)</text><text x="462" y="66">task(): chip-tool 5초, 소켓 쓰기</text><text x="462" y="86">로그 출력</text><text x="462" y="106">task가 다시 schedule/cancel을 불러도 교착 없음</text>
+</svg>
+</section>
+
+<section>
+<h2>3. 코드 해설</h2>
+
+<h3>조각 1. 조건변수로 "만기까지 자기"</h3>
+<pre><code>void DelayedCommandScheduler::run() {
+    while (true) {
+        {
+            std::unique_lock&lt;std::mutex&gt; lock(mutex_);
+            if (isStopping_) return;
+            const auto dueAt = earliestDueAtLocked();
+            if (!dueAt) wakeUp_.wait(lock);              // 작업이 없으면 깨울 때까지
+            else        wakeUp_.wait_until(lock, *dueAt); // 가장 이른 만기까지
+            if (isStopping_) return;
+        }
+        tick(clock_.steadyNow());
+    }
+}</code></pre>
+<ul>
+<li><b>무엇</b>: 가장 이른 만기 시각까지 잔다. 그 전에 새 예약·취소·정지가 오면 <code>notify_all</code>로 깨어나 다시 계산한다.</li>
+<li><b>왜</b>: 1초마다 확인하는 방식(폴링)보다 정확하고 CPU를 안 쓴다. 새 예약이 더 일찍 만기일 수 있어 <code>schedule</code>이 매번 깨운다.</li>
+<li><b>빼면</b>: <code>notify</code>를 빼면 이미 45초를 자고 있는 스레드가 10초짜리 새 예약을 못 보고 늦게 실행한다. 깨어난 뒤 <code>tick</code>이 "정말 만기인가"를 다시 확인하므로, 가짜 깨움(spurious wakeup)이 와도 안전하다.</li>
+</ul>
+
+<h3>조각 2. 표는 락 안, 작업은 락 밖, 그리고 <code>tick</code>이 공개</h3>
+<pre><code>void DelayedCommandScheduler::tick(std::chrono::steady_clock::time_point now) {
+    while (true) {
+        Task task; /* deviceId, command 도 */
+        {
+            std::lock_guard&lt;std::mutex&gt; lock(mutex_);
+            if (isStopping_) return;
+            auto earliest = ...;                 // 만기 지난 것 중 가장 이른 항목
+            if (earliest == entries_.end()) return;
+            task = std::move(earliest-&gt;second.task);
+            entries_.erase(earliest);
+            ++runningTasks_;
+        }
+        task();   // 락 밖
+        { std::lock_guard&lt;std::mutex&gt; lock(mutex_); --runningTasks_; }
+        idle_.notify_all();
+    }
+}</code></pre>
+<ul>
+<li><b>무엇</b>: 하나씩 꺼내 실행한다. 꺼내는 순간 표에서 지워지므로 "같은 작업이 두 번 실행"될 수 없다.</li>
+<li><b>왜</b>: 작업은 chip-tool(최대 5초)을 부른다. 락을 쥔 채 실행하면 그동안 <code>pending</code>·<code>cancel</code>·HTTP 요청이 전부 멈춘다. 작업이 <code>schedule</code>을 다시 불러도(재진입) 교착하지 않는다.</li>
+<li><b>왜 <code>tick</code>을 공개했나</b>: 테스트가 스레드·진짜 시간을 쓰지 않도록, <code>FakeClock.advance(45초)</code> 뒤 <code>tick(now)</code>을 직접 부르면 결정적으로 시험된다(흔들리는 sleep 테스트 없음).</li>
+<li><b>빼면</b>: 락 안 실행 → 교착·지연. 꺼내기 전에 실행 → 같은 작업 중복 실행. <code>runningTasks_</code>를 빼면 종료가 "실행 중인 작업이 끝나기 전"에 지나가 버린다.</li>
+</ul>
+
+<h3>조각 3. <code>executeCommand</code> 3.3 단계 2·3·4 (전후 비교)</h3>
+<pre><code><span class="del">// before: 지연을 분리 스레드로
+std::thread([this, id, command, ...] {
+    std::this_thread::sleep_for(std::chrono::seconds(delay));
+    executeHardware(...);          // 서버가 이미 소멸됐을 수 있음
+}).detach();</span>
+<span class="add">// after
+const auto pendingCommand = scheduler_.pending(id);
+if (pendingCommand &amp;&amp; pendingCommand-&gt;command == command)       // 단계 2
+    return Accepted(남은 초);                                     // 기기 드라이버 안 부름
+if (pendingCommand) scheduler_.cancel(id, "다른 명령");           // 단계 3
+...
+if (action.delay_seconds &gt; 0) {                                  // 단계 4
+    if (scheduler_.schedule(id, command, seconds(delay), task)) return Accepted(delay);
+    ... // 동시에 먼저 예약됐으면 그 남은 초로 Accepted
+}</code></pre>
+<ul>
+<li><b>단계 2 (같은 명령 중복 방지)</b>: OFF를 두 번 눌러도 PC에 "종료 예고" 메시지는 한 번만 간다. 기기 드라이버를 아예 부르지 않고 남은 초만 돌려준다(202).</li>
+<li><b>단계 3 (다른 명령 취소)</b>: OFF 대기 중 ON이 오면 예약을 지운다. 사용자가 마음을 바꿨는데 45초 뒤 꺼지면 안 된다.</li>
+<li><b>단계 4</b>: 지연 명령은 표에 넣고 바로 202를 돌려준다.</li>
+<li><b>빼면</b>: 단계 3이 없으면 ON 뒤에도 OFF가 실행된다. 단계 2가 없으면 종료 메시지가 중복된다. 남은 약점: 두 요청이 정말 동시에 오면 둘 다 단계 2를 지나 종료 메시지가 2번 갈 수 있다(결정 D4로 수용, 결과는 OFF 1회로 같다).</li>
+</ul>
+
+<h3>조각 4. 삭제 시 취소와 unpair 동기화</h3>
+<pre><code>// removeDevice: 맵에서 뺀 직후
+scheduler_.cancel(id, "삭제");   // 삭제된 기기에 45초 뒤 OFF가 가지 않게
+
+// MatterController::unpairDevice (11c)
+<span class="del">std::thread([...]{ runner.run(unpair...); }).detach();</span>
+<span class="add">runner.run(unpair...);   // 호출한 스레드에서 바로(최대 10초)</span></code></pre>
+<ul>
+<li><b>무엇/왜</b>: 지운 기기에 명령이 가는 것을 막는다. unpair의 분리 스레드도 같은 이유(종료 때 <code>MatterController</code>가 소멸된 뒤 <code>this</code>를 씀)로 없앴다.</li>
+<li><b>대가</b>: 삭제 응답이 Matter 오프라인 기기에서는 최대 10초 늦어진다. 앱의 읽기 제한 시간이 10초보다 짧으면 앱이 먼저 끊을 수 있다(총괄이 [App]에 확인할 항목).</li>
+<li><b>빼면</b>: <code>cancel</code>이 없으면 삭제한 기기의 만기 작업이 실행되고, 작업은 복사해 둔 프로토콜 드라이버 포인터로 존재하지 않는 기기 ID에 명령을 보낸다.</li>
+</ul>
+
+<h3>왜 detach 스레드가 위험했나 (use-after-free)</h3>
+<svg viewBox="0 0 860 200" role="img" aria-label="detach 위험">
+<rect class="b" x="10" y="20" width="250" height="40" rx="8"/><text x="20" y="45">main: 종료 시작, 객체들 소멸</text>
+<rect class="r" x="10" y="110" width="250" height="40" rx="8"/><text x="20" y="135">분리 스레드: 45초 자는 중</text>
+<path class="l" d="M260 40H380"/><rect class="r" x="380" y="20" width="200" height="40" rx="8"/><text x="390" y="45">DeviceManager 이미 파괴</text>
+<path class="rl" d="M260 130H380"/><rect class="r" x="380" y="110" width="250" height="40" rx="8"/><text x="390" y="135">깨어나서 this-&gt;… 접근 = UAF</text>
+<text x="10" y="185">detach는 "누가 끝까지 기다릴지"를 포기하는 것. 스케줄러는 main이 소유하고 join하므로 순서를 정할 수 있다.</text>
+</svg>
+<p>이제 소멸 순서는 main 선언 순서(<code>database → scheduler → manager</code>)가 보장한다. 만기 작업이 <code>this</code>를 쓰지만, 스케줄러를 DeviceManager보다 먼저 멈추고(join) 나중에 소멸시키므로 안전하다.</p>
+</section>
+
+<section>
+<h2>4. 용어 풀이</h2>
+<ul>
+<li><b>조건변수(<code>condition_variable</code>)</b>: "조건이 될 때까지 자고, 누가 깨우면 일어나 확인"하는 도구. <code>wait_until</code>은 시각 제한이 붙은 버전.</li>
+<li><b>detach</b>: 스레드를 부모와 떼어 놓는 것. 끝나기를 기다릴 방법이 사라진다(join 불가).</li>
+<li><b>use-after-free</b>: 이미 해제된 메모리를 쓰는 버그. 가끔만 터져서 찾기 어렵다.</li>
+<li><b>FakeClock</b>: 시험용 가짜 시계. <code>advance</code>로 시간을 마음대로 흘린다.</li>
+<li><b>steady vs utc 시계</b>: 타이머는 거꾸로 가지 않는 <code>steadyNow</code>, 로그의 시각은 사람용 <code>utcNow</code>.</li>
+<li><b>재진입(re-entrancy)</b>: 락을 쥔 코드가 다시 같은 락이 필요한 함수를 부르는 상황. 락 밖 실행으로 피한다.</li>
+</ul>
+</section>
+
+<section>
+<h2>5. 이해도 질문</h2>
+<p><b>Q1.</b> 만기 작업을 <code>mutex_</code>를 쥔 채로 실행하면 무엇이 문제인가? 구체적인 요청 하나를 예로 들어라.</p>
+<details><summary>정답</summary>작업이 chip-tool을 최대 5초 부르는 동안 <code>pending</code>·<code>cancel</code>·<code>schedule</code>이 모두 같은 락에서 막혀, 그 사이 들어온 HTTP 제어 요청이 5초 멈춘다. 작업이 다시 <code>schedule</code>을 부르면 같은 스레드가 자기 락을 기다려 교착한다.</details>
+<p><b>Q2.</b> 10초 동안 OFF가 대기 중일 때 다시 OFF를 누르면 응답과 PC 쪽에 무슨 일이 생기나? ON을 누르면?</p>
+<details><summary>정답</summary>OFF 재요청: 기기 드라이버를 부르지 않으므로 종료 메시지는 추가로 가지 않고 202와 남은 초(35)가 돌아온다. ON: 예약이 취소되고 ON이 즉시 실행되어 45초 뒤에도 OFF가 가지 않는다.</details>
+<p><b>Q3.</b> "기기당 1개"로 제한하지 않고 여러 개를 허용하면 어떤 일이 생길 수 있나? 나라면 어디를 바꿔야 하나?</p>
+<details><summary>정답</summary>OFF, ON, OFF가 쌓여 순서·최종 상태가 불확실해지고, <code>pending</code>이 무엇을 돌려줄지 모호해진다. 표의 키를 id에서 (id, 명령) 또는 리스트로 바꾸고 <code>pending</code>·<code>cancel</code> 의미를 다시 정해야 한다. 기기당 1개는 "마지막 의도만 남긴다"는 정책이다.</details>
+<p><b>Q4.</b> 테스트가 <code>start()</code>로 스레드를 켜지 않고 <code>tick</code>만 부르는 이유는?</p>
+<details><summary>정답</summary>진짜 sleep·스레드 경합 없이 FakeClock으로 시간을 정확히 제어해 결정적이고 빠르게 시험하기 위해서다. 스레드 동작은 별도의 짧은 실시간 시험 1건과 TSan으로 확인한다.</details>
+</section>
+
+<section>
+<h2>6. 응용 실습</h2>
+<p>모두 원본 <code>src/</code>를 건드리지 않고, 이미 만들어 둔 <code>learning/exercise-scheduler/</code>의 사본에서 하세요(새 브랜치에서 원본을 고치는 방식은 권하지 않음).</p>
+
+<h3>실습 A. <code>ceilSeconds</code> 직접 구현 (빈칸)</h3>
+<ul>
+<li><b>목표</b>: <code>pending</code>이 돌려주는 "남은 초"(올림) 계산을 직접 만든다.</li>
+<li><b>고칠 파일</b>: <code>learning/exercise-scheduler/ceil_seconds.cpp</code>의 <code>ceilSeconds</code> (TODO 부분만)</li>
+<li><b>완료 기준</b>: <code>g++ -std=c++17 ceil_seconds.cpp -o ceil_seconds &amp;&amp; ./ceil_seconds</code>가 "모두 통과". 규칙: 0 이하면 0, 0.1초 남아도 1, 정확히 1.0초는 1, 1.001초는 2.</li>
+<li><b>왜 올림인가</b>: 0.4초 남았는데 "0초 남음"이라 하면 앱이 이미 꺼진 줄 안다.</li>
+<details><summary>힌트 1</summary>0 이하는 먼저 걸러 0을 돌려준다.</details>
+<details><summary>힌트 2</summary><code>std::chrono::duration_cast</code>는 버림, <code>std::chrono::ceil&lt;std::chrono::seconds&gt;(d)</code>는 올림이다. 결과는 <code>.count()</code>로 숫자를 꺼낸다.</details>
+<details><summary>정답</summary><pre><code>int ceilSeconds(Duration remaining) {
+    if (remaining &lt;= Duration::zero()) return 0;
+    return static_cast&lt;int&gt;(std::chrono::ceil&lt;std::chrono::seconds&gt;(remaining).count());
+}</code></pre></details>
+</ul>
+
+<h3>실습 B. 만기 항목 중 가장 이른 것 고르기 (빈칸)</h3>
+<ul>
+<li><b>목표</b>: <code>tick</code> 안쪽 반복문(만기 지난 것 중 dueAt 최소)을 순수 함수로 구현한다.</li>
+<li><b>고칠 파일</b>: <code>learning/exercise-scheduler/pick_earliest.cpp</code>의 <code>pickEarliestDue</code></li>
+<li><b>완료 기준</b>: 컴파일 후 실행해 "모두 통과"(만기 전엔 없음, 여러 개면 가장 이른 것, 지우면 다음 것).</li>
+<details><summary>힌트</summary>후보를 가리킬 <code>optional</code> 변수 하나와 <code>for (const auto&amp; [id, dueAt] : entries)</code>. <code>dueAt &gt; now</code>면 건너뛴다.</details>
+<details><summary>정답</summary><pre><code>std::optional&lt;std::string&gt; best;
+Time bestTime = 0;
+for (const auto&amp; [id, dueAt] : entries) {
+    if (dueAt &gt; now) continue;
+    if (!best || dueAt &lt; bestTime) { best = id; bestTime = dueAt; }
+}
+return best;</code></pre></details>
+</ul>
+
+<h3>(선택) 실습 C. 생각해 보기</h3>
+<p>한 작업이 chip-tool 5초를 쓰는 동안 다른 만기 작업은 밀린다(순차 실행, 수용한 위험). 작업마다 별도 스레드를 쓰면 무엇이 좋아지고, 종료 때 무엇이 어려워질지 세 줄로 적어 보세요.</p>
+</section>
+</main>
+</body>
+</html>
