@@ -19,6 +19,17 @@
 #include <cstdlib>
 #include <unistd.h>
 #include <sys/stat.h>  // umask
+namespace {
+// 소멸 시 스케줄러를 멈춘다(이미 멈췄으면 아무 일도 하지 않음)
+struct SchedulerStopGuard {
+    explicit SchedulerStopGuard(DelayedCommandScheduler& target) : scheduler(target) {}
+    ~SchedulerStopGuard() { scheduler.stopAndCancelAll(); }
+    SchedulerStopGuard(const SchedulerStopGuard&) = delete;
+    SchedulerStopGuard& operator=(const SchedulerStopGuard&) = delete;
+    DelayedCommandScheduler& scheduler;
+};
+}  // namespace
+
 int main() {
     // 어떤 스레드보다 먼저 막아야 이후 만드는 모든 스레드(와 chip-tool 자식 준비 단계)가 마스크를 물려받아,
     // 종료 신호가 main의 sigwait 한 곳으로만 모인다
@@ -62,28 +73,28 @@ int main() {
         return 1;
     }
     std::cout << "✅ 데이터베이스 로드 완료!" << std::endl;
-    // 1. 시스템 두뇌(DeviceManager) 조립
-    // 선언의 역순으로 소멸한다: httpServer → periodicTasks → 드라이버 → manager → scheduler → database.
-    // 객체를 쓰는 쪽이 먼저 사라져야 하므로 쓰이는 쪽(database, scheduler, manager)을 먼저 선언한다
+    // 1. 조립. 선언의 역순으로 소멸하므로 "쓰는 쪽"을 나중에 선언한다:
+    //    httpServer → periodicTasks → 스케줄러 가드 → manager → scheduler → 드라이버·러너 → clock → database 순으로 소멸
     DriverManager deviceDrivers;
     SystemClock clock;
+    TCPDriver tcpDriver;
+    ProcessChipToolRunner chipToolRunner;  // chip-tool을 셸 없이 실행한다
+    MatterController matterController(chipToolRunner, parseManualSetupPin);
     DelayedCommandScheduler scheduler(clock);
     DeviceManager manager(database, deviceDrivers, scheduler, clock);
-    scheduler.start();
-    // 2. TCP 드라이버 생성 및 포트 8080으로 서버 시작
-    TCPDriver tcpDriver;
+    // 예외·조기 return으로 나가도 만기 작업이 해제된 드라이버를 쓰기 전에 스케줄러 스레드를 멈춘다
+    SchedulerStopGuard schedulerStopGuard(scheduler);
+    PeriodicTasks periodicTasks(manager);
+
+    // 2. 포트 8080으로 TCP 서버 시작
     // 포트를 못 열면(이전 프로세스가 남아 있는 등) 반쯤 켜진 채 돌지 않고 바로 끝낸다
     if (!tcpDriver.startServer(8080, *tcpBindAddress.value)) {
         std::cerr << "❌ TCP 포트 8080을 열 수 없습니다(원인은 위 [TCPDriver] 로그). 서버를 종료합니다." << std::endl;
         return 1;
     }
-    
+
     // 3. DeviceManager에 드라이버 등록
     manager.registerDriver(ProtocolType::TCP_DIY, &tcpDriver);
-    
-    // MatterController 생성 및 초기화
-    ProcessChipToolRunner chipToolRunner;  // chip-tool을 셸 없이 실행한다
-    MatterController matterController(chipToolRunner, parseManualSetupPin);
     if (matterController.Initialize()) {
         std::cout << "[Main] MatterController 초기화 및 스레드 구동 성공!" << std::endl;
     } else {
@@ -94,20 +105,17 @@ int main() {
         return std::make_shared<PCDriver>(&tcpDriver);
     });
     manager.registerDriver(ProtocolType::MATTER, &matterController);
-    
-    PeriodicTasks periodicTasks(manager);
-    periodicTasks.start();
     manager.initFromDatabase();
+
     HTTPServer httpServer(manager, *apiToken, 8000, *httpBindAddress.value);
     // start()가 바인딩까지 마치므로 실패하면 바로 알 수 있다. 수락 스레드가 listen에 들어갈 때까지 한 번 더 확인한다
     if (!httpServer.start() || !httpServer.waitUntilReady(std::chrono::seconds(5))) {
         std::cerr << "❌ HTTP 포트 8000을 열 수 없습니다(원인은 위 [HTTPServer] 로그). 서버를 종료합니다." << std::endl;
-        // 드라이버가 스케줄러보다 먼저 소멸하므로, 그 사이 예약된 작업이 해제된 드라이버를 쓰지 않게 먼저 멈춘다
-        httpServer.stop();
-        scheduler.stopAndCancelAll();
         return 1;
     }
-
+    // 시작이 모두 성공한 뒤에 만기 작업·주기 점검 스레드를 켠다
+    scheduler.start();
+    periodicTasks.start();
 
     //  관리 대상 기기 임시 등록
     // manager.addDevice("Arduino_1", "거실 전등", ProtocolType::TCP_DIY);
@@ -115,10 +123,14 @@ int main() {
 
     // 종료 신호가 올 때까지 대기한다
     int signalNumber = 0;
-    sigwait(&terminationSignals, &signalNumber);
+    const int waitError = sigwait(&terminationSignals, &signalNumber);
+    if (waitError != 0) {
+        // 대기 자체가 실패해도 종료 절차는 그대로 진행한다
+        std::cerr << "[Main] sigwait 실패(오류 " << waitError << "), 종료를 진행합니다" << std::endl;
+    }
     // 종료가 늦어질 때 한 번 더 보내면 기본 동작으로 즉시 끝나도록, main 스레드만 마스크를 푼다
     pthread_sigmask(SIG_UNBLOCK, &terminationSignals, nullptr);
-    std::cout << "[Main] 종료 신호 수신(" << (signalNumber == SIGTERM ? "SIGTERM" : "SIGINT")
+    std::cout << "[Main] 종료 신호 수신(" << (signalNumber == SIGTERM ? "SIGTERM" : signalNumber == SIGINT ? "SIGINT" : "없음")
               << "), 종료를 시작합니다" << std::endl;
 
     // 0단계: 진행 중인 chip-tool을 끊고, 대기 중인 지연 명령을 취소한다.
