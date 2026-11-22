@@ -102,6 +102,9 @@ int main() {
     // start()가 바인딩까지 마치므로 실패하면 바로 알 수 있다. 수락 스레드가 listen에 들어갈 때까지 한 번 더 확인한다
     if (!httpServer.start() || !httpServer.waitUntilReady(std::chrono::seconds(5))) {
         std::cerr << "❌ HTTP 포트 8000을 열 수 없습니다(원인은 위 [HTTPServer] 로그). 서버를 종료합니다." << std::endl;
+        // 드라이버가 스케줄러보다 먼저 소멸하므로, 그 사이 예약된 작업이 해제된 드라이버를 쓰지 않게 먼저 멈춘다
+        httpServer.stop();
+        scheduler.stopAndCancelAll();
         return 1;
     }
 
