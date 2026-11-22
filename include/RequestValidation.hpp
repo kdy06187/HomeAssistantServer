@@ -42,6 +42,8 @@ namespace RequestValidation {
     constexpr int64_t kDefaultHistoryLimit = 50;
     constexpr int64_t kMaxHistoryLimit = 1000;
     constexpr int kMaxHistoryRangeDays = 366;
+    constexpr int kMinHistoryYear = 2000;
+    constexpr int kMaxHistoryYear = 2100;
 
     // [A-Za-z0-9_-]{1,64}
     bool isValidDeviceId(const std::string& deviceId);

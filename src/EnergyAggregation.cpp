@@ -51,10 +51,9 @@ std::vector<DayRange> splitIntoPeriods(int64_t firstDay, int64_t lastDay, Histor
 
 // 기록 시각(UTC)이 속한 현지 날짜의 일 수
 std::optional<int64_t> localDayOf(const std::string& dbText) {
-    const auto time = UtcTime::fromDbText(dbText);
-    if (!time) return std::nullopt;
-    const int64_t epochSeconds = std::chrono::duration_cast<std::chrono::seconds>(time->time_since_epoch()).count();
-    return floorDivide(epochSeconds + kLocalOffsetSeconds, kSecondsPerDay);
+    const auto epochSeconds = UtcTime::toEpochSeconds(dbText);
+    if (!epochSeconds) return std::nullopt;
+    return floorDivide(*epochSeconds + kLocalOffsetSeconds, kSecondsPerDay);
 }
 
 // day를 포함하는 구간의 위치. 구간은 빈틈없이 이어져 있다
@@ -98,11 +97,10 @@ std::string EnergyAggregation::formatDate(const CivilDate& date) {
 
 UtcRange EnergyAggregation::localDateRangeToUtc(const CivilDate& from, const CivilDate& to) {
     // 현지 날짜 D의 0시 = UTC로는 같은 날 0시보다 9시간 이르다
-    const auto utcOfLocalMidnight = [](int64_t day) {
-        return std::chrono::system_clock::time_point{} + std::chrono::seconds(day * kSecondsPerDay - kLocalOffsetSeconds);
+    const auto utcTextOfLocalMidnight = [](int64_t day) {
+        return UtcTime::toDbTextFromEpochSeconds(day * kSecondsPerDay - kLocalOffsetSeconds);
     };
-    return UtcRange{UtcTime::toDbText(utcOfLocalMidnight(daysFromCivil(from))),
-                    UtcTime::toDbText(utcOfLocalMidnight(daysFromCivil(to) + 1))};
+    return UtcRange{utcTextOfLocalMidnight(daysFromCivil(from)), utcTextOfLocalMidnight(daysFromCivil(to) + 1)};
 }
 
 std::vector<EnergyBucket> EnergyAggregation::aggregate(const std::vector<EnergyLog>& samples, const CivilDate& from,

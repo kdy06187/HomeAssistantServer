@@ -42,6 +42,22 @@ TEST(UtcTimeTest, RejectsMalformedText) {
     }
 }
 
+TEST(UtcTimeTest, YearOutsideSafeRangeFails) {
+    for (const char* text : {"2300-01-01 00:00:00", "1600-01-01 00:00:00", "1899-12-31 23:59:59", "2201-01-01 00:00:00",
+                             "9999-12-31 23:59:59", "0000-01-01 00:00:00"}) {
+        EXPECT_FALSE(UtcTime::fromDbText(text).has_value()) << text;
+        EXPECT_FALSE(UtcTime::toEpochSeconds(text).has_value()) << text;
+    }
+    EXPECT_TRUE(UtcTime::fromDbText("1900-01-01 00:00:00").has_value());
+    EXPECT_TRUE(UtcTime::fromDbText("2200-12-31 23:59:59").has_value());
+}
+
+TEST(UtcTimeTest, EpochSecondsRoundTripWithoutTimePoint) {
+    EXPECT_EQ(UtcTime::toEpochSeconds("1970-01-02 00:00:00"), 86400);
+    EXPECT_EQ(UtcTime::toDbTextFromEpochSeconds(86400), "1970-01-02 00:00:00");
+    EXPECT_EQ(UtcTime::toDbTextFromEpochSeconds(-1), "1969-12-31 23:59:59");
+}
+
 TEST(UtcTimeTest, Iso8601AddsTAndZ) {
     EXPECT_EQ(UtcTime::toIso8601("2026-11-16 00:20:00"), "2026-11-16T00:20:00Z");
     EXPECT_EQ(UtcTime::toIso8601("garbage"), "garbage");

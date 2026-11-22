@@ -282,7 +282,7 @@ TEST(ParseHistoryQuery, DateFormatAndCalendarChecks) {
 }
 
 TEST(ParseHistoryQuery, CenturyLeapYearRules) {
-    EXPECT_FALSE(parseHistoryQuery(params({{"from", "1900-02-29"}})).ok());  // 100의 배수는 평년
+    EXPECT_FALSE(parseHistoryQuery(params({{"from", "2100-02-29"}})).ok());  // 100의 배수는 평년
     EXPECT_TRUE(parseHistoryQuery(params({{"from", "2000-02-29"}})).ok());   // 400의 배수는 윤년
 }
 
@@ -321,6 +321,20 @@ TEST(ParseHistoryQuery, RangeAllows366DaysButNot367) {
     EXPECT_TRUE(parseHistoryQuery(params({{"from", "2026-01-01"}, {"to", "2026-12-31"}})).ok());  // 365일
     EXPECT_TRUE(parseHistoryQuery(params({{"from", "2026-01-01"}, {"to", "2027-01-01"}})).ok());  // 366일
     EXPECT_FALSE(parseHistoryQuery(params({{"from", "2026-01-01"}, {"to", "2027-01-02"}})).ok()); // 367일
+}
+
+TEST(ParseHistoryQuery, YearOutsideSupportedRangeIsRejected) {
+    for (const char* bad : {"2300-01-01", "1600-01-01", "1999-12-31", "2101-01-01", "0000-01-01", "9999-12-31"}) {
+        const auto asFrom = parseHistoryQuery(params({{"from", bad}}));
+        ASSERT_FALSE(asFrom.ok()) << bad;
+        EXPECT_EQ(asFrom.error.code, ErrorCode::InvalidRequest);
+        EXPECT_FALSE(parseHistoryQuery(params({{"to", bad}})).ok()) << bad;
+    }
+}
+
+TEST(ParseHistoryQuery, YearRangeBoundariesAreAccepted) {
+    EXPECT_TRUE(parseHistoryQuery(params({{"from", "2000-01-01"}})).ok());
+    EXPECT_TRUE(parseHistoryQuery(params({{"to", "2100-12-31"}})).ok());
 }
 
 TEST(ParseHistoryQuery, OnlyFromOrOnlyToIsFineInRawMode) {

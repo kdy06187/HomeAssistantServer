@@ -1,4 +1,5 @@
 #include "RequestValidation.hpp"
+#include "EnergyAggregation.hpp"
 #include <arpa/inet.h>
 #include <cerrno>
 #include <cstdlib>
@@ -133,17 +134,6 @@ int daysInMonth(int year, int month) {
     return (month == 2 && isLeapYear(year)) ? 29 : kDays[month - 1];
 }
 
-// 1970-01-01부터의 일 수(Howard Hinnant의 days_from_civil)
-int64_t dayNumber(const CivilDate& date) {
-    const int64_t y = date.month <= 2 ? date.year - 1 : date.year;
-    const int64_t era = (y >= 0 ? y : y - 399) / 400;
-    const int64_t yearOfEra = y - era * 400;
-    const int64_t monthShifted = date.month > 2 ? date.month - 3 : date.month + 9;
-    const int64_t dayOfYear = (153 * monthShifted + 2) / 5 + date.day - 1;
-    const int64_t dayOfEra = yearOfEra * 365 + yearOfEra / 4 - yearOfEra / 100 + dayOfYear;
-    return era * 146097 + dayOfEra - 719468;
-}
-
 // 정확히 YYYY-MM-DD이고 달력에 있는 날짜만 허용한다
 std::optional<CivilDate> parseDate(const std::string& text) {
     if (text.size() != 10 || text[4] != '-' || text[7] != '-') return std::nullopt;
@@ -155,7 +145,8 @@ std::optional<CivilDate> parseDate(const std::string& text) {
     date.year = std::stoi(text.substr(0, 4));
     date.month = std::stoi(text.substr(5, 2));
     date.day = std::stoi(text.substr(8, 2));
-    if (date.year < 1 || date.month < 1 || date.month > 12) return std::nullopt;
+    // 먼 날짜는 시각 변환에서 오버플로하므로 연도 범위를 제한한다
+    if (date.year < RequestValidation::kMinHistoryYear || date.year > RequestValidation::kMaxHistoryYear || date.month < 1 || date.month > 12) return std::nullopt;
     if (date.day < 1 || date.day > daysInMonth(date.year, date.month)) return std::nullopt;
     return date;
 }
@@ -294,7 +285,7 @@ Result<HistoryQuery> RequestValidation::parseHistoryQuery(const httplib::Params&
 
     if (query.period && (!query.from || !query.to)) return invalidHistory("period에는 from·to 필요");
     if (query.from && query.to) {
-        const int64_t days = dayNumber(*query.to) - dayNumber(*query.from);
+        const int64_t days = EnergyAggregation::daysFromCivil(*query.to) - EnergyAggregation::daysFromCivil(*query.from);
         if (days < 0) return invalidHistory("from이 to보다 늦음");
         if (days + 1 > kMaxHistoryRangeDays) return invalidHistory("범위 366일 초과");
     }

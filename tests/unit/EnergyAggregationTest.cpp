@@ -37,6 +37,13 @@ TEST(EnergyAggregationDateTest, LocalDateRangeStartsNineHoursEarlierInUtc) {
     EXPECT_EQ(range.toUtc, "2026-11-01 15:00:00"); // 끝 날짜의 다음 날 0시 미만
 }
 
+TEST(EnergyAggregationDateTest, LocalDateRangeAtSupportedYearBounds) {
+    const auto first = localDateRangeToUtc({2000, 1, 1}, {2000, 1, 1});
+    EXPECT_EQ(first.fromUtc, "1999-12-31 15:00:00");
+    const auto last = localDateRangeToUtc({2100, 12, 31}, {2100, 12, 31});
+    EXPECT_EQ(last.toUtc, "2100-12-31 15:00:00");
+}
+
 TEST(EnergyAggregationDateTest, LocalDateRangeAcrossYearEnd) {
     const auto range = localDateRangeToUtc({2026, 12, 31}, {2027, 1, 1});
     EXPECT_EQ(range.fromUtc, "2026-12-30 15:00:00");

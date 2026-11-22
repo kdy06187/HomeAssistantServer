@@ -22,7 +22,11 @@ bool hasDbTextShape(const std::string& text) {
 std::string UtcTime::toDbText(std::chrono::system_clock::time_point time) {
     // 초 미만은 버린다(음수 시각도 내림)
     const auto seconds = std::chrono::floor<std::chrono::seconds>(time).time_since_epoch().count();
-    const std::time_t rawTime = static_cast<std::time_t>(seconds);
+    return toDbTextFromEpochSeconds(seconds);
+}
+
+std::string UtcTime::toDbTextFromEpochSeconds(int64_t epochSeconds) {
+    const std::time_t rawTime = static_cast<std::time_t>(epochSeconds);
     std::tm utc{};
     gmtime_r(&rawTime, &utc);
     char buffer[32];
@@ -30,13 +34,14 @@ std::string UtcTime::toDbText(std::chrono::system_clock::time_point time) {
     return buffer;
 }
 
-std::optional<std::chrono::system_clock::time_point> UtcTime::fromDbText(const std::string& dbText) {
+std::optional<int64_t> UtcTime::toEpochSeconds(const std::string& dbText) {
     if (!hasDbTextShape(dbText)) return std::nullopt;
     std::tm parsed{};
     int year = 0, month = 0, day = 0, hour = 0, minute = 0, second = 0;
     if (std::sscanf(dbText.c_str(), "%4d-%2d-%2d %2d:%2d:%2d", &year, &month, &day, &hour, &minute, &second) != 6) {
         return std::nullopt;
     }
+    if (year < kMinDbYear || year > kMaxDbYear) return std::nullopt;
     parsed.tm_year = year - 1900;
     parsed.tm_mon = month - 1;
     parsed.tm_mday = day;
@@ -50,7 +55,13 @@ std::optional<std::chrono::system_clock::time_point> UtcTime::fromDbText(const s
         roundTrip.tm_hour != hour || roundTrip.tm_min != minute || roundTrip.tm_sec != second) {
         return std::nullopt;
     }
-    return std::chrono::system_clock::from_time_t(rawTime);
+    return static_cast<int64_t>(rawTime);
+}
+
+std::optional<std::chrono::system_clock::time_point> UtcTime::fromDbText(const std::string& dbText) {
+    const auto seconds = toEpochSeconds(dbText);
+    if (!seconds) return std::nullopt;
+    return std::chrono::system_clock::from_time_t(static_cast<std::time_t>(*seconds));
 }
 
 std::string UtcTime::toIso8601(const std::string& dbText) {
