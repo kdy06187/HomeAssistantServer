@@ -39,6 +39,7 @@ add_library(hac_core OBJECT
     src/HTTPServer.cpp
     src/RequestValidation.cpp
     src/UtcTime.cpp
+    src/EnergyAggregation.cpp
     src/PCDriver.cpp
     src/PeriodicTasks.cpp
     src/TcpConnection.cpp
