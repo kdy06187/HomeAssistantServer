@@ -6,6 +6,7 @@ add_executable(hac_tests
     unit/RequestValidationTest.cpp
     unit/PCDriverTest.cpp
     unit/ResultTest.cpp
+    unit/UtcTimeTest.cpp
     unit/FakeClockTest.cpp
     unit/DelayedCommandSchedulerTest.cpp
     unit/ChipToolOutputParserTest.cpp
@@ -19,6 +20,7 @@ add_executable(hac_tests
     integration/HttpServerAuthTest.cpp
     integration/LockRulesTest.cpp
     integration/EnergyPathTest.cpp
+    integration/DatabaseRetentionTest.cpp
     integration/TcpServerTest.cpp
     integration/TcpServerLifecycleTest.cpp
     integration/MatterControllerTest.cpp

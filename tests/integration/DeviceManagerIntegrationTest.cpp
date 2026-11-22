@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "DeviceManager.hpp"
 #include "DatabaseManager.hpp"
+#include "support/HistoryTestHelper.hpp"
 #include "DriverManager.hpp"
 #include "PCDriver.hpp"
 #include "PeriodicTasks.hpp"
@@ -22,7 +23,7 @@ protected:
     }
 
     Device findInDatabase(const std::string& id) {
-        for (const auto& device : database.loadAllDevices()) {
+        for (const auto& device : database.loadActiveDevices()) {
             if (device.id == id) return device;
         }
         return Device();
@@ -76,7 +77,7 @@ TEST_F(DeviceManagerIntegrationTest, CommissioningFailureRegistersNothing) {
     EXPECT_FALSE(manager.startCommissioning(ProtocolType::TCP_DIY, "desk", ""));
 
     EXPECT_TRUE(manager.getAllDevices().empty());
-    EXPECT_TRUE(database.loadAllDevices().empty());
+    EXPECT_TRUE(database.loadActiveDevices().empty());
 }
 
 TEST_F(DeviceManagerIntegrationTest, CommissioningWithEmptyDeviceIdRegistersNothingButSucceeds) {
@@ -163,7 +164,7 @@ TEST_F(DeviceManagerIntegrationTest, RemoveDeviceUnpairsAndDeletesFromListAndDat
     ASSERT_EQ(tcpFake.unpairedIds.size(), 1u);
     EXPECT_EQ(tcpFake.unpairedIds[0], "FAKE_1");
     EXPECT_TRUE(manager.getAllDevices().empty());
-    EXPECT_TRUE(database.loadAllDevices().empty());
+    EXPECT_TRUE(database.loadActiveDevices().empty());
 }
 
 TEST_F(DeviceManagerIntegrationTest, HealthCheckMarksOfflineDeviceInDatabase) {
@@ -193,7 +194,7 @@ TEST_F(DeviceManagerIntegrationTest, HealthCheckSurvivesDriverExceptionsAndKeeps
 
     matterFake.energyResult = Result<EnergyReading>::success(EnergyReading{5, 300});
     EXPECT_NO_THROW(manager.runHealthCheck());
-    EXPECT_EQ(database.getEnergyHistory("FAKE_1").value->size(), 1u);
+    EXPECT_EQ(latestLogs(database, "FAKE_1").value->size(), 1u);
 }
 
 TEST_F(DeviceManagerIntegrationTest, EnergySuccessAccumulatesInDatabase) {
@@ -272,7 +273,7 @@ protected:
         scheduler.tick(clock.steadyNow());
     }
     std::string storedState(const std::string& id) {
-        for (const auto& device : database.loadAllDevices()) {
+        for (const auto& device : database.loadActiveDevices()) {
             if (device.id == id) return device.state;
         }
         return "";

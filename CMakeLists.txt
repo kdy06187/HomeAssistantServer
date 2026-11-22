@@ -38,6 +38,7 @@ add_library(hac_core OBJECT
     src/ErrorMapping.cpp
     src/HTTPServer.cpp
     src/RequestValidation.cpp
+    src/UtcTime.cpp
     src/PCDriver.cpp
     src/PeriodicTasks.cpp
     src/TcpConnection.cpp

@@ -86,6 +86,7 @@ private:
     DatabaseManager& db_;
     DriverManager& deviceDrivers_;
     DelayedCommandScheduler& scheduler_;
+    Clock& clock_;
     std::atomic<bool> isShuttingDown_{false};
 
     std::unordered_map<std::string,Device> devices_;

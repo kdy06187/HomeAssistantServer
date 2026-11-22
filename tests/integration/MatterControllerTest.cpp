@@ -521,7 +521,7 @@ TEST_F(CommissionRollbackTest, DatabaseFailureUndoesRegistrationAndReportsFailur
     EXPECT_FALSE(manager.startCommissioning(ProtocolType::TCP_DIY, "lamp", ""));
 
     EXPECT_TRUE(manager.getAllDevices().empty());
-    EXPECT_TRUE(database.loadAllDevices().empty());
+    EXPECT_TRUE(database.loadActiveDevices().empty());
 }
 
 // DB를 먼저 쓰므로 실패하면 메모리는 처음부터 바뀌지 않는다(이전 기기 그대로)

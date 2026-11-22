@@ -9,9 +9,23 @@
 #include <algorithm>
 #include "DriverType.hpp"
 #include "Result.hpp"
+// timestamp는 DB 저장 형식(UTC, "YYYY-MM-DD HH:MM:SS")
 struct EnergyLog{
     std::string timestamp;
     int64_t total_mwh;
+};
+
+struct HistoryPage {
+    std::vector<EnergyLog> logs; // 오래된 것부터
+    bool truncated = false;      // 범위 안 기록이 limit보다 많아 오래된 쪽이 잘렸는지
+};
+
+struct PurgeResult {
+    bool skipped = false;
+    std::string reason;          // skipped일 때만. 로그 전용
+    int64_t deletedLogs = 0;     // 보관 기간이 지난 이력
+    int64_t deletedDevices = 0;  // 숨김 기간이 지나 완전 삭제된 기기
+    int64_t deletedOrphans = 0;  // 기기 행이 없는 통계·이력 행 수
 };
 class DatabaseManager {
 public:
@@ -25,19 +39,30 @@ public:
     bool init(const std::string& dbPath, const std::string& backupTimestampUtc = "");
     
     bool insertDevice(const Device& device);               // 기기 저장(이미 있으면 갱신, ip는 보존)
-    std::vector<Device> loadAllDevices();                  // 전체 기기 불러오기
+    std::vector<Device> loadActiveDevices();               // 숨기지 않은 기기만 불러오기
     bool updateDeviceState(const std::string& id, int isActive); // 상태 변경
-    bool removeDevice(const std::string& id);             // 기기 삭제
+    // 기기를 숨긴다(통계·이력은 유지). 없거나 이미 숨긴 기기는 DeviceNotFound, DB 오류는 Internal
+    Status markDeleted(const std::string& id, const std::string& deletedAtUtc);
     void close();
 
     bool initEnergyTable(); // 전력량 테이블 초기화
     // 실패하면 false이고 통계는 바뀌지 않는다
     bool updateEnergyStat(const std::string& deviceId, int64_t current_mwh, int64_t& out_real_total);
     bool initHistoryTable();
-    bool insertEnergyLog(const std::string& deviceId, int64_t total_mwh);
+    bool insertEnergyLog(const std::string& deviceId, int64_t total_mwh, const std::string& timestampUtc);
 
-    // 최신 limit건을 오래된 것부터. DB 오류·limit<=0은 빈 목록이 아니라 failure
-    Result<std::vector<EnergyLog>> getEnergyHistory(const std::string& deviceId, int limit = 50);
+    // 범위 [fromUtc, toUtc) 안의 최신 limit건을 오래된 것부터. 범위를 생략하면 그쪽은 제한 없음.
+    // DB 오류·limit<=0은 빈 목록이 아니라 failure
+    Result<HistoryPage> queryHistory(const std::string& deviceId, const std::optional<std::string>& fromUtc,
+                                     const std::optional<std::string>& toUtc, int limit);
+    // 집계용: 범위 안 전부(오래된 순) 앞에 범위 시작 직전 1건(있으면)을 붙여 돌려준다
+    Result<std::vector<EnergyLog>> querySamplesForAggregation(const std::string& deviceId,
+                                                              const std::string& fromUtc,
+                                                              const std::string& toUtc);
+    // 이력이 하나도 없으면 값 없는 성공
+    Result<std::optional<std::string>> latestHistoryTime();
+    // cutoffUtc보다 오래된 이력·숨김 기기·고아 행을 한 트랜잭션으로 지운다. 안전장치에 걸리면 아무것도 지우지 않는다
+    Result<PurgeResult> purgeExpired(const std::string& cutoffUtc, double maxDeleteRatio = 0.5);
 private:
     // 아래 *Locked 함수는 호출자가 mutex_를 이미 잡았다고 가정한다
     void closeLocked();
@@ -49,6 +74,11 @@ private:
     // 조회 자체가 실패하면 nullopt("없음"·0과 구분한다)
     std::optional<bool> tableExistsLocked(const char* tableName);
     std::optional<int> readUserVersionLocked();
+    // 정리 트랜잭션 안에서 쓰는 조각들
+    Result<std::optional<std::string>> latestHistoryTimeLocked();
+    std::optional<int64_t> countLocked(const char* sql, const std::string* cutoffUtc);
+    std::optional<int64_t> deleteLocked(const char* sql, const std::string* cutoffUtc);
+    Result<PurgeResult> purgeLocked(const std::string& cutoffUtc, double maxDeleteRatio);
 
     mutable std::mutex mutex_;
     sqlite3* db_;

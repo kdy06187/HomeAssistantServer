@@ -1,12 +1,13 @@
 #include "DeviceManager.hpp"
 #include "DriverManager.hpp"
 #include "DatabaseManager.hpp"
+#include "UtcTime.hpp"
 #include <iostream>
 #include <chrono>
 #include <thread>
 DeviceManager::DeviceManager(DatabaseManager& db, DriverManager& deviceDrivers,
-                             DelayedCommandScheduler& scheduler, Clock& /*clock*/)
-    : db_(db), deviceDrivers_(deviceDrivers), scheduler_(scheduler) {
+                             DelayedCommandScheduler& scheduler, Clock& clock)
+    : db_(db), deviceDrivers_(deviceDrivers), scheduler_(scheduler), clock_(clock) {
     std::cout << "DeviceManager 인스턴스 생성" << std::endl;
 }
 
@@ -18,7 +19,7 @@ void DeviceManager::registerDriver(ProtocolType type, ProtocolDriver* driver){
 }
 void DeviceManager::initFromDatabase(){
     // DB 읽기와 드라이버 조립은 락 밖에서 하고, 맵에 넣을 때만 락을 잡는다
-    auto loadedDevices = db_.loadAllDevices();
+    auto loadedDevices = db_.loadActiveDevices();
     const auto driversSnapshot = protocolDriversSnapshot();
     for(auto& dev : loadedDevices){
 
@@ -255,7 +256,7 @@ bool DeviceManager::removeDevice(std::string id){
         devices_.erase(it);
     }
     scheduler_.cancel(id, "삭제"); // 삭제된 기기에 대기 중이던 명령이 가지 않게
-    if (!db_.removeDevice(id)) {
+    if (!db_.markDeleted(id, UtcTime::toDbText(clock_.utcNow())).ok()) {
         std::cerr << "[DeviceManager] 에러 : DB 삭제 실패, 기기를 되돌립니다 (" << id << ")" << std::endl;
         std::lock_guard<std::mutex> lock(mutex_);
         // 그 사이 같은 ID가 다시 등록됐다면 새 기기를 덮어쓰지 않는다
@@ -318,7 +319,7 @@ void DeviceManager::runHealthCheck() {
             const bool stateConfirmed = state != "UNKNOWN" && state != "OFFLINE" && state != "PAIRING" && state != "ERROR";
             if (device.protocol_type == ProtocolType::MATTER && stateConfirmed) {
                 const auto energy = readEnergy(id);
-                if (energy.ok() && db_.insertEnergyLog(id, energy.value->totalEnergy_mWh)) {
+                if (energy.ok() && db_.insertEnergyLog(id, energy.value->totalEnergy_mWh, UtcTime::toDbText(clock_.utcNow()))) {
                     std::cout << "[DeviceManager] 📊 기기(" << id << ") 시계열 데이터 기록: " << energy.value->totalEnergy_mWh << " mWh" << std::endl;
                 }
             }
@@ -401,9 +402,9 @@ Result<HistoryResult> DeviceManager::getEnergyHistory(const std::string& deviceI
         }
         history.deviceState = it->second.state;
     }
-    auto logs = db_.getEnergyHistory(deviceId, limit);
-    if (!logs.ok()) return Result<HistoryResult>::failure(logs.error.code, logs.error.message);
-    history.logs = std::move(*logs.value);
+    auto page = db_.queryHistory(deviceId, std::nullopt, std::nullopt, limit);
+    if (!page.ok()) return Result<HistoryResult>::failure(page.error.code, page.error.message);
+    history.logs = std::move(page.value->logs);
     return Result<HistoryResult>::success(std::move(history));
 }
 

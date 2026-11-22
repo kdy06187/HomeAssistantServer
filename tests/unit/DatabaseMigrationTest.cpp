@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "DatabaseManager.hpp"
+#include "support/HistoryTestHelper.hpp"
 
 namespace fs = std::filesystem;
 
@@ -245,17 +246,17 @@ TEST_F(DatabaseMigrationTest, DeviceCrudRoundTrip) {
     device.state = "ON";
     ASSERT_TRUE(db.insertDevice(device));
 
-    auto loaded = db.loadAllDevices();
+    auto loaded = db.loadActiveDevices();
     ASSERT_EQ(loaded.size(), 1u);
     EXPECT_EQ(loaded[0].id, "SN-1");
     EXPECT_EQ(loaded[0].name, "Plug");
     EXPECT_EQ(loaded[0].state, "ON");
 
     ASSERT_TRUE(db.updateDeviceState("SN-1", 0));
-    EXPECT_EQ(db.loadAllDevices()[0].state, "OFF");
+    EXPECT_EQ(db.loadActiveDevices()[0].state, "OFF");
 
-    ASSERT_TRUE(db.removeDevice("SN-1"));
-    EXPECT_TRUE(db.loadAllDevices().empty());
+    ASSERT_TRUE(db.markDeleted("SN-1", "2026-11-19 00:00:00").ok());
+    EXPECT_TRUE(db.loadActiveDevices().empty());
 }
 
 TEST_F(DatabaseMigrationTest, EnergyHistoryReturnsOldestFirstWithLimit) {
@@ -263,17 +264,17 @@ TEST_F(DatabaseMigrationTest, EnergyHistoryReturnsOldestFirstWithLimit) {
     DatabaseManager db;
     ASSERT_TRUE(db.init(dbPath_, "20260101T000000Z"));
 
-    auto all = db.getEnergyHistory("SN-MATTER-1");
+    auto all = latestLogs(db, "SN-MATTER-1");
     ASSERT_TRUE(all.ok());
     ASSERT_EQ(all.value->size(), 3u);
     EXPECT_EQ((*all.value)[0].total_mwh, 100);
     EXPECT_EQ((*all.value)[2].total_mwh, 300);
 
-    auto latestTwo = db.getEnergyHistory("SN-MATTER-1", 2);
+    auto latestTwo = latestLogs(db, "SN-MATTER-1", 2);
     ASSERT_TRUE(latestTwo.ok());
     ASSERT_EQ(latestTwo.value->size(), 2u);
     EXPECT_EQ((*latestTwo.value)[0].total_mwh, 200);
-    auto none = db.getEnergyHistory("none");
+    auto none = latestLogs(db, "none");
     ASSERT_TRUE(none.ok());
     EXPECT_TRUE(none.value->empty());
 }
@@ -351,7 +352,7 @@ TEST_F(DatabaseMigrationTest, InitFailsOnNonDatabaseFile) {
     DatabaseManager db;
     EXPECT_FALSE(db.init(dbPath_, "20260101T000000Z"));
     EXPECT_TRUE(backups().empty());
-    EXPECT_TRUE(db.loadAllDevices().empty());  // 실패 후 db_가 닫혀 있어도 죽지 않는다
+    EXPECT_TRUE(db.loadActiveDevices().empty());  // 실패 후 db_가 닫혀 있어도 죽지 않는다
 }
 
 TEST_F(DatabaseMigrationTest, PruneIgnoresBackupsOfOtherDbFiles) {

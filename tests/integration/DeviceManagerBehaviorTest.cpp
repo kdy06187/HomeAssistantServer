@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "DeviceManager.hpp"
 #include "DatabaseManager.hpp"
+#include "support/HistoryTestHelper.hpp"
 #include "DriverManager.hpp"
 #include "PCDriver.hpp"
 #include "fakes/FakeClock.hpp"
@@ -17,7 +18,7 @@ protected:
         manager.registerDriver(ProtocolType::TCP_DIY, &tcpFake);
     }
     std::string dbState(const std::string& id) {
-        for (const auto& device : database.loadAllDevices()) {
+        for (const auto& device : database.loadActiveDevices()) {
             if (device.id == id) return device.state;
         }
         return "(none)";
@@ -110,15 +111,15 @@ TEST_F(DeviceManagerBehaviorTest, HealthCheckRecordsEnergyOnlyForOnlineMatterDev
     matterFake.energyResult = Result<EnergyReading>::success(EnergyReading{5, 300});
 
     manager.runHealthCheck(); // 둘 다 ON
-    EXPECT_EQ(database.getEnergyHistory("M_1").value->size(), 1u);
-    EXPECT_TRUE(database.getEnergyHistory("T_1").value->empty());
+    EXPECT_EQ(latestLogs(database, "M_1").value->size(), 1u);
+    EXPECT_TRUE(latestLogs(database, "T_1").value->empty());
 
     matterFake.stateToReturn = "OFFLINE";
     manager.runHealthCheck();
-    EXPECT_EQ(database.getEnergyHistory("M_1").value->size(), 1u); // OFFLINE이면 기록 없음
+    EXPECT_EQ(latestLogs(database, "M_1").value->size(), 1u); // OFFLINE이면 기록 없음
     matterFake.stateToReturn = "UNKNOWN";
     manager.runHealthCheck();
-    EXPECT_EQ(database.getEnergyHistory("M_1").value->size(), 1u);
+    EXPECT_EQ(latestLogs(database, "M_1").value->size(), 1u);
 }
 
 // 예전에는 UNKNOWN이면 DB를 OFF(0)로 덮었다. 이제 "모름"은 저장된 상태를 바꾸지 않는다

@@ -8,6 +8,7 @@
 #include <ctime>
 #include <filesystem>
 #include <fcntl.h>
+#include <memory>
 #include <sys/stat.h>
 #include <unistd.h>
 namespace {
@@ -284,12 +285,12 @@ bool DatabaseManager::insertDevice(const Device& device) {
     return success;
 }
 
-// 부팅 시 DB에서 전체 기기 읽어오기 (SELECT)
-std::vector<Device> DatabaseManager::loadAllDevices() {
+// 부팅 시 DB에서 숨기지 않은 기기 읽어오기 (SELECT)
+std::vector<Device> DatabaseManager::loadActiveDevices() {
     std::lock_guard<std::mutex> lock(mutex_);
     std::vector<Device> devices;
     if (!db_) return devices;
-    const char* sql = "SELECT device_id, display_name, protocol_type, is_active, driverTypes FROM devices;";
+    const char* sql = "SELECT device_id, display_name, protocol_type, is_active, driverTypes FROM devices WHERE deleted_at IS NULL;";
     sqlite3_stmt* stmt;
 
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
@@ -365,23 +366,25 @@ bool DatabaseManager::updateDeviceState(const std::string& device_id, int is_act
     sqlite3_finalize(stmt);
     return success;
 }
-bool DatabaseManager::removeDevice(const std::string& device_id) {
+Status DatabaseManager::markDeleted(const std::string& device_id, const std::string& deletedAtUtc) {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (!db_) return false;
-    const char* sql = "DELETE FROM devices WHERE device_id = ?;";
-    sqlite3_stmt* stmt;
-
+    if (!db_) return Status::failure(ErrorCode::Internal, "DB가 열려 있지 않음");
+    // deleted_at IS NULL 조건 덕분에 이미 숨긴 기기의 숨김 시각이 덮어써지지 않는다
+    const char* sql = "UPDATE devices SET deleted_at = ? WHERE device_id = ? AND deleted_at IS NULL;";
+    sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
-        std::cerr << "[DB 에러] 기기 삭제 준비 실패(" << device_id << "): " << sqlite3_errmsg(db_) << "\n";
-        return false;
+        std::cerr << "[DB 에러] 기기 숨김 준비 실패(" << device_id << "): " << sqlite3_errmsg(db_) << "\n";
+        sqlite3_finalize(stmt);
+        return Status::failure(ErrorCode::Internal, "기기 숨김 준비 실패");
     }
-
-    sqlite3_bind_text(stmt, 1, device_id.c_str(), -1, SQLITE_STATIC);
-
-    bool success = (sqlite3_step(stmt) == SQLITE_DONE);
-    if (!success) std::cerr << "[DB 에러] 기기 삭제 실패(" << device_id << "): " << sqlite3_errmsg(db_) << "\n";
+    sqlite3_bind_text(stmt, 1, deletedAtUtc.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 2, device_id.c_str(), -1, SQLITE_STATIC);
+    const bool success = (sqlite3_step(stmt) == SQLITE_DONE);
+    if (!success) std::cerr << "[DB 에러] 기기 숨김 실패(" << device_id << "): " << sqlite3_errmsg(db_) << "\n";
     sqlite3_finalize(stmt);
-    return success;
+    if (!success) return Status::failure(ErrorCode::Internal, "기기 숨김 실패");
+    if (sqlite3_changes(db_) == 0) return Status::failure(ErrorCode::DeviceNotFound, "없거나 이미 숨긴 기기");
+    return Status::success();
 }
 
 bool DatabaseManager::initEnergyTable() {
@@ -471,18 +474,20 @@ bool DatabaseManager::initHistoryTableLocked() {
     if (ok) std::cout << "[DatabaseManager] ✅ 시계열 로그 테이블(state_history_logs) 준비 완료!" << std::endl;
     return ok;
 }
-bool DatabaseManager::insertEnergyLog(const std::string& deviceId, int64_t total_mwh) {
+bool DatabaseManager::insertEnergyLog(const std::string& deviceId, int64_t total_mwh, const std::string& timestampUtc) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!db_) return false;
-    const char* sql = "INSERT INTO state_history_logs (device_id, total_mwh) VALUES (?, ?);";
+    const char* sql = "INSERT INTO state_history_logs (device_id, total_mwh, timestamp) VALUES (?, ?, ?);";
     sqlite3_stmt* stmt = nullptr;
 
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
         std::cerr << "[DatabaseManager] ❌ 시계열 데이터 저장 준비 실패: " << sqlite3_errmsg(db_) << std::endl;
+        sqlite3_finalize(stmt);
         return false;
     }
     sqlite3_bind_text(stmt, 1, deviceId.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_int64(stmt, 2, total_mwh);
+    sqlite3_bind_text(stmt, 3, timestampUtc.c_str(), -1, SQLITE_TRANSIENT);
     const bool saved = (sqlite3_step(stmt) == SQLITE_DONE);
     if (!saved) {
         std::cerr << "[DatabaseManager] ❌ 시계열 데이터 저장 실패: " << sqlite3_errmsg(db_) << std::endl;
@@ -490,44 +495,204 @@ bool DatabaseManager::insertEnergyLog(const std::string& deviceId, int64_t total
     sqlite3_finalize(stmt);
     return saved;
 }
-Result<std::vector<EnergyLog>> DatabaseManager::getEnergyHistory(const std::string& deviceId, int limit) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (!db_) return Result<std::vector<EnergyLog>>::failure(ErrorCode::Internal, "DB가 열려 있지 않음");
-    if (limit <= 0) {
-        // SQLite는 LIMIT 음수를 "제한 없음"으로 본다. 조용히 전체를 돌려주지 않도록 거부한다
-        return Result<std::vector<EnergyLog>>::failure(ErrorCode::InvalidRequest, "limit은 1 이상");
+
+namespace {
+
+using StatementPtr = std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)>;
+
+StatementPtr prepareStatement(sqlite3* db, const std::string& sql) {
+    sqlite3_stmt* raw = nullptr;
+    if (sqlite3_prepare_v2(db, sql.c_str(), -1, &raw, nullptr) != SQLITE_OK) {
+        sqlite3_finalize(raw);
+        raw = nullptr;
     }
-    std::vector<EnergyLog> logs;
+    return StatementPtr(raw, &sqlite3_finalize);
+}
 
-    const char* sql = "SELECT timestamp, total_mwh FROM state_history_logs "
-                      "WHERE device_id = ? ORDER BY timestamp DESC, log_id DESC LIMIT ?;"; // 같은 초면 넣은 순서
-    sqlite3_stmt* stmt = nullptr;
-
-    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
-        std::cerr << "[DatabaseManager] ❌ 시계열 데이터 조회 실패: " << sqlite3_errmsg(db_) << std::endl;
-        return Result<std::vector<EnergyLog>>::failure(ErrorCode::Internal, "시계열 조회 준비 실패");
-    }
-    sqlite3_bind_text(stmt, 1, deviceId.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int(stmt, 2, limit);
-
+// 끝까지 읽어 logs에 붙인다. 중간 오류면 false
+bool appendLogRows(sqlite3_stmt* stmt, std::vector<EnergyLog>& logs) {
     int stepResult = SQLITE_DONE;
     while ((stepResult = sqlite3_step(stmt)) == SQLITE_ROW) {
         EnergyLog log;
-        const char* ts = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-        log.timestamp = ts ? ts : ""; // null 방어
+        const char* text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        log.timestamp = text ? text : "";
         log.total_mwh = sqlite3_column_int64(stmt, 1);
-        logs.push_back(log);
+        logs.push_back(std::move(log));
     }
-    sqlite3_finalize(stmt);
-    if (stepResult != SQLITE_DONE) {
+    return stepResult == SQLITE_DONE;
+}
+
+}  // namespace
+
+Result<HistoryPage> DatabaseManager::queryHistory(const std::string& deviceId, const std::optional<std::string>& fromUtc,
+                                                  const std::optional<std::string>& toUtc, int limit) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!db_) return Result<HistoryPage>::failure(ErrorCode::Internal, "DB가 열려 있지 않음");
+    if (limit <= 0) {
+        // SQLite는 LIMIT 음수를 "제한 없음"으로 본다. 조용히 전체를 돌려주지 않도록 거부한다
+        return Result<HistoryPage>::failure(ErrorCode::InvalidRequest, "limit은 1 이상");
+    }
+
+    // 조건 조각은 고정 문자열이고 값은 모두 바인딩한다. 조건을 생략하면 인덱스를 그대로 탄다
+    std::string sql = "SELECT timestamp, total_mwh FROM state_history_logs WHERE device_id = ?";
+    if (fromUtc) sql += " AND timestamp >= ?";
+    if (toUtc) sql += " AND timestamp < ?";
+    sql += " ORDER BY timestamp DESC, log_id DESC LIMIT ?"; // 같은 초면 넣은 순서
+
+    auto stmt = prepareStatement(db_, sql);
+    if (!stmt) {
+        std::cerr << "[DatabaseManager] ❌ 시계열 데이터 조회 실패: " << sqlite3_errmsg(db_) << std::endl;
+        return Result<HistoryPage>::failure(ErrorCode::Internal, "시계열 조회 준비 실패");
+    }
+    int index = 1;
+    sqlite3_bind_text(stmt.get(), index++, deviceId.c_str(), -1, SQLITE_TRANSIENT);
+    if (fromUtc) sqlite3_bind_text(stmt.get(), index++, fromUtc->c_str(), -1, SQLITE_TRANSIENT);
+    if (toUtc) sqlite3_bind_text(stmt.get(), index++, toUtc->c_str(), -1, SQLITE_TRANSIENT);
+    // 한 건 더 읽어 보면 "더 있는지"를 알 수 있다
+    sqlite3_bind_int64(stmt.get(), index, static_cast<int64_t>(limit) + 1);
+
+    HistoryPage page;
+    if (!appendLogRows(stmt.get(), page.logs)) {
         std::cerr << "[DatabaseManager] ❌ 시계열 데이터 읽기 중 오류: " << sqlite3_errmsg(db_) << std::endl;
-        return Result<std::vector<EnergyLog>>::failure(ErrorCode::Internal, "시계열 읽기 실패");
+        return Result<HistoryPage>::failure(ErrorCode::Internal, "시계열 읽기 실패");
+    }
+    page.truncated = page.logs.size() > static_cast<size_t>(limit);
+    if (page.truncated) page.logs.pop_back(); // 최신순이므로 맨 뒤가 가장 오래된 여분
+    std::reverse(page.logs.begin(), page.logs.end());
+    return Result<HistoryPage>::success(std::move(page));
+}
+
+Result<std::vector<EnergyLog>> DatabaseManager::querySamplesForAggregation(const std::string& deviceId,
+                                                                           const std::string& fromUtc,
+                                                                           const std::string& toUtc) {
+    using Samples = Result<std::vector<EnergyLog>>;
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!db_) return Samples::failure(ErrorCode::Internal, "DB가 열려 있지 않음");
+
+    std::vector<EnergyLog> samples;
+    // 첫 구간의 사용량은 범위 시작 직전 기록과의 차이가 필요하다
+    auto before = prepareStatement(db_, "SELECT timestamp, total_mwh FROM state_history_logs "
+                                        "WHERE device_id = ? AND timestamp < ? "
+                                        "ORDER BY timestamp DESC, log_id DESC LIMIT 1;");
+    auto inRange = prepareStatement(db_, "SELECT timestamp, total_mwh FROM state_history_logs "
+                                         "WHERE device_id = ? AND timestamp >= ? AND timestamp < ? "
+                                         "ORDER BY timestamp ASC, log_id ASC;");
+    if (!before || !inRange) {
+        std::cerr << "[DatabaseManager] ❌ 집계용 조회 준비 실패: " << sqlite3_errmsg(db_) << std::endl;
+        return Samples::failure(ErrorCode::Internal, "집계용 조회 준비 실패");
+    }
+    sqlite3_bind_text(before.get(), 1, deviceId.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(before.get(), 2, fromUtc.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(inRange.get(), 1, deviceId.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(inRange.get(), 2, fromUtc.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(inRange.get(), 3, toUtc.c_str(), -1, SQLITE_TRANSIENT);
+
+    if (!appendLogRows(before.get(), samples) || !appendLogRows(inRange.get(), samples)) {
+        std::cerr << "[DatabaseManager] ❌ 집계용 데이터 읽기 중 오류: " << sqlite3_errmsg(db_) << std::endl;
+        return Samples::failure(ErrorCode::Internal, "집계용 읽기 실패");
+    }
+    return Samples::success(std::move(samples));
+}
+
+Result<std::optional<std::string>> DatabaseManager::latestHistoryTime() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return latestHistoryTimeLocked();
+}
+
+Result<std::optional<std::string>> DatabaseManager::latestHistoryTimeLocked() {
+    using Latest = Result<std::optional<std::string>>;
+    if (!db_) return Latest::failure(ErrorCode::Internal, "DB가 열려 있지 않음");
+    auto stmt = prepareStatement(db_, "SELECT MAX(timestamp) FROM state_history_logs;");
+    if (!stmt || sqlite3_step(stmt.get()) != SQLITE_ROW) {
+        std::cerr << "[DatabaseManager] ❌ 마지막 이력 시각 조회 실패: " << sqlite3_errmsg(db_) << std::endl;
+        return Latest::failure(ErrorCode::Internal, "마지막 이력 시각 조회 실패");
+    }
+    const char* text = reinterpret_cast<const char*>(sqlite3_column_text(stmt.get(), 0));
+    return Latest::success(text ? std::optional<std::string>(text) : std::nullopt);
+}
+
+std::optional<int64_t> DatabaseManager::countLocked(const char* sql, const std::string* cutoffUtc) {
+    auto stmt = prepareStatement(db_, sql);
+    if (!stmt) return std::nullopt;
+    if (cutoffUtc) sqlite3_bind_text(stmt.get(), 1, cutoffUtc->c_str(), -1, SQLITE_TRANSIENT);
+    if (sqlite3_step(stmt.get()) != SQLITE_ROW) return std::nullopt;
+    return sqlite3_column_int64(stmt.get(), 0);
+}
+
+// 지운 행 수. 실패하면 nullopt
+std::optional<int64_t> DatabaseManager::deleteLocked(const char* sql, const std::string* cutoffUtc) {
+    auto stmt = prepareStatement(db_, sql);
+    if (!stmt) return std::nullopt;
+    if (cutoffUtc) sqlite3_bind_text(stmt.get(), 1, cutoffUtc->c_str(), -1, SQLITE_TRANSIENT);
+    if (sqlite3_step(stmt.get()) != SQLITE_DONE) return std::nullopt;
+    return sqlite3_changes(db_);
+}
+
+Result<PurgeResult> DatabaseManager::purgeExpired(const std::string& cutoffUtc, double maxDeleteRatio) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!db_) return Result<PurgeResult>::failure(ErrorCode::Internal, "DB가 열려 있지 않음");
+    if (!execLocked("BEGIN IMMEDIATE;", "[DB] 정리 트랜잭션 시작 실패: ")) {
+        return Result<PurgeResult>::failure(ErrorCode::Internal, "정리 트랜잭션 시작 실패");
+    }
+    auto result = purgeLocked(cutoffUtc, maxDeleteRatio);
+    // 건너뜀·실패는 아무것도 지우지 않은 채 되돌린다
+    const bool shouldCommit = result.ok() && !result.value->skipped;
+    if (shouldCommit && execLocked("COMMIT;", "[DB] 정리 커밋 실패: ")) return result;
+    sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
+    if (shouldCommit) return Result<PurgeResult>::failure(ErrorCode::Internal, "정리 커밋 실패");
+    return result;
+}
+
+Result<PurgeResult> DatabaseManager::purgeLocked(const std::string& cutoffUtc, double maxDeleteRatio) {
+    using Purge = Result<PurgeResult>;
+    const auto fail = [this](const char* what) {
+        std::cerr << "[DB] 정리 실패(" << what << "): " << sqlite3_errmsg(db_) << std::endl;
+        return Purge::failure(ErrorCode::Internal, what);
+    };
+
+    // 안전장치 1: 마지막 이력이 기준일보다도 오래됐다 = 지금 시계가 이력보다 90일 넘게 앞서 있다(시계 오류 의심)
+    const auto latest = latestHistoryTimeLocked();
+    if (!latest.ok()) return Purge::failure(latest.error.code, latest.error.message);
+    if (latest.value->has_value() && **latest.value < cutoffUtc) {
+        PurgeResult skipped;
+        skipped.skipped = true;
+        skipped.reason = "마지막 이력이 기준일보다 오래됨(시계 이상 의심)";
+        return Purge::success(skipped);
     }
 
-    std::reverse(logs.begin(), logs.end());
-
-    if (logs.empty()) {
-        std::cout << "[DatabaseManager] 기기(" << deviceId << ")의 저장된 시계열 데이터가 없습니다." << std::endl;
+    // 안전장치 2: 지울 이력이 전체의 maxDeleteRatio를 넘으면 건너뛴다
+    const auto totalLogs = countLocked("SELECT COUNT(*) FROM state_history_logs;", nullptr);
+    const auto expiredLogs = countLocked("SELECT COUNT(*) FROM state_history_logs WHERE timestamp < ?;", &cutoffUtc);
+    if (!totalLogs || !expiredLogs) return fail("이력 개수 조회");
+    if (*totalLogs > 0 && static_cast<double>(*expiredLogs) > maxDeleteRatio * static_cast<double>(*totalLogs)) {
+        PurgeResult skipped;
+        skipped.skipped = true;
+        skipped.reason = "지울 이력이 전체의 " + std::to_string(static_cast<int>(maxDeleteRatio * 100)) + "% 초과";
+        return Purge::success(skipped);
     }
-    return Result<std::vector<EnergyLog>>::success(std::move(logs));
+
+    PurgeResult purged;
+    const auto oldLogs = deleteLocked("DELETE FROM state_history_logs WHERE timestamp < ?;", &cutoffUtc);
+    if (!oldLogs) return fail("오래된 이력 삭제");
+    purged.deletedLogs = *oldLogs;
+
+    // 숨긴 지 기준일이 지난 기기: 통계·이력을 먼저 지우고 마지막에 기기 행
+    const char* const kExpiredDeviceIds = "(SELECT device_id FROM devices WHERE deleted_at < ?)";
+    const std::string expiredStatsSql = std::string("DELETE FROM device_energy_stats WHERE device_id IN ") + kExpiredDeviceIds + ";";
+    const std::string expiredLogsSql = std::string("DELETE FROM state_history_logs WHERE device_id IN ") + kExpiredDeviceIds + ";";
+    if (!deleteLocked(expiredStatsSql.c_str(), &cutoffUtc) || !deleteLocked(expiredLogsSql.c_str(), &cutoffUtc)) {
+        return fail("숨김 기기 통계·이력 삭제");
+    }
+    const auto expiredDevices = deleteLocked("DELETE FROM devices WHERE deleted_at < ?;", &cutoffUtc);
+    if (!expiredDevices) return fail("숨김 기기 삭제");
+    purged.deletedDevices = *expiredDevices;
+
+    // 기기 행이 없는 통계·이력. 시계와 무관하므로 비율 검사에 넣지 않는다
+    const auto orphanStats = deleteLocked("DELETE FROM device_energy_stats WHERE NOT EXISTS "
+        "(SELECT 1 FROM devices d WHERE d.device_id = device_energy_stats.device_id);", nullptr);
+    const auto orphanLogs = deleteLocked("DELETE FROM state_history_logs WHERE NOT EXISTS "
+        "(SELECT 1 FROM devices d WHERE d.device_id = state_history_logs.device_id);", nullptr);
+    if (!orphanStats || !orphanLogs) return fail("고아 행 삭제");
+    purged.deletedOrphans = *orphanStats + *orphanLogs;
+    return Purge::success(purged);
 }

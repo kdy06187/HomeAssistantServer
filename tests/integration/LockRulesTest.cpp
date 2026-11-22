@@ -104,7 +104,7 @@ TEST_F(LockRulesTest, RemoveDeviceDoesNotBlockOtherRequestsWhileUnpairing) {
     EXPECT_EQ(status, std::future_status::ready) << "해제 중에 다른 요청이 1초 넘게 막혔다";
     EXPECT_TRUE(otherRequests.get());
     EXPECT_TRUE(removal.get());
-    EXPECT_TRUE(database.loadAllDevices().size() == 1u);
+    EXPECT_TRUE(database.loadActiveDevices().size() == 1u);
 }
 
 // 해제가 시작되면 그 기기는 목록에서 먼저 사라진다(해제 도중의 제어는 "없는 기기")
@@ -184,7 +184,7 @@ TEST_F(LockRulesTest, ConcurrentOperationsFinishWithoutDeadlock) {
 
     // 끝난 뒤에도 맵과 DB가 정상 동작하는지 확인
     EXPECT_EQ(manager.getAllDevices().size(), ids.size() + 1);
-    EXPECT_EQ(database.loadAllDevices().size(), ids.size() + 1);
+    EXPECT_EQ(database.loadActiveDevices().size(), ids.size() + 1);
     EXPECT_EQ(manager.executeCommand("D0", "ON").outcome, CommandOutcome::Succeeded);
 }
 
@@ -240,7 +240,7 @@ TEST_F(LockRulesTest, ConcurrentRemoveAndAddOfSameIdRecoversConsistency) {
     std::atomic<bool> startFlag{false};
     auto waitStart = [&startFlag] { while (!startFlag.load()) std::this_thread::yield(); };
     auto inDatabase = [this] {
-        for (const auto& device : database.loadAllDevices()) if (device.id == "X") return true;
+        for (const auto& device : database.loadActiveDevices()) if (device.id == "X") return true;
         return false;
     };
 
@@ -277,7 +277,7 @@ TEST_F(LockRulesTest, UnpairExceptionStillLeavesDeviceDeletedFromDatabase) {
     EXPECT_THROW(manager.removeDevice("A"), std::runtime_error);
 
     EXPECT_TRUE(manager.getAllDevices().empty());
-    EXPECT_TRUE(database.loadAllDevices().empty());
+    EXPECT_TRUE(database.loadActiveDevices().empty());
 }
 
 // ---- 명령 결과의 state는 응답에 바로 쓰는 값이다 ----

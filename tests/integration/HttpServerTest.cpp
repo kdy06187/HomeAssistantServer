@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include "DatabaseManager.hpp"
+#include "support/HistoryTestHelper.hpp"
 #include "DeviceManager.hpp"
 #include "DriverManager.hpp"
 #include "HTTPServer.hpp"
@@ -751,8 +752,8 @@ TEST_F(HttpServerTest, E6UnparsableDeviceOutputReturns502) {
 // from·to·period와 v2.0 키·시각 형식은 12번에서 바꾼다. 지금은 v1.0 본문 + 새 오류 규약
 TEST_F(HttpServerTest, E7HistoryReturnsLogsAnd404ForUnknownDevice) {
     addDevice(ProtocolType::MATTER, "PLUG_1", "plug");
-    database.insertEnergyLog("PLUG_1", 100);
-    database.insertEnergyLog("PLUG_1", 200);
+    database.insertEnergyLog("PLUG_1", 100, "2026-11-19 00:00:00");
+    database.insertEnergyLog("PLUG_1", 200, "2026-11-19 00:00:00");
     httplib::Client client("127.0.0.1", port);
     auto response = client.Get("/api/devices/PLUG_1/energy/history", authHeaders());
     ASSERT_TRUE(response);
@@ -771,7 +772,7 @@ TEST_F(HttpServerTest, E7HistoryReturnsLogsAnd404ForUnknownDevice) {
 
 TEST_F(HttpServerTest, E7LimitQueryIsAppliedAndInvalidQueriesReturn400) {
     addDevice(ProtocolType::MATTER, "PLUG_1", "plug");
-    for (int i = 1; i <= 5; ++i) database.insertEnergyLog("PLUG_1", i * 100);
+    for (int i = 1; i <= 5; ++i) database.insertEnergyLog("PLUG_1", i * 100, "2026-11-19 00:00:00");
     httplib::Client client("127.0.0.1", port);
 
     auto limited = client.Get("/api/devices/PLUG_1/energy/history?limit=2", authHeaders());

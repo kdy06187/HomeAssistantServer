@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <sqlite3.h>
 #include "DatabaseManager.hpp"
+#include "support/HistoryTestHelper.hpp"
 #include "DeviceManager.hpp"
 #include "DriverManager.hpp"
 #include "HTTPServer.hpp"
@@ -127,7 +128,7 @@ TEST_F(EnergyPathTest, HealthCheckFailureDoesNotWriteHistoryOrStats) {
     manager.runHealthCheck();
 
     EXPECT_EQ(statsRowCount("PLUG"), "0");
-    EXPECT_TRUE(database.getEnergyHistory("PLUG").value->empty());
+    EXPECT_TRUE(latestLogs(database, "PLUG").value->empty());
 }
 
 // D7: 32비트를 넘는 누적값(약 2.1 MWh 초과)도 잘리지 않는다
@@ -316,14 +317,14 @@ TEST_F(EnergyPathTest, HistoryOrdersSameSecondByInsertionAndRejectsNonPositiveLi
     raw.exec("INSERT INTO state_history_logs (device_id, total_mwh, timestamp) VALUES "
              "('PLUG', 10, '2026-11-19 00:00:00'), ('PLUG', 20, '2026-11-19 00:00:00'), ('PLUG', 30, '2026-11-19 00:00:00');");
 
-    auto latestTwo = database.getEnergyHistory("PLUG", 2);
+    auto latestTwo = latestLogs(database, "PLUG", 2);
     ASSERT_TRUE(latestTwo.ok());
     ASSERT_EQ(latestTwo.value->size(), 2u);
     EXPECT_EQ((*latestTwo.value)[0].total_mwh, 20);
     EXPECT_EQ((*latestTwo.value)[1].total_mwh, 30);
 
-    EXPECT_EQ(database.getEnergyHistory("PLUG", 0).error.code, ErrorCode::InvalidRequest);
-    EXPECT_EQ(database.getEnergyHistory("PLUG", -1).error.code, ErrorCode::InvalidRequest);
+    EXPECT_EQ(latestLogs(database, "PLUG", 0).error.code, ErrorCode::InvalidRequest);
+    EXPECT_EQ(latestLogs(database, "PLUG", -1).error.code, ErrorCode::InvalidRequest);
 }
 
 // E14: E7 응답 필드·순서 전체
@@ -401,7 +402,7 @@ TEST_F(EnergyPathTest, InsertEnergyLogReturnsFalseWhenStoreFails) {
     RawDb raw(dbPath_);
     raw.exec("CREATE TRIGGER reject_log BEFORE INSERT ON state_history_logs BEGIN SELECT RAISE(ABORT, 'no'); END;");
 
-    EXPECT_FALSE(database.insertEnergyLog("PLUG", 100));
+    EXPECT_FALSE(database.insertEnergyLog("PLUG", 100, "2026-11-19 00:00:00"));
 }
 
 // ---- G11 / H12: E7은 존재 확인 먼저, DB 오류는 500 ----
@@ -456,7 +457,7 @@ TEST_F(EnergyPathTest, LoadSkipsNullIdAndAcceptsNullName) {
     raw.exec("INSERT INTO devices (device_id, display_name, protocol_type, is_active) VALUES ('SN-1', NULL, 0, 1);"
              "INSERT INTO devices (device_id, display_name, protocol_type, is_active) VALUES (NULL, 'ghost', 0, 1);");
 
-    const auto devices = database.loadAllDevices();
+    const auto devices = database.loadActiveDevices();
 
     ASSERT_EQ(devices.size(), 1u);
     EXPECT_EQ(devices[0].id, "SN-1");
@@ -475,12 +476,12 @@ TEST(EnergyPathClosedDbTest, CallsOnUnopenedOrClosedDatabaseFailSafely) {
         int64_t total = 0;
         Device device("X", "x", ProtocolType::MATTER);
         EXPECT_FALSE(db.insertDevice(device));
-        EXPECT_TRUE(db.loadAllDevices().empty());
+        EXPECT_TRUE(db.loadActiveDevices().empty());
         EXPECT_FALSE(db.updateDeviceState("X", 1));
-        EXPECT_FALSE(db.removeDevice("X"));
+        EXPECT_FALSE(db.markDeleted("X", "2026-11-19 00:00:00").ok());
         EXPECT_FALSE(db.updateEnergyStat("X", 1, total));
-        EXPECT_FALSE(db.insertEnergyLog("X", 1));
-        EXPECT_FALSE(db.getEnergyHistory("X").ok());
+        EXPECT_FALSE(db.insertEnergyLog("X", 1, "2026-11-19 00:00:00"));
+        EXPECT_FALSE(latestLogs(db, "X").ok());
         EXPECT_FALSE(db.initEnergyTable());
         EXPECT_FALSE(db.initHistoryTable());
     }

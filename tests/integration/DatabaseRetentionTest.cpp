@@ -1,0 +1,249 @@
+#include <gtest/gtest.h>
+#include <chrono>
+#include <string>
+#include "DatabaseManager.hpp"
+#include "UtcTime.hpp"
+#include "support/HistoryTestHelper.hpp"
+
+namespace {
+
+using std::chrono::hours;
+using std::chrono::seconds;
+
+constexpr int kRetentionDays = 90;
+
+// 시험에서 "지금"으로 쓰는 고정 시각
+const std::chrono::system_clock::time_point kNow = *UtcTime::fromDbText("2026-11-21 00:00:00");
+const std::chrono::system_clock::time_point kCutoff = kNow - hours(24 * kRetentionDays);
+
+std::string textAt(std::chrono::system_clock::time_point time) { return UtcTime::toDbText(time); }
+
+class DatabaseRetentionTest : public ::testing::Test {
+protected:
+    void SetUp() override { ASSERT_TRUE(db.init(":memory:")); }
+
+    void addDevice(const std::string& id) {
+        Device device(id, id, ProtocolType::MATTER);
+        device.state = "ON";
+        ASSERT_TRUE(db.insertDevice(device));
+    }
+    void addLog(const std::string& id, int64_t total, std::chrono::system_clock::time_point time) {
+        ASSERT_TRUE(db.insertEnergyLog(id, total, textAt(time)));
+    }
+    void addRecentLogs(const std::string& id, int count) {
+        for (int i = 0; i < count; ++i) addLog(id, 1000 + i, kNow - seconds(60 * (i + 1)));
+    }
+    size_t logCount(const std::string& id) { return latestLogs(db, id, 1000).value->size(); }
+
+    DatabaseManager db;
+};
+
+}  // namespace
+
+TEST_F(DatabaseRetentionTest, HiddenDeviceIsNotLoadedAndSecondHideFails) {
+    addDevice("A");
+    addDevice("B");
+    ASSERT_TRUE(db.markDeleted("A", textAt(kNow)).ok());
+
+    const auto active = db.loadActiveDevices();
+    ASSERT_EQ(active.size(), 1u);
+    EXPECT_EQ(active[0].id, "B");
+    EXPECT_EQ(db.markDeleted("A", textAt(kNow)).error.code, ErrorCode::DeviceNotFound);
+    EXPECT_EQ(db.markDeleted("NOPE", textAt(kNow)).error.code, ErrorCode::DeviceNotFound);
+}
+
+// 숨긴 기기를 같은 ID로 다시 등록하면 활성으로 돌아오고 통계·이력이 이어진다
+TEST_F(DatabaseRetentionTest, ReRegisteringHiddenDeviceRestoresItWithStatsAndHistory) {
+    addDevice("A");
+    int64_t total = 0;
+    ASSERT_TRUE(db.updateEnergyStat("A", 100, total));
+    addLog("A", 100, kNow - hours(2));
+    ASSERT_TRUE(db.markDeleted("A", textAt(kNow - hours(1))).ok());
+    ASSERT_TRUE(db.loadActiveDevices().empty());
+
+    addDevice("A");
+
+    ASSERT_EQ(db.loadActiveDevices().size(), 1u);
+    ASSERT_TRUE(db.updateEnergyStat("A", 150, total));
+    EXPECT_EQ(total, 150); // 100 + 차이 50
+    EXPECT_EQ(logCount("A"), 1u);
+}
+
+TEST_F(DatabaseRetentionTest, LogRetentionBoundaryAt90Days) {
+    addDevice("A");
+    addLog("A", 1, kCutoff - seconds(1)); // 90일을 막 넘김 -> 삭제
+    addLog("A", 2, kCutoff);              // 정확히 기준 시각 -> 유지
+    addLog("A", 3, kCutoff + seconds(1)); // 89일 23시간 59분 59초 -> 유지
+    addRecentLogs("A", 10);
+
+    const auto purge = db.purgeExpired(textAt(kCutoff));
+
+    ASSERT_TRUE(purge.ok());
+    EXPECT_FALSE(purge.value->skipped);
+    EXPECT_EQ(purge.value->deletedLogs, 1);
+    const auto logs = *latestLogs(db, "A", 1000).value;
+    ASSERT_EQ(logs.size(), 12u);
+    EXPECT_EQ(logs.front().total_mwh, 2);
+}
+
+// 숨긴 지 90일이 지난 기기는 통계·이력·행이 모두 사라지고, 89일이면 남는다
+TEST_F(DatabaseRetentionTest, HiddenDeviceIsPurgedAfter90DaysButKeptBefore) {
+    addDevice("OLD");
+    addDevice("RECENT");
+    addDevice("LIVE");
+    int64_t total = 0;
+    ASSERT_TRUE(db.updateEnergyStat("OLD", 10, total));
+    ASSERT_TRUE(db.updateEnergyStat("RECENT", 20, total));
+    addLog("OLD", 10, kNow - hours(24));
+    addLog("RECENT", 20, kNow - hours(24));
+    addRecentLogs("LIVE", 5);
+    ASSERT_TRUE(db.markDeleted("OLD", textAt(kCutoff - seconds(1))).ok());
+    ASSERT_TRUE(db.markDeleted("RECENT", textAt(kCutoff + seconds(1))).ok());
+
+    const auto purge = db.purgeExpired(textAt(kCutoff));
+
+    ASSERT_TRUE(purge.ok());
+    EXPECT_EQ(purge.value->deletedDevices, 1);
+    EXPECT_EQ(logCount("OLD"), 0u);
+    EXPECT_EQ(logCount("RECENT"), 1u);
+    // OLD의 통계가 지워졌으면 같은 ID는 최초 등록처럼 시작한다
+    ASSERT_TRUE(db.updateEnergyStat("OLD", 5, total));
+    EXPECT_EQ(total, 5);
+    ASSERT_TRUE(db.updateEnergyStat("RECENT", 30, total));
+    EXPECT_EQ(total, 30); // 20 + 10
+}
+
+TEST_F(DatabaseRetentionTest, SkipsWhenClockIsFarAheadOfLatestLog) {
+    addDevice("A");
+    addLog("A", 1, kCutoff - hours(24 * 10));
+    addLog("A", 2, kCutoff - hours(24));
+
+    const auto purge = db.purgeExpired(textAt(kCutoff));
+
+    ASSERT_TRUE(purge.ok());
+    EXPECT_TRUE(purge.value->skipped);
+    EXPECT_FALSE(purge.value->reason.empty());
+    EXPECT_EQ(logCount("A"), 2u);
+}
+
+TEST_F(DatabaseRetentionTest, SkipsWhenMoreThanHalfOfLogsWouldBeDeleted) {
+    addDevice("A");
+    for (int i = 0; i < 6; ++i) addLog("A", i, kCutoff - hours(1 + i));
+    addRecentLogs("A", 4);
+
+    const auto purge = db.purgeExpired(textAt(kCutoff));
+
+    ASSERT_TRUE(purge.ok());
+    EXPECT_TRUE(purge.value->skipped);
+    EXPECT_EQ(logCount("A"), 10u);
+}
+
+TEST_F(DatabaseRetentionTest, ExactlyHalfIsNotSkipped) {
+    addDevice("A");
+    for (int i = 0; i < 5; ++i) addLog("A", i, kCutoff - hours(1 + i));
+    addRecentLogs("A", 5);
+
+    const auto purge = db.purgeExpired(textAt(kCutoff));
+
+    ASSERT_TRUE(purge.ok());
+    EXPECT_FALSE(purge.value->skipped);
+    EXPECT_EQ(purge.value->deletedLogs, 5);
+    EXPECT_EQ(logCount("A"), 5u);
+}
+
+TEST_F(DatabaseRetentionTest, SkipDoesNotDeleteHiddenDevicesEither) {
+    addDevice("A");
+    ASSERT_TRUE(db.markDeleted("A", textAt(kCutoff - hours(24))).ok());
+    addLog("A", 1, kCutoff - hours(48)); // 최신 이력이 기준일보다 오래 -> 건너뜀
+
+    const auto purge = db.purgeExpired(textAt(kCutoff));
+
+    ASSERT_TRUE(purge.ok());
+    EXPECT_TRUE(purge.value->skipped);
+    EXPECT_EQ(logCount("A"), 1u);
+}
+
+// 기기 행이 없는 통계·이력(고아)은 정리된다. 숨긴 기기의 행은 고아가 아니다
+TEST_F(DatabaseRetentionTest, OrphanRowsArePurgedButHiddenDeviceRowsAreNot) {
+    addDevice("LIVE");
+    addDevice("HIDDEN");
+    addRecentLogs("LIVE", 3);
+    int64_t total = 0;
+    ASSERT_TRUE(db.updateEnergyStat("GHOST", 7, total));
+    addLog("GHOST", 7, kNow - hours(1));
+    addLog("HIDDEN", 9, kNow - hours(1));
+    ASSERT_TRUE(db.markDeleted("HIDDEN", textAt(kNow - hours(1))).ok());
+
+    const auto purge = db.purgeExpired(textAt(kCutoff));
+
+    ASSERT_TRUE(purge.ok());
+    EXPECT_EQ(purge.value->deletedOrphans, 2); // 통계 1 + 이력 1
+    EXPECT_EQ(logCount("GHOST"), 0u);
+    EXPECT_EQ(logCount("HIDDEN"), 1u);
+    ASSERT_TRUE(db.updateEnergyStat("GHOST", 3, total));
+    EXPECT_EQ(total, 3);
+}
+
+TEST_F(DatabaseRetentionTest, PurgeOnEmptyDatabaseDoesNothing) {
+    const auto purge = db.purgeExpired(textAt(kCutoff));
+    ASSERT_TRUE(purge.ok());
+    EXPECT_FALSE(purge.value->skipped);
+    EXPECT_EQ(purge.value->deletedLogs + purge.value->deletedDevices + purge.value->deletedOrphans, 0);
+}
+
+TEST_F(DatabaseRetentionTest, TruncatedIsSetWhenMoreThanLimitExist) {
+    addDevice("A");
+    for (int i = 1; i <= 5; ++i) addLog("A", i * 100, kNow - seconds(60 * (6 - i)));
+
+    const auto exact = db.queryHistory("A", std::nullopt, std::nullopt, 5);
+    ASSERT_TRUE(exact.ok());
+    EXPECT_FALSE(exact.value->truncated);
+    EXPECT_EQ(exact.value->logs.size(), 5u);
+
+    const auto cut = db.queryHistory("A", std::nullopt, std::nullopt, 4);
+    ASSERT_TRUE(cut.ok());
+    EXPECT_TRUE(cut.value->truncated);
+    ASSERT_EQ(cut.value->logs.size(), 4u);
+    EXPECT_EQ(cut.value->logs.front().total_mwh, 200); // 가장 오래된 100이 잘림
+    EXPECT_EQ(cut.value->logs.back().total_mwh, 500);
+}
+
+TEST_F(DatabaseRetentionTest, QueryRangeIsHalfOpenAndRejectsBadLimit) {
+    addDevice("A");
+    addLog("A", 1, kNow - seconds(2));
+    addLog("A", 2, kNow - seconds(1));
+    addLog("A", 3, kNow);
+
+    const auto page = db.queryHistory("A", textAt(kNow - seconds(1)), textAt(kNow), 50);
+
+    ASSERT_TRUE(page.ok());
+    ASSERT_EQ(page.value->logs.size(), 1u);
+    EXPECT_EQ(page.value->logs[0].total_mwh, 2); // from 포함, to 미만
+    EXPECT_EQ(db.queryHistory("A", std::nullopt, std::nullopt, 0).error.code, ErrorCode::InvalidRequest);
+}
+
+TEST_F(DatabaseRetentionTest, AggregationSamplesIncludeOneBeforeRange) {
+    addDevice("A");
+    addLog("A", 1, kNow - hours(3));
+    addLog("A", 2, kNow - hours(2)); // 범위 시작 직전 1건
+    addLog("A", 3, kNow - hours(1));
+    addLog("A", 4, kNow);            // 범위 끝(미포함)
+
+    const auto samples = db.querySamplesForAggregation("A", textAt(kNow - hours(1)), textAt(kNow));
+
+    ASSERT_TRUE(samples.ok());
+    ASSERT_EQ(samples.value->size(), 2u);
+    EXPECT_EQ((*samples.value)[0].total_mwh, 2);
+    EXPECT_EQ((*samples.value)[1].total_mwh, 3);
+}
+
+TEST_F(DatabaseRetentionTest, LatestHistoryTimeIsEmptyThenMax) {
+    addDevice("A");
+    const auto empty = db.latestHistoryTime();
+    ASSERT_TRUE(empty.ok());
+    EXPECT_FALSE(empty.value->has_value());
+
+    addLog("A", 1, kNow - hours(1));
+    addLog("A", 2, kNow);
+    EXPECT_EQ(**db.latestHistoryTime().value, textAt(kNow));
+}
