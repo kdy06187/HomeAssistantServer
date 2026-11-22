@@ -258,7 +258,10 @@ Result<DeleteOutcome> DeviceManager::removeDevice(const std::string& id){
     scheduler_.cancel(id, "삭제"); // 삭제된 기기에 대기 중이던 명령이 가지 않게
     DeleteOutcome outcome;
     outcome.deletedAtUtc = UtcTime::toDbText(clock_.utcNow());
-    if (!db_.markDeleted(id, outcome.deletedAtUtc).ok()) {
+    const auto marked = db_.markDeleted(id, outcome.deletedAtUtc);
+    // DeviceNotFound = DB에는 이미 숨겨져 있음(같은 ID의 동시 추가·삭제 뒤 메모리에만 남은 경우).
+    // 되돌리면 이 기기를 영영 지울 수 없으므로 삭제를 계속한다. 응답 시각은 기존 숨김 시각이 아니라 지금 시각
+    if (!marked.ok() && marked.error.code != ErrorCode::DeviceNotFound) {
         std::cerr << "[DeviceManager] 에러 : DB 숨김 실패, 기기를 되돌립니다 (" << id << ")" << std::endl;
         std::lock_guard<std::mutex> lock(mutex_);
         // 그 사이 같은 ID가 다시 등록됐다면 새 기기를 덮어쓰지 않는다

@@ -108,6 +108,20 @@ TEST_F(DeviceRetentionFlowTest, UnpairFailureReportsFalseButKeepsDeviceHidden) {
     EXPECT_TRUE(database.loadActiveDevices().empty());
 }
 
+// 동시 추가·삭제 뒤 "메모리에만 남고 DB는 이미 숨김"인 기기도 지울 수 있어야 한다(되돌리면 영영 못 지움)
+TEST_F(DeviceRetentionFlowTest, AlreadyHiddenInDatabaseStillRemovesFromMemory) {
+    addPlug("PLUG");
+    ASSERT_TRUE(database.markDeleted("PLUG", nowText()).ok()); // 메모리는 그대로, DB만 숨김
+
+    const auto outcome = manager.removeDevice("PLUG");
+
+    ASSERT_TRUE(outcome.ok());
+    EXPECT_TRUE(outcome.value->unpaired);
+    EXPECT_TRUE(manager.getAllDevices().empty());
+    EXPECT_EQ(matterFake.unpairedIds.size(), 1u);
+    EXPECT_TRUE(database.loadActiveDevices().empty());
+}
+
 TEST_F(DeviceRetentionFlowTest, DatabaseFailureRestoresDeviceAndReturnsInternal) {
     addPlug("PLUG");
     RawConnection raw(dbPath_);
