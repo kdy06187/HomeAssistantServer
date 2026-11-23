@@ -44,7 +44,8 @@ public:
 
 private:
     bool sendAllLocked(const std::string& data);
-    // 요청 전에 쌓여 있던 입력(늦게 온 이전 응답 등)을 버린다. 상대가 끊었으면 false
+    // 요청 전에 쌓여 있던 입력(늦게 온 이전 응답 등)을 버린다. 상대가 끊었으면 false.
+    // 공백류뿐이면 조용히 버리고, 프로세스에서 처음 버릴 때만 앞 16바이트를 16진으로 남긴다
     bool discardPendingInputLocked();
     // buffer_에서 완성된 줄을 꺼낸다. 상한을 넘으면 false
     bool extractLinesLocked(std::vector<std::string>& outLines);

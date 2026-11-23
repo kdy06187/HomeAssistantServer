@@ -1,5 +1,7 @@
 #include "TcpConnection.hpp"
+#include <algorithm>
 #include <cerrno>
+#include <cstdio>
 #include <iostream>
 #include <poll.h>
 #include <sys/socket.h>
@@ -9,6 +11,25 @@
 namespace {
 
 constexpr std::size_t kRecvChunkBytes = 1024;
+// 버린 입력의 진단용 표본 크기. 기기 응답 뒤에 남은 바이트라 비밀값은 아니지만 짧게 자른다
+constexpr std::size_t kDiscardSampleBytes = 16;
+
+// 프로세스 전체에서 처음 버린 입력 한 번만 16진으로 남긴다(무엇이 남는지 실기에서 확인하려고)
+std::atomic<bool> discardDiagnosticLogged{false};
+
+bool isWhitespaceOnly(const char* data, std::size_t size) {
+    return std::all_of(data, data + size, [](char c) { return c == '\r' || c == '\n' || c == ' ' || c == '\t'; });
+}
+
+std::string toHexBytes(const std::string& bytes) {
+    std::string hex;
+    char pair[4];
+    for (unsigned char byte : bytes) {
+        std::snprintf(pair, sizeof(pair), hex.empty() ? "%02x" : " %02x", byte);
+        hex += pair;
+    }
+    return hex;
+}
 
 void stripCarriageReturn(std::string& line) {
     if (!line.empty() && line.back() == '\r') line.pop_back();
@@ -61,6 +82,9 @@ bool TcpConnection::isPeerGone() const {
 
 bool TcpConnection::discardPendingInputLocked() {
     std::size_t discarded = buffer_.size();
+    // 펌웨어가 응답 뒤에 늦게 보내는 줄바꿈("\r\n")은 해롭지 않으므로 공백류뿐이면 로그를 남기지 않는다
+    bool whitespaceOnly = isWhitespaceOnly(buffer_.data(), buffer_.size());
+    std::string sample = buffer_.substr(0, kDiscardSampleBytes);
     buffer_.clear();
     const auto deadline = std::chrono::steady_clock::now() + kMaxDiscardTime;
     char chunk[kRecvChunkBytes];
@@ -72,7 +96,12 @@ bool TcpConnection::discardPendingInputLocked() {
         }
         const ssize_t n = ::recv(fd_, chunk, sizeof(chunk), MSG_DONTWAIT);
         if (n > 0) {
-            discarded += static_cast<std::size_t>(n);
+            const std::size_t received = static_cast<std::size_t>(n);
+            discarded += received;
+            whitespaceOnly = whitespaceOnly && isWhitespaceOnly(chunk, received);
+            if (sample.size() < kDiscardSampleBytes) {
+                sample.append(chunk, std::min(received, kDiscardSampleBytes - sample.size()));
+            }
             continue;
         }
         if (n == 0) return false;  // 상대가 연결을 닫았다
@@ -80,7 +109,11 @@ bool TcpConnection::discardPendingInputLocked() {
         if (errno == EAGAIN || errno == EWOULDBLOCK) break;
         return false;
     }
-    if (discarded > 0) {
+    if (discarded == 0) return true;
+    if (!discardDiagnosticLogged.exchange(true)) {
+        std::cerr << "[TcpConnection] 버린 잔여(1회 진단): " << toHexBytes(sample) << " (" << peerIp_ << ")" << std::endl;
+    }
+    if (!whitespaceOnly) {
         std::cerr << "[TcpConnection] 요청 전 남아 있던 입력 " << discarded << "바이트 버림 (" << peerIp_ << ")" << std::endl;
     }
     return true;

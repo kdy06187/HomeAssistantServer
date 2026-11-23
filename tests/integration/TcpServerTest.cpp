@@ -727,4 +727,59 @@ TEST_F(TcpServerTest, RapidSameIdReconnectsLeaveOneConnection) {
     EXPECT_EQ(registrations.load(), 1) << "첫 연결이 응답하므로 나머지는 모두 거부";
 }
 
+// ---- 12b: 요청 전 잔여 입력 로그 ----
+
+// 응답 뒤 늦게 온 "\r\n"은 다음 요청을 방해하지 않고 "버림" 로그도 남기지 않는다.
+// 공백이 아닌 잔여는 로그를 남긴다. 1회 진단은 프로세스에서 한 번만(앞선 시험이 썼을 수 있어 최대 1번으로 확인)
+TEST_F(TcpServerTest, TrailingWhitespaceIsDiscardedSilentlyAndDiagnosticAppearsAtMostOnce) {
+    auto device = connect(2);
+    device->serveInBackground([](const std::string&) { return std::string("{\"state\":\"ON\"}"); });
+
+    ::testing::internal::CaptureStderr();
+    ASSERT_TRUE(server.sendAndReceive(device->id(), TcpProtocol::buildGetStateRequest()).is_object());
+    device->send("\r\n");  // 응답보다 늦게 도착한 줄바꿈
+    std::this_thread::sleep_for(50ms);
+    const json second = server.sendAndReceive(device->id(), TcpProtocol::buildGetStateRequest());
+    device->send("{\"x\":1}\n");  // 공백이 아닌 잔여
+    std::this_thread::sleep_for(50ms);
+    const json third = server.sendAndReceive(device->id(), TcpProtocol::buildGetStateRequest());
+    const std::string log = ::testing::internal::GetCapturedStderr();
+    device->stopServing();
+
+    ASSERT_TRUE(second.is_object());
+    EXPECT_EQ(second["state"], "ON");
+    ASSERT_TRUE(third.is_object());
+    const auto firstDiscardLog = log.find("남아 있던 입력");
+    ASSERT_NE(firstDiscardLog, std::string::npos) << "공백이 아닌 잔여는 로그";
+    EXPECT_EQ(log.find("남아 있던 입력", firstDiscardLog + 1), std::string::npos) << "\\r\\n 잔여는 로그 없음";
+    const auto diagnostic = log.find("1회 진단");
+    if (diagnostic != std::string::npos) {
+        EXPECT_EQ(log.find("1회 진단", diagnostic + 1), std::string::npos);
+        EXPECT_NE(log.find("1회 진단): 0d 0a"), std::string::npos) << "이 프로세스의 첫 잔여는 \\r\\n";
+    }
+}
+
+// 1회 진단은 처음 잔여 내용을 16진으로(최대 16바이트) 남기고, 두 번째 잔여에는 남기지 않는다
+TEST_F(TcpServerTest, FirstDiscardDiagnosticShowsAtMostSixteenHexBytesOnce) {
+    auto device = connect(3);
+    device->serveInBackground([](const std::string&) { return std::string("{\"state\":\"ON\"}\n"); });
+    ::testing::internal::CaptureStderr();
+    device->send(std::string(40, 'z'));
+    std::this_thread::sleep_for(50ms);
+    server.sendAndReceive(device->id(), TcpProtocol::buildGetStateRequest());
+    device->send("\r\n");
+    std::this_thread::sleep_for(50ms);
+    server.sendAndReceive(device->id(), TcpProtocol::buildGetStateRequest());
+    const std::string log = ::testing::internal::GetCapturedStderr();
+    device->stopServing();
+    const auto diagnostic = log.find("1회 진단");
+    if (diagnostic != std::string::npos) {  // 앞선 시험이 이미 썼으면 없다
+        std::string expected = "1회 진단): 7a";
+        for (int i = 1; i < 16; ++i) expected += " 7a";
+        expected += " (";
+        EXPECT_NE(log.find(expected), std::string::npos) << log;
+        EXPECT_EQ(log.find("1회 진단", diagnostic + 1), std::string::npos);
+    }
+}
+
 }  // namespace
