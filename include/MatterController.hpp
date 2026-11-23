@@ -27,6 +27,16 @@ public:
     static constexpr std::chrono::milliseconds kCommandTimeout{5000};     // 제어·상태·전력
     static constexpr std::chrono::milliseconds kSlowCommandTimeout{10000}; // 시리얼 읽기·unpair
     static constexpr std::chrono::milliseconds kPairingTimeout{180000};   // BLE+Wi-Fi 페어링
+    // 이보다 짧은 비밀값은 가리지 않는다(SSID) 또는 실패 출력을 남기지 않는다(비밀번호·코드·PIN)
+    static constexpr std::size_t kMinMaskableSecretBytes = 4;
+    // 페어링 실패 로그에 남기는 출력 끝부분 크기
+    static constexpr std::size_t kFailureLogTailBytes = 4096;
+
+    // 페어링 출력에서 가릴 값: SSID(4바이트 이상)·비밀번호·설정 코드·PIN, 빈 값 제외
+    static std::vector<std::string> pairingSecrets(const std::string& wifiSsid, const std::string& wifiPassword,
+                                                   const std::string& manualPincode, const std::string& pinText);
+    static bool hasShortSecret(const std::string& wifiPassword, const std::string& manualPincode, const std::string& pinText);
+    static std::string logTail(const std::string& output);
 
     // =========================================================
     // 1. 생명주기 (Lifecycle) 관리
@@ -80,8 +90,11 @@ private:
         bool cancelled = false;  // 서버 종료 등으로 취소됨: 실패지만 기기 탓이 아니다(오프라인 표시 안 함)
         std::string output;
     };
+    // logDuration: 페어링·시리얼·unpair처럼 느린 명령만 걸린 시간을 남긴다(60초 헬스체크 조회는 남기지 않음)
     ChipToolOutcome runChipTool(const std::vector<std::string>& subcommand, std::chrono::milliseconds timeout,
-                                const std::vector<std::string>& secretsToMask = {});
+                                const std::vector<std::string>& secretsToMask = {}, bool logDuration = false);
+    static void logChipToolDuration(const std::vector<std::string>& subcommand, const ProcessResult& result,
+                                    std::chrono::steady_clock::duration elapsed);
     // 제어·조회용: 실패·성공 표지 없음·오류 키워드면 "OFFLINE"(오프라인 명부 갱신), 취소면 "UNKNOWN", 아니면 출력
     std::string runChipToolCommand(const std::vector<std::string>& subcommand, const std::string& deviceId);
     ChipToolRunner& mRunner;

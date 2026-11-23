@@ -247,6 +247,71 @@ TEST_F(MatterControllerTest, CommissionPairsReadsSerialAndSavesMapping) {
     EXPECT_EQ(runner.callsSnapshot().back().args[3], nodeId);
 }
 
+// ---- 13a-1 마스킹 목록·실패 로그 ----
+
+namespace {
+ProcessResult failedPairing(const std::string& output) { return ProcessResult{1, output, false, false, false}; }
+}  // namespace
+
+// SSID도 가리고(4바이트 이상), 빈 비밀번호는 목록에 넣지 않는다
+TEST_F(MatterControllerTest, PairingMasksSsidAndSkipsEmptyValues) {
+    runner.respond = [](const std::vector<std::string>&) { return failedPairing("fail"); };
+    ASSERT_FALSE(controller->commission(CommissionRequest{"plug", kGoodCode, "home wifi", ""}, {}).ok());
+    const auto secrets = runner.callsSnapshot().at(0).secretsToMask;
+    EXPECT_EQ(secrets, (std::vector<std::string>{"home wifi", kGoodCode, std::to_string(kGoodPin)}));
+}
+
+// 3바이트 SSID는 가리지 않는다(공개 방송 값, 가리면 출력 전체가 망가짐)
+TEST_F(MatterControllerTest, ShortSsidIsNotMasked) {
+    runner.respond = [](const std::vector<std::string>&) { return failedPairing("fail"); };
+    ASSERT_FALSE(controller->commission(CommissionRequest{"plug", kGoodCode, "abc", "password1"}, {}).ok());
+    const auto secrets = runner.callsSnapshot().at(0).secretsToMask;
+    EXPECT_EQ(std::count(secrets.begin(), secrets.end(), "abc"), 0);
+    EXPECT_EQ(std::count(secrets.begin(), secrets.end(), "password1"), 1);
+}
+
+// 4바이트 미만 비밀번호는 가릴 수 없으므로 실패 출력을 로그에 남기지 않는다
+TEST_F(MatterControllerTest, ShortPasswordOmitsFailureOutputFromLog) {
+    runner.respond = [](const std::vector<std::string>&) { return failedPairing("OUTPUT_BODY_MARK pw=abc"); };
+    testing::internal::CaptureStderr();
+    ASSERT_FALSE(controller->commission(CommissionRequest{"plug", kGoodCode, "home wifi", "abc"}, {}).ok());
+    const std::string log = testing::internal::GetCapturedStderr();
+    EXPECT_EQ(log.find("OUTPUT_BODY_MARK"), std::string::npos) << log;
+    EXPECT_NE(log.find("출력 생략: 짧은 비밀값"), std::string::npos) << log;
+}
+
+// 실패 로그는 (이미 마스킹된) 출력의 끝 4KiB만
+TEST_F(MatterControllerTest, FailureLogKeepsOnlyLastFourKiB) {
+    const std::string head = "HEAD_MARK" + std::string(10000, 'x');
+    const std::string tail = std::string(4000, 'y') + "TAIL_MARK";
+    runner.respond = [&](const std::vector<std::string>&) { return failedPairing(head + tail); };
+    testing::internal::CaptureStderr();
+    ASSERT_FALSE(controller->commission(CommissionRequest{"plug", kGoodCode, "home wifi", "password1"}, {}).ok());
+    const std::string log = testing::internal::GetCapturedStderr();
+    EXPECT_EQ(log.find("HEAD_MARK"), std::string::npos);
+    EXPECT_NE(log.find("TAIL_MARK"), std::string::npos);
+    EXPECT_NE(log.find("[앞부분 생략]"), std::string::npos);
+    EXPECT_LT(log.size(), 4096u + 512u);
+}
+
+// 페어링·시리얼 읽기는 걸린 시간을 남기고, 제어 명령은 남기지 않는다. 로그에 인자(비밀값)는 없다
+TEST_F(MatterControllerTest, SlowCommandsLogDurationWithoutArguments) {
+    runner.respond = [](const std::vector<std::string>& sub) {
+        if (startsWith(sub, {"pairing", "ble-wifi"})) return FakeChipToolOutput::ok("Device commissioning completed with success");
+        if (startsWith(sub, {"basicinformation"})) return FakeChipToolOutput::ok("SerialNumber: SN-NEW");
+        return FakeChipToolOutput::ok("");
+    };
+    testing::internal::CaptureStdout();
+    ASSERT_TRUE(controller->commission(CommissionRequest{"plug", kGoodCode, "home wifi", "password1"}, {}).ok());
+    controller->sendCommand("SN-1", "ON");
+    const std::string log = testing::internal::GetCapturedStdout();
+    EXPECT_NE(log.find("chip-tool pairing ble-wifi 끝: 종료 코드 0, 걸린 시간 "), std::string::npos) << log;
+    EXPECT_NE(log.find("chip-tool basicinformation read 끝: 종료 코드 0"), std::string::npos) << log;
+    EXPECT_EQ(log.find("chip-tool onoff"), std::string::npos) << log;
+    EXPECT_EQ(log.find("password1"), std::string::npos);
+    EXPECT_EQ(log.find("home wifi"), std::string::npos);
+}
+
 TEST_F(MatterControllerTest, BadSetupCodeFailsWithoutRunningChipTool) {
     const auto outcome = controller->commission(CommissionRequest{"plug", "000", "ssid", "pw"}, {});
     EXPECT_EQ(outcome.error.code, ErrorCode::CommissionFailed);

@@ -18,7 +18,9 @@ public:
     virtual ~ChipToolRunner() = default;
 
     // args[0]은 실행 파일 경로. 셸을 거치지 않는다.
-    // stdinText는 자식의 표준 입력으로 보낸다(비어 있으면 /dev/null). 비밀값은 인자 대신 여기로만 보낸다(2차).
+    // stdinText는 자식의 표준 입력으로 보낸다(비어 있으면 /dev/null). 지금은 늘 비어 있다:
+    // chip-tool의 stdin 방식은 입력이 history 파일에 남아 쓰지 않고, 비밀값은 인자로 넘긴다(같은 계정 ps 노출은 수용).
+    // 이 구현은 인자 배열을 로그에 쓰지 않는다(비밀값이 들어 있다)
     virtual ProcessResult run(const std::vector<std::string>& args, const std::string& stdinText,
                               std::chrono::milliseconds timeout,
                               const std::vector<std::string>& secretsToMask = {}) = 0;

@@ -24,6 +24,8 @@ public:
 
     // 출력에서 비밀값을 ***로 바꾼다(빈 문자열은 무시)
     static std::string maskSecrets(std::string text, const std::vector<std::string>& secrets);
+    // 상한에서 잘린 출력의 끝을 "가장 긴 비밀값 길이 - 1"바이트 더 버린다(마스킹 전에 부른다)
+    static std::string trimTruncatedTail(std::string text, const std::vector<std::string>& secrets);
 
 private:
     // 그룹에 SIGTERM → grace 안에 안 끝나면 SIGKILL → 회수. 회수한 상태값을 돌려준다

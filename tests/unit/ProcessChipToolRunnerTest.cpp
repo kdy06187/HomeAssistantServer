@@ -309,4 +309,40 @@ TEST(ProcessChipToolRunnerTest, WorksWhenServerHasStandardFdsClosed) {
     EXPECT_EQ(WEXITSTATUS(status), 0);
 }
 
+// ---- 13a-1 (마스킹 순서) ----
+
+// 상한(1MiB) 경계에 비밀값이 걸치면, 잘린 앞부분 조각도 남지 않는다(자르기 → 끝 정리 → 마스킹)
+TEST(ProcessChipToolRunnerTest, SecretCutByOutputCapLeavesNoFragment) {
+    ProcessChipToolRunner runner;
+    const std::string secret = "SECRETPASSWORD";
+    // 비밀값이 상한 4바이트 앞에서 시작해 "SECR"만 수집 범위 안에 들어오게 한다
+    const std::size_t fill = ProcessChipToolRunner::kMaxOutputBytes - 4;
+    const auto result = runner.run(sh("head -c " + std::to_string(fill) + " /dev/zero | tr '\\0' a; printf " + secret +
+                                      "; head -c 1000 /dev/zero | tr '\\0' b"),
+                                   "", 5000ms, {secret});
+    ASSERT_EQ(result.exitCode, 0);
+    EXPECT_EQ(result.output.find("SECR"), std::string::npos);
+    const std::string marker = ProcessChipToolRunner::kTruncatedMarker;
+    EXPECT_EQ(result.output.substr(result.output.size() - marker.size()), marker);
+    EXPECT_EQ(result.output.size(), ProcessChipToolRunner::kMaxOutputBytes - (secret.size() - 1) + marker.size());
+}
+
+TEST(ProcessChipToolRunnerTest, TrimTruncatedTailUsesLongestSecret) {
+    EXPECT_EQ(ProcessChipToolRunner::trimTruncatedTail("abcdefgh", {"xy", "wxyz"}), "abcde");
+    EXPECT_EQ(ProcessChipToolRunner::trimTruncatedTail("abcdefgh", {}), "abcdefgh");
+    EXPECT_EQ(ProcessChipToolRunner::trimTruncatedTail("abcdefgh", {"x"}), "abcdefgh");  // 1바이트는 조각이 없다
+    EXPECT_EQ(ProcessChipToolRunner::trimTruncatedTail("ab", {"0123456789"}), "");
+}
+
+// 러너는 인자(비밀값 포함)를 로그에 쓰지 않는다. 시간 초과 경로처럼 로그가 나는 경우도 같다
+TEST(ProcessChipToolRunnerTest, RunnerNeverLogsArguments) {
+    ProcessChipToolRunner runner;
+    testing::internal::CaptureStderr();
+    testing::internal::CaptureStdout();
+    runner.run(sh("sleep 5 # ARG_SECRET_VALUE"), "", 200ms, {"ARG_SECRET_VALUE"});
+    runner.run({"/nonexistent/ARG_SECRET_VALUE"}, "", 1000ms);
+    const std::string log = testing::internal::GetCapturedStderr() + testing::internal::GetCapturedStdout();
+    EXPECT_EQ(log.find("ARG_SECRET_VALUE"), std::string::npos) << log;
+}
+
 }  // namespace

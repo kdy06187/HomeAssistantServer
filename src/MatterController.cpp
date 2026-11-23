@@ -79,7 +79,8 @@ void MatterController::shutdown(){
 
 MatterController::ChipToolOutcome MatterController::runChipTool(const std::vector<std::string>& subcommand,
                                                                 std::chrono::milliseconds timeout,
-                                                                const std::vector<std::string>& secretsToMask) {
+                                                                const std::vector<std::string>& secretsToMask,
+                                                                bool logDuration) {
     // 셸 없이 인자 배열 그대로 실행한다
     std::vector<std::string> args;
     args.reserve(subcommand.size() + 3);
@@ -88,7 +89,9 @@ MatterController::ChipToolOutcome MatterController::runChipTool(const std::vecto
     // 모든 실행이 같은 저장소를 써야 한다. 하나라도 빠지면 그 명령은 /tmp의 다른 fabric을 본다
     args.push_back("--storage-directory");
     args.push_back(mStorageDirectory);
+    const auto startedAt = std::chrono::steady_clock::now();
     ProcessResult result = mRunner.run(args, "", timeout, secretsToMask);
+    if (logDuration) logChipToolDuration(subcommand, result, std::chrono::steady_clock::now() - startedAt);
 
     ChipToolOutcome outcome;
     outcome.cancelled = result.cancelled;
@@ -100,6 +103,48 @@ MatterController::ChipToolOutcome MatterController::runChipTool(const std::vecto
     outcome.output = std::move(result.output);
     return outcome;
 }
+void MatterController::logChipToolDuration(const std::vector<std::string>& subcommand, const ProcessResult& result,
+                                           std::chrono::steady_clock::duration elapsed) {
+    // 하위 명령 앞 두 단어(pairing ble-wifi 등)만 쓴다. 그 뒤 인자에는 비밀값이 있다
+    std::string name;
+    for (std::size_t i = 0; i < subcommand.size() && i < 2; ++i) name += (i == 0 ? "" : " ") + subcommand[i];
+    std::string ending;
+    if (result.startFailed) ending = "실행 실패";
+    else if (result.timedOut) ending = "제한 시간 초과";
+    else if (result.cancelled) ending = "취소";
+    else ending = "종료 코드 " + std::to_string(result.exitCode);
+    const auto tenths = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() / 100;
+    std::cout << "[MatterController] chip-tool " << name << " 끝: " << ending << ", 걸린 시간 " << tenths / 10 << "."
+              << tenths % 10 << "s" << std::endl;
+}
+
+std::vector<std::string> MatterController::pairingSecrets(const std::string& wifiSsid, const std::string& wifiPassword,
+                                                          const std::string& manualPincode, const std::string& pinText) {
+    std::vector<std::string> secrets;
+    // SSID는 비밀은 아니지만 집 위치를 특정할 수 있어 가린다. 4바이트 미만은 공개 방송되는 값이라 가리지 않는다
+    // (1~3바이트를 ***로 바꾸면 16진 덤프 등 출력 전체가 망가진다)
+    if (wifiSsid.size() >= kMinMaskableSecretBytes) secrets.push_back(wifiSsid);
+    // 빈 값은 넣지 않는다(열린 Wi-Fi의 빈 비밀번호)
+    for (const std::string* secret : {&wifiPassword, &manualPincode, &pinText}) {
+        if (!secret->empty()) secrets.push_back(*secret);
+    }
+    return secrets;
+}
+
+bool MatterController::hasShortSecret(const std::string& wifiPassword, const std::string& manualPincode,
+                                      const std::string& pinText) {
+    for (const std::string* secret : {&wifiPassword, &manualPincode, &pinText}) {
+        if (!secret->empty() && secret->size() < kMinMaskableSecretBytes) return true;
+    }
+    return false;
+}
+
+std::string MatterController::logTail(const std::string& output) {
+    // 실패 원인은 보통 끝에 있다. 출력은 이미 마스킹돼 있어 어디서 잘라도 비밀값 조각이 생기지 않는다
+    if (output.size() <= kFailureLogTailBytes) return output;
+    return "[앞부분 생략]\n" + output.substr(output.size() - kFailureLogTailBytes);
+}
+
 std::string MatterController::runChipToolCommand(const std::vector<std::string>& subcommand, const std::string& deviceId){
     const ChipToolOutcome result = runChipTool(subcommand, kCommandTimeout);
     if (result.cancelled) return "UNKNOWN";  // 기기 상태를 모르는 것이지 오프라인이 아니다
@@ -162,7 +207,7 @@ bool MatterController::removeDeviceRegistration(const std::string& serialNumber)
     // 2. chip-tool의 내부 KVS 데이터베이스에서도 이별 통보 (unpair)
     std::cout << "[MatterController] 기기(" << deviceIdStr << ") 페어링 해제 중..." << std::endl;
     // 호출한 스레드에서 끝까지 실행한다(최대 kSlowCommandTimeout). 오프라인이어서 타임아웃이 나도 등록 정보는 이미 정리됐다
-    const ChipToolOutcome result = runChipTool({"pairing", "unpair", deviceIdStr}, kSlowCommandTimeout);
+    const ChipToolOutcome result = runChipTool({"pairing", "unpair", deviceIdStr}, kSlowCommandTimeout, {}, true);
     // 종료 코드 0만 성공으로 본다. 출력 문구는 성공 때도 Error 같은 단어를 담을 수 있어 판정에 쓰지 않는다
     if (!result.ok) {
         std::cerr << "[MatterController] 기기(" << deviceIdStr << ") 해제 명령 실패(오프라인 가능). 로컬에서 강제 페어링 해제 완료." << std::endl;
@@ -282,7 +327,8 @@ Result<CommissionOutcome> MatterController::commissionDevice(uint64_t nodeId, co
     Result<CommissionOutcome> outcome =
         Result<CommissionOutcome>::failure(ErrorCode::CommissionFailed, "chip-tool 페어링 실패");
     // 2. 에러 스트림 통합 및 결과 읽기. 출력의 비밀값은 러너가 ***로 가린다
-    const ChipToolOutcome pairing = runChipTool(pairingArgs, kPairingTimeout, {wifiPassword, manualPincode, pinText});
+    const ChipToolOutcome pairing = runChipTool(pairingArgs, kPairingTimeout,
+                                                pairingSecrets(wifiSsid, wifiPassword, manualPincode, pinText), true);
     const std::string& output = pairing.output;
 
     // 3. 정상 종료이고 성공 키워드가 있을 때만 성공 (chip-tool 페어링 성공 로그 기준)
@@ -291,7 +337,12 @@ Result<CommissionOutcome> MatterController::commissionDevice(uint64_t nodeId, co
         std::cout << "[MatterController] 커미셔닝 성공. 기기 정보를 내부 스토리지에 저장" << std::endl;
         outcome = Result<CommissionOutcome>::success(CommissionOutcome{serialNumber});
     } else {
-        std::cerr << "[MatterController] 커미셔닝 실패 (타임아웃 또는 에러): \n" << output << std::endl;
+        // 4바이트 미만 비밀값은 가리지 않으므로(위 pairingSecrets) 그런 값이 있으면 출력을 아예 남기지 않는다
+        if (hasShortSecret(wifiPassword, manualPincode, pinText)) {
+            std::cerr << "[MatterController] 커미셔닝 실패 (타임아웃 또는 에러): 출력 생략: 짧은 비밀값" << std::endl;
+        } else {
+            std::cerr << "[MatterController] 커미셔닝 실패 (타임아웃 또는 에러): \n" << logTail(output) << std::endl;
+        }
     }
 
     return outcome;  // "페어링 중" 표시는 호출자의 PairingGuard가 푼다
@@ -302,7 +353,7 @@ std::string MatterController::getDeviceSerialNumber(uint64_t nodeId) {
     
     // chip-tool basic 클러스터 사용
     const ChipToolOutcome result = runChipTool({"basicinformation", "read", "serial-number", std::to_string(nodeId), "0"},
-                                               kSlowCommandTimeout);
+                                               kSlowCommandTimeout, {}, true);
 
     if (result.ok) {
         auto serial = ChipToolOutputParser::extractSerialNumber(result.output);

@@ -121,6 +121,15 @@ std::string ProcessChipToolRunner::maskSecrets(std::string text, const std::vect
     return text;
 }
 
+std::string ProcessChipToolRunner::trimTruncatedTail(std::string text, const std::vector<std::string>& secrets) {
+    // 상한에서 잘린 끝에는 비밀값의 앞부분만 남아 있을 수 있고, 조각은 마스킹으로 찾을 수 없다.
+    // 가장 긴 비밀값보다 1바이트 짧게 끝을 버리면 어떤 비밀값의 조각도 남지 않는다
+    std::size_t longest = 0;
+    for (const auto& secret : secrets) longest = std::max(longest, secret.size());
+    if (longest > 1) text.resize(text.size() - std::min(text.size(), longest - 1));
+    return text;
+}
+
 ProcessResult ProcessChipToolRunner::run(const std::vector<std::string>& args, const std::string& stdinText,
                                          std::chrono::milliseconds timeout,
                                          const std::vector<std::string>& secretsToMask) {
@@ -273,6 +282,7 @@ ProcessResult ProcessChipToolRunner::run(const std::vector<std::string>& args, c
     closeIfOpen(stdinWriter);
     if (truncated) {
         std::cerr << "[ChipToolRunner] 출력이 상한(" << kMaxOutputBytes << "바이트)을 넘어 잘랐습니다" << std::endl;
+        result.output = trimTruncatedTail(std::move(result.output), secretsToMask);
         result.output += kTruncatedMarker;
     }
     // cancelAll의 SIGTERM으로 자식이 먼저 끝나면 출력이 닫혀 위 반복이 정상 종료처럼 빠져나온다
