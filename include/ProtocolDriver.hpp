@@ -1,5 +1,6 @@
 #pragma once
 #include "Result.hpp"
+#include <atomic>
 #include <cstdint>
 #include <string>
 #include <unordered_set>
@@ -33,8 +34,10 @@ public:
 
     virtual bool sendCommand(const std::string& deviceId, const std::string& command) = 0;
     // activeDeviceIds는 호출 시점의 복사본이므로 호출자 락과 무관하게 읽을 수 있다. 기기 등록은 호출자가 한다.
+    // cancelRequested가 서면(서버 종료) 가능한 빨리 Cancelled로 끝낸다. 호출이 끝날 때까지 살아 있어야 한다
     virtual Result<CommissionOutcome> commission(const CommissionRequest& request,
-                                                 const std::unordered_set<std::string>& activeDeviceIds) = 0;
+                                                 const std::unordered_set<std::string>& activeDeviceIds,
+                                                 const std::atomic<bool>& cancelRequested) = 0;
     virtual bool unpairDevice(const std::string& deviceId) = 0;
     virtual std::string readDeviceState(const std::string& deviceId, bool isManualRequest) = 0;
 

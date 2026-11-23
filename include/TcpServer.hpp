@@ -69,8 +69,9 @@ public:
     std::optional<std::string> peerIpOf(const std::string& deviceId);
     // 맵에서 빼서 돌려준다(없으면 nullptr). 닫기는 호출자가 한다
     std::shared_ptr<TcpConnection> take(const std::string& deviceId);
-    // keep에 없는 ID의 연결을 모두 닫는다(커미셔닝 전 좀비 정리)
-    void closeConnectionsNotIn(const std::unordered_set<std::string>& keep);
+    // keep에 없는 ID의 연결을 모두 닫고, 같은 락 안에서 남은 연결 ID를 돌려준다(커미셔닝 전 좀비 정리·스냅샷).
+    // 따로 connectedIds를 부르면 그 사이 붙은 연결이 "원래 있던 연결"로 섞인다
+    std::vector<std::string> closeConnectionsNotIn(const std::unordered_set<std::string>& keep);
 
 private:
     enum class RegisterOutcome { Registered, Full, Conflict };

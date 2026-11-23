@@ -26,6 +26,12 @@ class CommissionAbort : public std::runtime_error {
 public:
     using std::runtime_error::runtime_error;
 };
+// 서버 종료로 BLE 단계를 중간에 그만둠
+class CommissionCancelled : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+constexpr int kBleScanRounds = 5;  // 1초씩 5번: 종료 요청을 1초 안에 알아채려고 5초 한 번 대신 나눠 스캔한다
 }  // namespace
 TCPDriver::TCPDriver(MacResolver& macResolver, std::optional<std::string> pcAgentId)
     : server_(macResolver, std::move(pcAgentId)) {
@@ -41,7 +47,9 @@ bool TCPDriver::sendCommand(const std::string& device_id, const std::string& com
     return messageSender_.sendTo(device_id, command).ok();
 }
 Result<CommissionOutcome> TCPDriver::commission(const CommissionRequest& request,
-                                                const std::unordered_set<std::string>& activeDeviceIds){
+                                                const std::unordered_set<std::string>& activeDeviceIds,
+                                                const std::atomic<bool>& cancelRequested){
+    if (cancelRequested) return Result<CommissionOutcome>::failure(ErrorCode::Cancelled, "등록 전 취소");
     const std::string& name = request.name;
     std::string server_ip = request.payload.empty() ? "192.168.219.109" : request.payload;
     int server_port = 8080;
@@ -50,12 +58,14 @@ Result<CommissionOutcome> TCPDriver::commission(const CommissionRequest& request
     // 대기 내내 후보에서 빠진다. DB(앱 목록)에 없는 ID가 소켓을 차지하고 있으면 닫되 에이전트 연결은 지킨다
     std::unordered_set<std::string> keep = activeDeviceIds;
     if (server_.pcAgentId()) keep.insert(*server_.pcAgentId());
-    server_.closeConnectionsNotIn(keep);
-    const std::vector<std::string> existing_ids = server_.connectedIds();
+    const std::vector<std::string> existing_ids = server_.closeConnectionsNotIn(keep);
 
     // SimpleBLE는 어댑터·연결 오류를 예외로 알린다. 잡지 않으면 HTTP 스레드에서 std::terminate로 서버가 죽는다
     try {
-        sendWifiConfigOverBle(request, server_ip, server_port);
+        sendWifiConfigOverBle(request, server_ip, server_port, cancelRequested);
+    } catch (const CommissionCancelled&) {
+        std::cerr << "[TCPDriver] 서버 종료로 BLE 등록을 중단했습니다" << std::endl;
+        return Result<CommissionOutcome>::failure(ErrorCode::Cancelled, "BLE 단계 취소");
     } catch (const CommissionAbort& abort) {
         return Result<CommissionOutcome>::failure(ErrorCode::CommissionFailed, abort.what());
     } catch (const std::exception& e) {
@@ -67,6 +77,10 @@ Result<CommissionOutcome> TCPDriver::commission(const CommissionRequest& request
 
     for (int waited = 0; waited < kCommissionConnectWaitSeconds; ++waited) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
+        if (cancelRequested) {
+            std::cerr << "[TCPDriver] 서버 종료로 TCP 접속 대기를 중단했습니다" << std::endl;
+            return Result<CommissionOutcome>::failure(ErrorCode::Cancelled, "접속 대기 취소");
+        }
         const auto candidate = TcpCommissionCandidate::pickNewDevice(existing_ids, server_.connectedIds(),
                                                                      activeDeviceIds, server_.pcAgentId());
         if (candidate) {
@@ -80,7 +94,8 @@ Result<CommissionOutcome> TCPDriver::commission(const CommissionRequest& request
     return Result<CommissionOutcome>::failure(ErrorCode::CommissionTimeout, "기기 접속 타임아웃");
 }
 
-void TCPDriver::sendWifiConfigOverBle(const CommissionRequest& request, const std::string& serverIp, int serverPort) {
+void TCPDriver::sendWifiConfigOverBle(const CommissionRequest& request, const std::string& serverIp, int serverPort,
+                                      const std::atomic<bool>& cancelRequested) {
     std::cout << "[TCPDriver] BLE 스캔 시작... " << std::endl;
 
     auto adapters = SimpleBLE::Adapter::get_adapters();
@@ -105,16 +120,19 @@ void TCPDriver::sendWifiConfigOverBle(const CommissionRequest& request, const st
         scan->found = true;
     });
 
-    adapter.scan_for(5000);
-    adapter.set_callback_on_scan_found([](SimpleBLE::Peripheral) {});  // 스캔이 끝나면 더 받지 않는다
-
     bool found = false;
     SimpleBLE::Peripheral target_device;
-    {
+    for (int round = 0; round < kBleScanRounds && !found; ++round) {
+        if (cancelRequested) {
+            adapter.set_callback_on_scan_found([](SimpleBLE::Peripheral) {});
+            throw CommissionCancelled("BLE 스캔 중 취소");
+        }
+        adapter.scan_for(1000);
         std::lock_guard<std::mutex> lock(scan->mutex);
         found = scan->found;
         target_device = scan->device;
     }
+    adapter.set_callback_on_scan_found([](SimpleBLE::Peripheral) {});  // 스캔이 끝나면 더 받지 않는다
     if (!found) {
         std::cerr << "❌ [TCPDriver] TCPDevice_DIY 기기를 찾지 못했습니다." << std::endl;
         throw CommissionAbort("BLE 기기 없음");
@@ -124,6 +142,7 @@ void TCPDriver::sendWifiConfigOverBle(const CommissionRequest& request, const st
     target_device.connect();
     try {
         std::this_thread::sleep_for(std::chrono::milliseconds(800));
+        if (cancelRequested) throw CommissionCancelled("BLE 연결 뒤 취소");  // 아래 catch가 연결을 끊는다
 
         json configJson;
         configJson["ssid"] = request.ssid;

@@ -365,8 +365,9 @@ std::shared_ptr<TcpConnection> TcpServer::take(const std::string& deviceId) {
     return connection;
 }
 
-void TcpServer::closeConnectionsNotIn(const std::unordered_set<std::string>& keep) {
+std::vector<std::string> TcpServer::closeConnectionsNotIn(const std::unordered_set<std::string>& keep) {
     std::vector<std::pair<std::string, std::shared_ptr<TcpConnection>>> closing;
+    std::vector<std::string> remaining;
     {
         std::lock_guard<std::mutex> lock(connectionsMutex_);
         for (auto it = connections_.begin(); it != connections_.end();) {
@@ -374,6 +375,7 @@ void TcpServer::closeConnectionsNotIn(const std::unordered_set<std::string>& kee
                 closing.emplace_back(it->first, std::move(it->second));
                 it = connections_.erase(it);
             } else {
+                remaining.push_back(it->first);
                 ++it;
             }
         }
@@ -382,6 +384,7 @@ void TcpServer::closeConnectionsNotIn(const std::unordered_set<std::string>& kee
         std::cout << "🧹 [TCPDriver] 미등록 좀비 기기 소켓 강제 종료 및 삭제: " << pair.first << std::endl;
         pair.second->shutdown();
     }
+    return remaining;
 }
 
 json TcpServer::sendAndReceive(const std::string& deviceId, const json& request, std::chrono::milliseconds timeout) {

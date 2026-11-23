@@ -278,7 +278,8 @@ TEST_F(TcpServerTest, TakeThenSendResetDeliversExactLineAndCloses) {
 TEST_F(TcpServerTest, CloseConnectionsNotInKeepsOnlyListedIds) {
     auto keep = connect(2);
     auto drop = connect(3);
-    server.closeConnectionsNotIn({keep->id()});
+    const auto remaining = server.closeConnectionsNotIn({keep->id()});
+    EXPECT_EQ(remaining, std::vector<std::string>{keep->id()});  // 정리와 같은 락 안에서 찍은 스냅샷
     EXPECT_TRUE(isConnected(keep->id()));
     EXPECT_FALSE(isConnected(drop->id()));
     EXPECT_TRUE(drop->waitClosedByServer());

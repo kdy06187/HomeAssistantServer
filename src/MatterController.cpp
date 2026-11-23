@@ -278,7 +278,9 @@ bool MatterController::writeRegistrationLinesLocked(const std::vector<std::strin
 }
 //기기 등록
 Result<CommissionOutcome> MatterController::commissionDevice(uint64_t nodeId, const std::string& name,const std::string& manualPincode,
-                                const std::string& wifiSsid, const std::string& wifiPassword){
+                                const std::string& wifiSsid, const std::string& wifiPassword,
+                                const std::atomic<bool>& cancelRequested){
+    if (cancelRequested) return Result<CommissionOutcome>::failure(ErrorCode::Cancelled, "페어링 전 취소");
     std::cout << "[MatterController] 기기 등록 시도: NodeId=" << nodeId << std::endl;
     const auto setupPin = mParseSetupPin ? mParseSetupPin(manualPincode)
                                          : Result<uint32_t>::failure(ErrorCode::Internal, "설정 코드 해석기 없음");
@@ -304,6 +306,11 @@ Result<CommissionOutcome> MatterController::commissionDevice(uint64_t nodeId, co
     const std::string& output = pairing.output;
 
     // 3. 정상 종료이고 성공 키워드가 있을 때만 성공 (chip-tool 페어링 성공 로그 기준)
+    // 종료 때 cancelAll이 페어링을 끊었거나, 페어링 직후 취소됐으면 시리얼 읽기·매핑 저장 없이 끝낸다
+    if (pairing.cancelled || cancelRequested) {
+        std::cerr << "[MatterController] 커미셔닝 취소됨 (NodeId=" << nodeId << ")" << std::endl;
+        return Result<CommissionOutcome>::failure(ErrorCode::Cancelled, "페어링 취소");
+    }
     if (pairing.ok && ChipToolOutputParser::isCommissioningSuccessful(output)) {
         const std::string serialNumber = this->onDevicePairingComplete(nodeId, name);
         std::cout << "[MatterController] 커미셔닝 성공. 기기 정보를 내부 스토리지에 저장" << std::endl;
@@ -387,10 +394,11 @@ bool MatterController::sendCommand(const std::string& deviceId, const std::strin
 }
 // Matter 기기 ID(시리얼)는 페어링 뒤에야 알 수 있어 활성 ID 목록은 쓰지 않는다
 Result<CommissionOutcome> MatterController::commission(const CommissionRequest& request,
-                                                       const std::unordered_set<std::string>& /*activeDeviceIds*/){
+                                                       const std::unordered_set<std::string>& /*activeDeviceIds*/,
+                                                       const std::atomic<bool>& cancelRequested){
     const uint64_t nodeId = reserveNodeIdForPairing();
     PairingGuard pairingGuard(*this, nodeId);
-    return commissionDevice(nodeId, request.name, request.payload, request.ssid, request.password);
+    return commissionDevice(nodeId, request.name, request.payload, request.ssid, request.password, cancelRequested);
 }
 std::string MatterController::onDevicePairingComplete(uint64_t nodeId, const std::string& deviceName) {
     std::cout << "[MatterController] 기기 페어링 완료: NodeId=" << nodeId << ", DeviceName=" << deviceName << std::endl;

@@ -219,7 +219,7 @@ bool DeviceManager::startCommissioning(ProtocolType type, std::string name, std:
     }
 
     // 커미셔닝은 수십 초 걸리므로 락 밖에서 하고, 드라이버에는 활성 ID 사본만 넘긴다
-    const auto outcome = driver->commission(CommissionRequest{name, payload, ssid, password}, idsSnapshot);
+    const auto outcome = driver->commission(CommissionRequest{name, payload, ssid, password}, idsSnapshot, isShuttingDown_);
     bool isCommissioned = outcome.ok();
     if (isCommissioned && !outcome.value->deviceId.empty() &&
         !addDevice(outcome.value->deviceId, name, type, driverTypes, outcome.value->ip)) {

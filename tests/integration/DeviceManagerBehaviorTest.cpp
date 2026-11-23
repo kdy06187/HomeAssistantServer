@@ -66,6 +66,17 @@ TEST_F(DeviceManagerBehaviorTest, FailedCommissioningDoesNotLeakDriverTypesToLat
     EXPECT_TRUE(device.driver_types.empty());
 }
 
+// 커미셔닝 도중 종료가 시작되면 드라이버가 취소 플래그를 보고 끝내고, 아무것도 등록되지 않는다
+TEST_F(DeviceManagerBehaviorTest, ShutdownDuringCommissioningCancelsWithoutRegistering) {
+    tcpFake.commissionResult = Result<CommissionOutcome>::success(CommissionOutcome{"FAKE_1"});
+    tcpFake.onCommission = [this] { manager.beginShutdown(); };
+
+    EXPECT_FALSE(manager.startCommissioning(ProtocolType::TCP_DIY, "lamp", ""));
+
+    EXPECT_TRUE(manager.getAllDevices().empty());
+    EXPECT_TRUE(database.loadActiveDevices().empty());
+}
+
 TEST_F(DeviceManagerBehaviorTest, EnergyForUnregisteredIdFailsWithoutReadingDriver) {
     const auto energy = manager.readEnergy("NOPE");
 

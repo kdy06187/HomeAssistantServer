@@ -21,7 +21,8 @@ public:
     // TCPDriver의 sendCommand 메서드 구현
     bool sendCommand(const std::string& deviceId, const std::string& command) override;
     Result<CommissionOutcome> commission(const CommissionRequest& request,
-                                         const std::unordered_set<std::string>& activeDeviceIds) override;
+                                         const std::unordered_set<std::string>& activeDeviceIds,
+                                         const std::atomic<bool>& cancelRequested) override;
     bool unpairDevice(const std::string& deviceId) override;
     std::string readDeviceState(const std::string& deviceId, bool isManualRequest) override;
     // IMessageSender 구현(TcpMessageSender에 위임)
@@ -34,7 +35,9 @@ public:
     void stopServer();
 private:
     // BLE로 기기를 찾아 Wi-Fi·서버 주소를 쓴다. 실패는 예외(이유가 정해진 실패는 CommissionAbort)
-    void sendWifiConfigOverBle(const CommissionRequest& request, const std::string& serverIp, int serverPort);
+    // cancelRequested가 서면 CommissionCancelled를 던진다(스캔 1초마다·연결 뒤 확인)
+    void sendWifiConfigOverBle(const CommissionRequest& request, const std::string& serverIp, int serverPort,
+                               const std::atomic<bool>& cancelRequested);
     // 소켓 수락·연결 맵·요청/응답은 TcpServer가 맡는다(BLE 없이 테스트하려고 분리)
     TcpServer server_;
     TcpMessageSender messageSender_{server_};  // server_ 뒤에 선언해야 먼저 만들어진 서버를 가리킨다

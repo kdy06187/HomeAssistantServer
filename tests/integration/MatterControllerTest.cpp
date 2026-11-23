@@ -28,6 +28,7 @@ namespace fs = std::filesystem;
 namespace {
 
 const std::string kChipTool = "/fake/chip-tool";
+const std::atomic<bool> kNotCancelled{false};
 const std::string kGoodCode = "34970112332";
 constexpr uint32_t kGoodPin = 20202021;
 
@@ -183,7 +184,7 @@ TEST_F(MatterControllerTest, EveryChipToolCallUsesStorageDirectory) {
     EXPECT_TRUE(controller->sendCommand("SN-1", "OFF"));
     controller->readDeviceState("SN-1", true);
     controller->readEnergy("SN-1");
-    ASSERT_TRUE(controller->commission(CommissionRequest{"plug", kGoodCode, "wifi", "pw"}, {}).ok());
+    ASSERT_TRUE(controller->commission(CommissionRequest{"plug", kGoodCode, "wifi", "pw"}, {}, kNotCancelled).ok());
     EXPECT_TRUE(controller->unpairDevice("SN-2"));
 
     std::set<std::string> kinds;
@@ -224,7 +225,7 @@ TEST_F(MatterControllerTest, CommissionPairsReadsSerialAndSavesMapping) {
         if (startsWith(sub, {"basicinformation"})) return FakeChipToolOutput::ok("SerialNumber: SN-NEW");
         return FakeChipToolOutput::ok("");
     };
-    const auto outcome = controller->commission(CommissionRequest{"plug", kGoodCode, "home wifi", "p@ss w0rd"}, {});
+    const auto outcome = controller->commission(CommissionRequest{"plug", kGoodCode, "home wifi", "p@ss w0rd"}, {}, kNotCancelled);
     ASSERT_TRUE(outcome.ok());
     EXPECT_EQ(outcome.value->deviceId, "SN-NEW");
 
@@ -257,7 +258,7 @@ ProcessResult failedPairing(const std::string& output) { return ProcessResult{1,
 // SSID도 가리고(4바이트 이상), 빈 비밀번호는 목록에 넣지 않는다
 TEST_F(MatterControllerTest, PairingMasksSsidAndSkipsEmptyValues) {
     runner.respond = [](const std::vector<std::string>&) { return failedPairing("fail"); };
-    ASSERT_FALSE(controller->commission(CommissionRequest{"plug", kGoodCode, "home wifi", ""}, {}).ok());
+    ASSERT_FALSE(controller->commission(CommissionRequest{"plug", kGoodCode, "home wifi", ""}, {}, kNotCancelled).ok());
     const auto secrets = runner.callsSnapshot().at(0).secretsToMask;
     EXPECT_EQ(secrets, (std::vector<std::string>{"home wifi", kGoodCode, std::to_string(kGoodPin)}));
 }
@@ -265,7 +266,7 @@ TEST_F(MatterControllerTest, PairingMasksSsidAndSkipsEmptyValues) {
 // 3바이트 SSID는 가리지 않는다(공개 방송 값, 가리면 출력 전체가 망가짐)
 TEST_F(MatterControllerTest, ShortSsidIsNotMasked) {
     runner.respond = [](const std::vector<std::string>&) { return failedPairing("fail"); };
-    ASSERT_FALSE(controller->commission(CommissionRequest{"plug", kGoodCode, "abc", "password1"}, {}).ok());
+    ASSERT_FALSE(controller->commission(CommissionRequest{"plug", kGoodCode, "abc", "password1"}, {}, kNotCancelled).ok());
     const auto secrets = runner.callsSnapshot().at(0).secretsToMask;
     EXPECT_EQ(std::count(secrets.begin(), secrets.end(), "abc"), 0);
     EXPECT_EQ(std::count(secrets.begin(), secrets.end(), "password1"), 1);
@@ -275,7 +276,7 @@ TEST_F(MatterControllerTest, ShortSsidIsNotMasked) {
 TEST_F(MatterControllerTest, ShortPasswordOmitsFailureOutputFromLog) {
     runner.respond = [](const std::vector<std::string>&) { return failedPairing("OUTPUT_BODY_MARK pw=abc"); };
     testing::internal::CaptureStderr();
-    ASSERT_FALSE(controller->commission(CommissionRequest{"plug", kGoodCode, "home wifi", "abc"}, {}).ok());
+    ASSERT_FALSE(controller->commission(CommissionRequest{"plug", kGoodCode, "home wifi", "abc"}, {}, kNotCancelled).ok());
     const std::string log = testing::internal::GetCapturedStderr();
     EXPECT_EQ(log.find("OUTPUT_BODY_MARK"), std::string::npos) << log;
     EXPECT_NE(log.find("출력 생략: 짧은 비밀값"), std::string::npos) << log;
@@ -287,7 +288,7 @@ TEST_F(MatterControllerTest, FailureLogKeepsOnlyLastFourKiB) {
     const std::string tail = std::string(4000, 'y') + "TAIL_MARK";
     runner.respond = [&](const std::vector<std::string>&) { return failedPairing(head + tail); };
     testing::internal::CaptureStderr();
-    ASSERT_FALSE(controller->commission(CommissionRequest{"plug", kGoodCode, "home wifi", "password1"}, {}).ok());
+    ASSERT_FALSE(controller->commission(CommissionRequest{"plug", kGoodCode, "home wifi", "password1"}, {}, kNotCancelled).ok());
     const std::string log = testing::internal::GetCapturedStderr();
     EXPECT_EQ(log.find("HEAD_MARK"), std::string::npos);
     EXPECT_NE(log.find("TAIL_MARK"), std::string::npos);
@@ -303,7 +304,7 @@ TEST_F(MatterControllerTest, SlowCommandsLogDurationWithoutArguments) {
         return FakeChipToolOutput::ok("");
     };
     testing::internal::CaptureStdout();
-    ASSERT_TRUE(controller->commission(CommissionRequest{"plug", kGoodCode, "home wifi", "password1"}, {}).ok());
+    ASSERT_TRUE(controller->commission(CommissionRequest{"plug", kGoodCode, "home wifi", "password1"}, {}, kNotCancelled).ok());
     controller->sendCommand("SN-1", "ON");
     const std::string log = testing::internal::GetCapturedStdout();
     EXPECT_NE(log.find("chip-tool pairing ble-wifi 끝: 종료 코드 0, 걸린 시간 "), std::string::npos) << log;
@@ -325,7 +326,7 @@ TEST_F(MatterControllerTest, StaleRegistrationFileLineDoesNotSkipPairing) {
         if (startsWith(sub, {"basicinformation"})) return FakeChipToolOutput::ok("SerialNumber: SN-NEW");
         return FakeChipToolOutput::ok("");
     };
-    const auto outcome = controller->commission(CommissionRequest{"plug", kGoodCode, "home wifi", "password1"}, {});
+    const auto outcome = controller->commission(CommissionRequest{"plug", kGoodCode, "home wifi", "password1"}, {}, kNotCancelled);
     ASSERT_TRUE(outcome.ok());
     EXPECT_EQ(outcome.value->deviceId, "SN-NEW");
     const auto calls = subcommands();
@@ -333,8 +334,45 @@ TEST_F(MatterControllerTest, StaleRegistrationFileLineDoesNotSkipPairing) {
     EXPECT_TRUE(startsWith(calls[0], {"pairing", "ble-wifi"}));
 }
 
+// ---- 13a-3 취소 플래그 ----
+
+TEST_F(MatterControllerTest, CancelBeforePairingRunsNothing) {
+    const std::atomic<bool> cancelled{true};
+    const auto outcome = controller->commission(CommissionRequest{"plug", kGoodCode, "home wifi", "password1"}, {}, cancelled);
+    EXPECT_EQ(outcome.error.code, ErrorCode::Cancelled);
+    EXPECT_TRUE(runner.callsSnapshot().empty());
+}
+
+// 종료의 cancelAll로 페어링이 끊기면 실패가 아니라 취소이고, 시리얼 읽기·매핑 저장이 없다
+TEST_F(MatterControllerTest, PairingCancelledByRunnerIsCancelledWithoutSerialRead) {
+    runner.respond = [](const std::vector<std::string>&) { return ProcessResult{143, "", false, true, false}; };
+    const auto before = readConfig();
+    const auto outcome = controller->commission(CommissionRequest{"plug", kGoodCode, "home wifi", "password1"}, {}, kNotCancelled);
+    EXPECT_EQ(outcome.error.code, ErrorCode::Cancelled);
+    EXPECT_EQ(runner.callsSnapshot().size(), 1u);
+    EXPECT_EQ(readConfig(), before);
+}
+
+// 페어링이 성공한 직후 종료가 시작돼도 시리얼을 읽지 않고 끝낸다
+TEST_F(MatterControllerTest, CancelAfterPairingSkipsSerialReadAndMapping) {
+    std::atomic<bool> cancelled{false};
+    runner.respond = [&](const std::vector<std::string>& sub) {
+        if (startsWith(sub, {"pairing", "ble-wifi"})) {
+            cancelled = true;
+            return FakeChipToolOutput::ok("Device commissioning completed with success");
+        }
+        return FakeChipToolOutput::ok("SerialNumber: SN-NEW");
+    };
+    const auto before = readConfig();
+    const auto outcome = controller->commission(CommissionRequest{"plug", kGoodCode, "home wifi", "password1"}, {}, cancelled);
+    EXPECT_EQ(outcome.error.code, ErrorCode::Cancelled);
+    EXPECT_EQ(runner.callsSnapshot().size(), 1u);
+    EXPECT_EQ(readConfig(), before);
+    EXPECT_FALSE(controller->sendCommand("SN-NEW", "ON"));  // 매핑 없음
+}
+
 TEST_F(MatterControllerTest, BadSetupCodeFailsWithoutRunningChipTool) {
-    const auto outcome = controller->commission(CommissionRequest{"plug", "000", "ssid", "pw"}, {});
+    const auto outcome = controller->commission(CommissionRequest{"plug", "000", "ssid", "pw"}, {}, kNotCancelled);
     EXPECT_EQ(outcome.error.code, ErrorCode::CommissionFailed);
     EXPECT_TRUE(runner.callsSnapshot().empty());
 }
@@ -347,7 +385,7 @@ TEST_F(MatterControllerTest, PairingFlagIsClearedEvenWhenRunnerThrows) {
         EXPECT_TRUE(controller->isPairing(seenNodeId));  // 실행 중에는 페어링 중(러너는 락 밖에서 불린다)
         throw std::runtime_error("runner failure");
     };
-    EXPECT_THROW(controller->commission(CommissionRequest{"plug", kGoodCode, "ssid", "pw"}, {}), std::runtime_error);
+    EXPECT_THROW(controller->commission(CommissionRequest{"plug", kGoodCode, "ssid", "pw"}, {}, kNotCancelled), std::runtime_error);
     ASSERT_NE(seenNodeId.load(), 0u);
     EXPECT_FALSE(controller->isPairing(seenNodeId));
 }
@@ -372,7 +410,7 @@ TEST_F(MatterControllerTest, ConcurrentCommissionsGetDistinctNodeIds) {
     std::vector<std::thread> workers;
     for (int i = 0; i < 6; ++i) {
         workers.emplace_back([&] {
-            EXPECT_TRUE(controller->commission(CommissionRequest{"plug", kGoodCode, "ssid", "pw"}, {}).ok());
+            EXPECT_TRUE(controller->commission(CommissionRequest{"plug", kGoodCode, "ssid", "pw"}, {}, kNotCancelled).ok());
         });
     }
     for (auto& worker : workers) worker.join();
@@ -476,7 +514,7 @@ TEST_F(MatterControllerTest, ConcurrentControlReadEnergyCommissionAndUnpairAreRa
     workers.emplace_back([&] {
         waitStart();
         for (int i = 0; i < kIterations / 4; ++i) {
-            auto outcome = controller->commission(CommissionRequest{"plug", kGoodCode, "ssid", "pw"}, {});
+            auto outcome = controller->commission(CommissionRequest{"plug", kGoodCode, "ssid", "pw"}, {}, kNotCancelled);
             if (outcome.ok()) {
                 controller->unpairDevice(outcome.value->deviceId);
             }
@@ -515,7 +553,7 @@ TEST_F(MatterControllerTest, PairingTimeoutWithSuccessTextIsFailureAndSavesNothi
         if (startsWith(sub, {"pairing", "ble-wifi"})) return ProcessResult{128 + 15, "Device commissioning completed with success", true, false, false};
         return FakeChipToolOutput::ok("SerialNumber: SN-NEW");
     };
-    EXPECT_FALSE(controller->commission(CommissionRequest{"plug", kGoodCode, "ssid", "pw"}, {}).ok());
+    EXPECT_FALSE(controller->commission(CommissionRequest{"plug", kGoodCode, "ssid", "pw"}, {}, kNotCancelled).ok());
     EXPECT_EQ(readConfig(), "SN-1,101\nSN-2,102\n");
     EXPECT_EQ(runner.callsSnapshot().size(), 1u);  // 시리얼 읽기로 넘어가지 않음
 }
@@ -533,7 +571,7 @@ TEST_F(MatterControllerTest, RegistrationWriteReplacesSameSerialAndLeavesNoTempF
         if (startsWith(sub, {"pairing", "ble-wifi"})) return FakeChipToolOutput::ok("Device commissioning completed with success");
         return FakeChipToolOutput::ok("SerialNumber: SN-1");  // 이미 101로 등록된 시리얼이 다시 페어링됨
     };
-    const auto outcome = controller->commission(CommissionRequest{"plug", kGoodCode, "ssid", "pw"}, {});
+    const auto outcome = controller->commission(CommissionRequest{"plug", kGoodCode, "ssid", "pw"}, {}, kNotCancelled);
     ASSERT_TRUE(outcome.ok());
     const std::string nodeId = runner.callsSnapshot()[0].args[3];
 

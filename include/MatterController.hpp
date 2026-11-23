@@ -6,6 +6,7 @@
 #include <vector>
 #include <thread>
 #include <mutex>
+#include <atomic>
 #include <chrono>
 #include <unordered_set>
 #include <unordered_map>
@@ -61,7 +62,8 @@ public:
     // 인터페이스 구현
     bool sendCommand(const std::string& deviceId, const std::string& command) override;
     Result<CommissionOutcome> commission(const CommissionRequest& request,
-                                         const std::unordered_set<std::string>& activeDeviceIds) override;
+                                         const std::unordered_set<std::string>& activeDeviceIds,
+                                         const std::atomic<bool>& cancelRequested) override;
     bool unpairDevice(const std::string& deviceId) override;
     std::string readDeviceState(const std::string& deviceId, bool isManualRequest) override;
     Result<EnergyReading> readEnergy(const std::string& deviceId) override;
@@ -81,7 +83,8 @@ private:
     std::string readCumulativeEnergyText(uint64_t nodeId, bool isManualRequest);
     std::string mChipToolPath;
     Result<CommissionOutcome> commissionDevice(uint64_t nodeId, const std::string& name, const std::string& manualPincode,
-                          const std::string& wifiSsid, const std::string& wifiPassword);
+                          const std::string& wifiSsid, const std::string& wifiPassword,
+                          const std::atomic<bool>& cancelRequested);
     // chip-tool 한 번 실행 결과. ok는 "정상 실행·정상 종료(0)"일 때만 true —
     // 시간 초과·실행 실패·비정상 종료는 출력에 성공 표지가 있어도 실패다
     struct ChipToolOutcome {

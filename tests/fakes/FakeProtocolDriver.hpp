@@ -40,6 +40,7 @@ public:
     std::vector<std::pair<std::string, std::string>> sentMessages;   // sendTo: (deviceId, jsonLine)
     std::vector<std::string> pcAgentMessages;                        // sendToPcAgent: jsonLine
     std::vector<std::string> energyReadIds;
+    std::function<void()> onCommission;
     std::vector<bool> readStateManualFlags;                          // readDeviceState의 isManualRequest
 
     bool sendCommand(const std::string& deviceId, const std::string& command) override {
@@ -50,10 +51,16 @@ public:
         return sendCommandResult;
     }
     Result<CommissionOutcome> commission(const CommissionRequest& request,
-                                         const std::unordered_set<std::string>& activeDeviceIds) override {
-        std::lock_guard<std::mutex> lock(recordMutex);
-        commissionRequests.push_back(request);
-        commissionActiveIds.push_back(activeDeviceIds);
+                                         const std::unordered_set<std::string>& activeDeviceIds,
+                                         const std::atomic<bool>& cancelRequested) override {
+        {
+            std::lock_guard<std::mutex> lock(recordMutex);
+            commissionRequests.push_back(request);
+            commissionActiveIds.push_back(activeDeviceIds);
+        }
+        // 진행 중 취소를 시험할 때 쓴다(예: 이 안에서 beginShutdown). 끝난 뒤 플래그가 서 있으면 실제 드라이버처럼 취소
+        if (onCommission) onCommission();
+        if (cancelRequested) return Result<CommissionOutcome>::failure(ErrorCode::Cancelled, "fake cancelled");
         return commissionResult;
     }
     bool unpairDevice(const std::string& deviceId) override {
