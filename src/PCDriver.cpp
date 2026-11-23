@@ -24,7 +24,7 @@ DriverResult PCDriver::handleCommand(const Device& device, const std::string& co
                 "value": "SHUTDOWN"
             })";
     
-            pc_messenger_->broadcast(payload);
+            pc_messenger_->sendToPcAgent(payload);
         }   
 
         return { true, 45 };

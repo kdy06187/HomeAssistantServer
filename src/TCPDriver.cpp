@@ -14,7 +14,8 @@
 #include <algorithm>
 
 using json = nlohmann::json;
-TCPDriver::TCPDriver(MacResolver& macResolver) : server_(macResolver) {
+TCPDriver::TCPDriver(MacResolver& macResolver, std::optional<std::string> pcAgentId)
+    : server_(macResolver, std::move(pcAgentId)) {
     std::cout << "[TCPDriver] 인스턴스 생성" << std::endl;
 }
 
@@ -24,27 +25,7 @@ TCPDriver::~TCPDriver(){
 }
 
 bool TCPDriver::sendCommand(const std::string& device_id, const std::string& command){
-    // '{'로 시작하면 JSON 그대로, "ON"/"OFF" 같은 단순 명령은 릴레이 제어 패킷으로 감싼다(하위 호환)
-    json requestJson;
-    if (!TcpProtocol::buildCommandRequest(command, requestJson)) {
-        std::cerr << "[TCPDriver] 명령어 JSON 파싱 실패" << std::endl;
-        return false;
-    }
-
-    json responseJson = server_.sendAndReceive(device_id, requestJson);
-
-    if (responseJson.is_null()) {
-        std::cerr << "[TCPDriver] 명령 전송 실패 (기기 오프라인): " << device_id << std::endl;
-        return false;
-    }
-    // 응답 패킷의 "status"가 "success"인지 확인(필드 형이 달라도 예외 없이 실패)
-    std::string error_msg;
-    if (TcpProtocol::isCommandSuccess(responseJson, error_msg)) {
-        std::cout << "[TCPDriver] 명령 전송 성공: " << device_id << std::endl;
-        return true;
-    }
-    std::cerr << "[TCPDriver] 기기에서 에러 반환: " << error_msg << std::endl;
-    return false;
+    return messageSender_.sendTo(device_id, command).ok();
 }
 Result<CommissionOutcome> TCPDriver::commission(const CommissionRequest& request,
                                                 const std::unordered_set<std::string>& activeDeviceIds){
@@ -166,13 +147,9 @@ std::string TCPDriver::readDeviceState(const std::string& deviceId, bool /*isMan
     return currentState;
 }
 Status TCPDriver::sendTo(const std::string& deviceId, const std::string& jsonLine) {
-    if (sendCommand(deviceId, jsonLine)) return Status::success();
-    return Status::failure(ErrorCode::DeviceUnreachable, "기기 응답 없음 또는 오류 응답");
+    return messageSender_.sendTo(deviceId, jsonLine);
 }
 
-void TCPDriver::broadcast(const std::string& jsonLine) {
-    // 연결 목록 사본을 순회한다. 순회 중 삭제·재접속이 있어도 맵을 직접 돌지 않으므로 안전하다
-    for (const auto& id : server_.connectedIds()) {
-        this->sendCommand(id, jsonLine);
-    }
+void TCPDriver::sendToPcAgent(const std::string& jsonLine) {
+    messageSender_.sendToPcAgent(jsonLine);
 }

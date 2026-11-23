@@ -5,5 +5,5 @@
 class MockMessageSender : public IMessageSender {
 public:
     MOCK_METHOD(Status, sendTo, (const std::string& deviceId, const std::string& jsonLine), (override));
-    MOCK_METHOD(void, broadcast, (const std::string& jsonLine), (override));
+    MOCK_METHOD(void, sendToPcAgent, (const std::string& jsonLine), (override));
 };

@@ -11,7 +11,7 @@
 #include "RequestValidation.hpp"
 #include "DriverManager.hpp"
 #include "PCDriver.hpp"
-#include "IMessageSender.hpp"
+#include "TcpMessageSender.hpp"
 #include "ApiAuth.hpp"
 #include "PeriodicTasks.hpp"
 #include "Clock.hpp"
@@ -67,6 +67,18 @@ int main() {
         return 1;
     }
 
+    // PC 종료 메시지를 받을 에이전트의 MAC. 형식 오류면 조용히 "모든 연결에 보냄"으로 돌지 않고 시작하지 않는다
+    const auto pcAgentId = TcpAgentConfig::parsePcAgentId(std::getenv("HAC_PC_AGENT_MAC"));
+    if (!pcAgentId.ok()) {
+        std::cerr << "❌ 환경 변수 HAC_PC_AGENT_MAC 형식 오류(MAC 주소 필요). 서버를 시작하지 않습니다." << std::endl;
+        return 1;
+    }
+    if (*pcAgentId.value) {
+        std::cout << "[Main] PC 에이전트 ID: " << **pcAgentId.value << std::endl;
+    } else {
+        std::cerr << "[TCPDriver] HAC_PC_AGENT_MAC 미설정 — PC 종료 메시지를 모든 연결에 보냄" << std::endl;
+    }
+
     // 0. 데이터베이스 준비
     DatabaseManager database;
     if (!database.init("../db/home_assistant.db")) {
@@ -79,7 +91,7 @@ int main() {
     DriverManager deviceDrivers;
     SystemClock clock;
     ProcNetArpResolver macResolver;  // 접속 IP → MAC(기기 ID)
-    TCPDriver tcpDriver(macResolver);
+    TCPDriver tcpDriver(macResolver, *pcAgentId.value);
     ProcessChipToolRunner chipToolRunner;  // chip-tool을 셸 없이 실행한다
     MatterController matterController(chipToolRunner, parseManualSetupPin);
     DelayedCommandScheduler scheduler(clock);
@@ -102,7 +114,7 @@ int main() {
     } else {
         std::cerr << "[Main] MatterController 초기화 실패!" << std::endl;
     }
-    // 어떤 프로토콜의 기기든 PC 종료 메시지는 TCP 드라이버로 보낸다
+    // 어떤 프로토콜의 기기든 PC 종료 메시지는 TCP 드라이버(에이전트 연결)로 보낸다
     deviceDrivers.registerDriver(DriverType::PC_DRIVER, [&tcpDriver]() {
         return std::make_shared<PCDriver>(&tcpDriver);
     });

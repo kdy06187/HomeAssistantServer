@@ -50,8 +50,8 @@ protected:
         const CommandResult result = manager.executeCommand(id, "OFF");
         EXPECT_EQ(result.outcome, CommandOutcome::Accepted);
         EXPECT_EQ(result.delaySeconds, 45);
-        ASSERT_EQ(pcMessageSink.broadcastMessages.size(), 1u);
-        EXPECT_NE(pcMessageSink.broadcastMessages[0].find("SHUTDOWN"), std::string::npos);
+        ASSERT_EQ(pcMessageSink.pcAgentMessages.size(), 1u);
+        EXPECT_NE(pcMessageSink.pcAgentMessages[0].find("SHUTDOWN"), std::string::npos);
         for (const auto& call : runner.callsSnapshot()) {
             EXPECT_EQ(std::find(call.args.begin(), call.args.end(), "off"), call.args.end()) << "전원이 바로 꺼지면 안 된다";
         }

@@ -142,8 +142,8 @@ TEST(DeviceManagerPcDriverTest, OffOnRunningPcSendsShutdownMessageAndDefersHardw
     EXPECT_EQ(result.outcome, CommandOutcome::Accepted);
     EXPECT_EQ(result.delaySeconds, 45);
 
-    ASSERT_EQ(tcpFake.broadcastMessages.size(), 1u);
-    EXPECT_NE(tcpFake.broadcastMessages[0].find("SHUTDOWN"), std::string::npos);
+    ASSERT_EQ(tcpFake.pcAgentMessages.size(), 1u);
+    EXPECT_NE(tcpFake.pcAgentMessages[0].find("SHUTDOWN"), std::string::npos);
     EXPECT_TRUE(tcpFake.sentMessages.empty());
     EXPECT_TRUE(tcpFake.sentCommands.empty());
 }
@@ -313,7 +313,7 @@ TEST_F(DeviceManagerDelayedTest, SecondOffSendsShutdownMessageOnceAndReturnsRema
     EXPECT_EQ(first.delaySeconds, 45);
     EXPECT_EQ(second.outcome, CommandOutcome::Accepted);
     EXPECT_EQ(second.delaySeconds, 35);
-    EXPECT_EQ(tcpFake.broadcastMessages.size(), 1u);
+    EXPECT_EQ(tcpFake.pcAgentMessages.size(), 1u);
 }
 
 TEST_F(DeviceManagerDelayedTest, RemovingDeviceCancelsPendingCommand) {
@@ -411,7 +411,7 @@ TEST_F(DeviceManagerDelayedTest, OffAfterSchedulerStoppedFailsAsCancelled) {
     EXPECT_EQ(result.outcome, CommandOutcome::Failed);
     EXPECT_EQ(result.error.code, ErrorCode::Cancelled);
     EXPECT_TRUE(tcpFake.sentCommands.empty());
-    EXPECT_TRUE(tcpFake.broadcastMessages.empty()); // 종료 중에는 PC 종료 메시지도 보내지 않는다
+    EXPECT_TRUE(tcpFake.pcAgentMessages.empty()); // 종료 중에는 PC 종료 메시지도 보내지 않는다
 }
 
 // 삭제·재등록·예약·만기가 동시에 반복돼도 데이터 경쟁이 없고, 끝난 뒤 남은 예약이 없다(TSan에서 의미가 크다)

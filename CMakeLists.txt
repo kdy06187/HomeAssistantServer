@@ -45,6 +45,7 @@ add_library(hac_core OBJECT
     src/TcpConnection.cpp
     src/TcpServer.cpp
     src/MacResolver.cpp
+    src/TcpMessageSender.cpp
     src/ProcessChipToolRunner.cpp
     src/MatterController.cpp
 )

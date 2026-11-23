@@ -454,7 +454,7 @@ TEST(HttpServerDelayedCommandTest, E2SameCommandWhilePendingReturns202WithRemain
     EXPECT_EQ(second->status, 202);
     EXPECT_EQ(json::parse(second->body),
               json::parse(R"({"deviceId":"FAKE_1","state":"ON","pendingCommand":"OFF","delaySeconds":35})"));
-    EXPECT_EQ(tcpFake.broadcastMessages.size(), 1u);
+    EXPECT_EQ(tcpFake.pcAgentMessages.size(), 1u);
 }
 
 // 종료 중 취소된 기기 호출이 200(성공 상태 코드)으로 나가지 않고 502로 나간다
@@ -488,7 +488,7 @@ TEST(HttpServerDelayedCommandTest, E2DuringShutdownReturns502NotCancelled200) {
     EXPECT_EQ(response->status, 502);
     EXPECT_EQ(json::parse(response->body),
               json::parse(R"({"error":{"code":"DEVICE_UNREACHABLE","message":"기기가 응답하지 않습니다."}})"));
-    EXPECT_TRUE(tcpFake.broadcastMessages.empty());
+    EXPECT_TRUE(tcpFake.pcAgentMessages.empty());
 }
 
 TEST_F(HttpServerTest, E2InvalidRequestsReturn400Envelope) {

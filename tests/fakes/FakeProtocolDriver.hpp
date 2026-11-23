@@ -38,7 +38,7 @@ public:
     std::vector<std::unordered_set<std::string>> commissionActiveIds;
     std::vector<std::string> unpairedIds;
     std::vector<std::pair<std::string, std::string>> sentMessages;   // sendTo: (deviceId, jsonLine)
-    std::vector<std::string> broadcastMessages;                      // broadcast: jsonLine
+    std::vector<std::string> pcAgentMessages;                        // sendToPcAgent: jsonLine
     std::vector<std::string> energyReadIds;
     std::vector<bool> readStateManualFlags;                          // readDeviceState의 isManualRequest
 
@@ -88,9 +88,9 @@ public:
         sentMessages.emplace_back(deviceId, jsonLine);
         return Status::success();
     }
-    void broadcast(const std::string& jsonLine) override {
+    void sendToPcAgent(const std::string& jsonLine) override {
         std::lock_guard<std::mutex> lock(recordMutex);
-        broadcastMessages.push_back(jsonLine);
+        pcAgentMessages.push_back(jsonLine);
     }
 
     std::mutex recordMutex;

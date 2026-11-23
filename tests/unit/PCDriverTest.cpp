@@ -16,7 +16,7 @@ Device makeDeviceWithState(const std::string& state) {
 
 TEST(PCDriverHandleCommand, OffOnRunningDeviceSendsShutdownAndDelays45Seconds) {
     StrictMock<MockMessageSender> sender;
-    EXPECT_CALL(sender, broadcast(HasSubstr("SHUTDOWN"))).Times(1);
+    EXPECT_CALL(sender, sendToPcAgent(HasSubstr("SHUTDOWN"))).Times(1);
     PCDriver driver(&sender);
 
     DriverResult result = driver.handleCommand(makeDeviceWithState("ON"), "OFF");
@@ -58,7 +58,7 @@ TEST(PCDriverHandleCommand, LowercaseOffIsNotIntercepted) {
 
 TEST(PCDriverHandleCommand, OffOnUnknownStateSendsShutdown) {
     StrictMock<MockMessageSender> sender;
-    EXPECT_CALL(sender, broadcast(_)).Times(1);
+    EXPECT_CALL(sender, sendToPcAgent(_)).Times(1);
     PCDriver driver(&sender);
 
     DriverResult result = driver.handleCommand(makeDeviceWithState("UNKNOWN"), "OFF");
