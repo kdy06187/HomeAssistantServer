@@ -142,13 +142,49 @@ TEST_F(PcAgentDispatchTest, SendToUsesSameBytesAndReportsUnreachable) {
     EXPECT_EQ(sender->sendTo(switchA.id(), "{broken").error.code, ErrorCode::InvalidRequest);
 }
 
+// 에이전트가 응답하지 않거나 오류로 답해도 로그만 남기고(호출자는 45초 뒤 차단), 스위치에는 가지 않는다
+TEST_F(PcAgentDispatchTest, SilentOrErrorAgentIsLoggedAndSwitchesStayUntouched) {
+    startServer(FakeMacResolver::loopbackId(kAgent));
+    RecordingDevice switchA(server->boundPort(), kSwitchA);
+    FakeDevice silentAgent(server->boundPort(), kAgent);
+    ASSERT_TRUE(waitUntilConnectedCount(2));
+
+    ::testing::internal::CaptureStderr();
+    const auto started = std::chrono::steady_clock::now();
+    sender->sendToPcAgent(kShutdownPayload);
+    const auto elapsed = std::chrono::steady_clock::now() - started;
+    std::string log = ::testing::internal::GetCapturedStderr();
+    EXPECT_GE(elapsed, 900ms);
+    EXPECT_LT(elapsed, 1500ms);
+    EXPECT_NE(log.find("종료 메시지 응답 없음 또는 오류"), std::string::npos) << log;
+    EXPECT_EQ(silentAgent.readLine(100ms), kShutdownLine);  // 받기는 했다
+    EXPECT_TRUE(silentAgent.waitClosedByServer());          // 답이 없으니 서버가 그 연결을 닫았다
+    EXPECT_TRUE(switchA.lines().empty());
+
+    // 다시 붙은 에이전트가 오류로 답하는 경우
+    FakeDevice errorAgent(server->boundPort(), kAgent);
+    errorAgent.serveInBackground([](const std::string&) { return std::string("{\"status\":\"error\",\"message\":\"busy\"}\n"); });
+    const auto deadline = std::chrono::steady_clock::now() + 2s;
+    while (!isConnected(FakeMacResolver::loopbackId(kAgent)) && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(5ms);
+    }
+    ::testing::internal::CaptureStderr();
+    sender->sendToPcAgent(kShutdownPayload);
+    log = ::testing::internal::GetCapturedStderr();
+    errorAgent.stopServing();
+    EXPECT_NE(log.find("기기에서 에러 반환: busy"), std::string::npos) << log;
+    EXPECT_NE(log.find("종료 메시지 응답 없음 또는 오류"), std::string::npos);
+    EXPECT_TRUE(switchA.lines().empty());
+}
+
 TEST(TcpAgentConfigTest, ParsesMacIntoAgentIdOrRejectsMalformedValue) {
     EXPECT_FALSE(TcpAgentConfig::parsePcAgentId(nullptr).value->has_value());
     EXPECT_FALSE(TcpAgentConfig::parsePcAgentId("").value->has_value());
     EXPECT_EQ(TcpAgentConfig::parsePcAgentId("a1:b2:c3:d4:e5:f6").value->value_or(""), "TCP_A1B2C3D4E5F6");
     EXPECT_EQ(TcpAgentConfig::parsePcAgentId("A1-B2-C3-D4-E5-F6").value->value_or(""), "TCP_A1B2C3D4E5F6");
     EXPECT_EQ(TcpAgentConfig::parsePcAgentId("a1b2c3d4e5f6").value->value_or(""), "TCP_A1B2C3D4E5F6");
-    for (const char* bad : {"zz", "A1B2C3D4E5F", "A1B2C3D4E5F6A", "a1:b2:c3:d4:e5:g6", " a1b2c3d4e5f6", "TCP_A1B2C3D4E5F6"}) {
+    for (const char* bad : {"zz", "A1B2C3D4E5F", "A1B2C3D4E5F6A", "a1:b2:c3:d4:e5:g6", " a1b2c3d4e5f6", "TCP_A1B2C3D4E5F6",
+                            "00:00:00:00:00:00", "000000000000", "ff:ff:ff:ff:ff:ff", "FFFFFFFFFFFF"}) {
         const auto result = TcpAgentConfig::parsePcAgentId(bad);
         EXPECT_FALSE(result.ok()) << bad;
         EXPECT_EQ(result.error.code, ErrorCode::InvalidRequest) << bad;

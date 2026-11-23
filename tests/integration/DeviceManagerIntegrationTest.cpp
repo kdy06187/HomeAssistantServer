@@ -260,6 +260,9 @@ TEST_F(DeviceManagerIntegrationTest, ReRegistrationWithoutIpKeepsStoredIp) {
     ASSERT_TRUE(manager.addDevice("TCP_A1B2C3D4E5F6", "lamp", ProtocolType::TCP_DIY, {}, "192.168.0.50"));
     ASSERT_TRUE(manager.addDevice("TCP_A1B2C3D4E5F6", "lamp2", ProtocolType::TCP_DIY, {}));
     EXPECT_EQ(findInDatabase("TCP_A1B2C3D4E5F6").ip, "192.168.0.50");
+    Device inMemory;
+    ASSERT_TRUE(manager.getDevice("TCP_A1B2C3D4E5F6", inMemory));
+    EXPECT_EQ(inMemory.ip, "192.168.0.50") << "메모리(E1)와 DB가 같아야 한다";
 }
 
 TEST_F(DeviceManagerIntegrationTest, CommissioningStoresConnectionIp) {

@@ -2,6 +2,7 @@
 #include <chrono>
 #include <optional>
 #include <string>
+#include <vector>
 
 // 접속한 기기의 IPv4 주소로 MAC 주소를 찾는다. DIY 기기는 접속 때 ID를 보내지 않으므로,
 // IP처럼 바뀌는 값 대신 MAC으로 기기 ID(TCP_<MAC12>)를 만든다.
@@ -21,8 +22,9 @@ namespace MacResolverParse {
 std::optional<std::string> normalizeMac(const std::string& text);
 // /proc/net/arp 내용에서 ip와 완전히 같은 줄의 MAC. 미완성 항목(플래그 0x0, MAC 0)은 없음으로 본다
 std::optional<std::string> findArpMac(const std::string& arpText, const std::string& ipv4);
-// /proc/net/route 내용에서 기본 경로(목적지 0, 게이트웨이 플래그)의 게이트웨이 IPv4(점 표기)
-std::optional<std::string> findDefaultGatewayIp(const std::string& routeText);
+// /proc/net/route 내용에서 기본 경로(목적지·마스크 0, UP·GATEWAY 플래그)의 게이트웨이 IPv4(점 표기) 전부.
+// 칸은 정확히 16진 8자만 인정한다
+std::vector<std::string> findDefaultGatewayIps(const std::string& routeText);
 }  // namespace MacResolverParse
 
 // 커널 ARP 표(/proc/net/arp)를 읽는 실제 구현. 파일 읽기만 하고 패킷을 보내지 않는다.

@@ -2,7 +2,6 @@
 #include "MacResolver.hpp"
 #include "TcpProtocol.hpp"
 #include "TcpServer.hpp"
-#include <algorithm>
 #include <iostream>
 
 using json = nlohmann::json;
@@ -36,8 +35,8 @@ void TcpMessageSender::sendToPcAgent(const std::string& jsonLine) {
         for (const auto& id : server_.connectedIds()) sendTo(id, jsonLine);
         return;
     }
-    const auto connected = server_.connectedIds();
-    if (std::find(connected.begin(), connected.end(), *agentId) == connected.end()) {
+    // 확인 뒤 끊기는 틈은 아래 sendTo가 "응답 없음"으로 로그를 남긴다
+    if (!server_.peerIpOf(*agentId)) {
         std::cerr << "[TCPDriver] PC 에이전트(" << *agentId << ") 연결 없음 — 종료 메시지 못 보냄, 45초 뒤 전원 차단" << std::endl;
         return;
     }
@@ -53,5 +52,9 @@ Result<std::optional<std::string>> TcpAgentConfig::parsePcAgentId(const char* en
     if (environmentValue == nullptr || environmentValue[0] == '\0') return AgentIdResult::success(std::nullopt);
     const auto mac = MacResolverParse::normalizeMac(environmentValue);
     if (!mac) return AgentIdResult::failure(ErrorCode::InvalidRequest, "MAC 주소 형식이 아님");
+    // 전부 0·전부 F(브로드캐스트)는 실제 기기 MAC이 아니라 어떤 연결과도 맞지 않는다 → 오타로 보고 시작하지 않는다
+    if (*mac == "000000000000" || *mac == "FFFFFFFFFFFF") {
+        return AgentIdResult::failure(ErrorCode::InvalidRequest, "기기 MAC이 아님(전부 0 또는 FF)");
+    }
     return AgentIdResult::success(makeTcpDeviceId(*mac));
 }

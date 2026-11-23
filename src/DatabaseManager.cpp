@@ -374,6 +374,25 @@ bool DatabaseManager::updateDeviceState(const std::string& device_id, int is_act
     sqlite3_finalize(stmt);
     return success;
 }
+std::string DatabaseManager::loadDeviceIp(const std::string& device_id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!db_) return "";
+    const char* sql = "SELECT ip FROM devices WHERE device_id = ?;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "[DB 에러] IP 조회 준비 실패(" << device_id << "): " << sqlite3_errmsg(db_) << "\n";
+        return "";
+    }
+    sqlite3_bind_text(stmt, 1, device_id.c_str(), -1, SQLITE_STATIC);
+    std::string ip;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        const unsigned char* text = sqlite3_column_text(stmt, 0);
+        if (text) ip = reinterpret_cast<const char*>(text);
+    }
+    sqlite3_finalize(stmt);
+    return ip;
+}
+
 bool DatabaseManager::updateDeviceIp(const std::string& device_id, const std::string& ip) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!db_) return false;

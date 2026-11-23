@@ -96,7 +96,7 @@ int main() {
     }
     std::cout << "✅ 데이터베이스 로드 완료!" << std::endl;
     // 1. 조립. 선언의 역순으로 소멸하므로 "쓰는 쪽"을 나중에 선언한다:
-    //    httpServer → periodicTasks → TCP 정지 가드 → 스케줄러 가드 → manager → scheduler → 드라이버·러너 → clock → database 순으로 소멸
+    //    httpServer → periodicTasks → 스케줄러 가드 → TCP 정지 가드 → manager → scheduler → 드라이버·러너 → clock → database 순으로 소멸
     DriverManager deviceDrivers;
     SystemClock clock;
     ProcNetArpResolver macResolver;  // 접속 IP → MAC(기기 ID)
@@ -106,8 +106,9 @@ int main() {
     DelayedCommandScheduler scheduler(clock);
     DeviceManager manager(database, deviceDrivers, scheduler, clock);
     // 예외·조기 return으로 나가도 만기 작업이 해제된 드라이버를 쓰기 전에 스케줄러 스레드를 멈춘다
-    SchedulerStopGuard schedulerStopGuard(scheduler);
+    // 소멸은 선언의 역순: 스케줄러 가드가 먼저(지연 명령 정지) → TCP 가드(수락 정지). 정상 종료 순서와 같다
     TcpServerStopGuard tcpServerStopGuard(tcpDriver);
+    SchedulerStopGuard schedulerStopGuard(scheduler);
     PeriodicTasks periodicTasks(manager);
 
     // 접속한 TCP 기기의 IP를 목록(E1)·DB에 반영한다. 수락 스레드가 맵 락 없이 부른다
@@ -115,14 +116,7 @@ int main() {
         manager.onTcpConnected(info.deviceId, info.ip);
     });
 
-    // 2. 포트 8080으로 TCP 서버 시작
-    // 포트를 못 열면(이전 프로세스가 남아 있는 등) 반쯤 켜진 채 돌지 않고 바로 끝낸다
-    if (!tcpDriver.startServer(8080, *tcpBindAddress.value)) {
-        std::cerr << "❌ TCP 포트 8080을 열 수 없습니다(원인은 위 [TCPDriver] 로그). 서버를 종료합니다." << std::endl;
-        return 1;
-    }
-
-    // 3. DeviceManager에 드라이버 등록
+    // 2. DeviceManager에 드라이버 등록
     manager.registerDriver(ProtocolType::TCP_DIY, &tcpDriver);
     if (matterController.Initialize()) {
         std::cout << "[Main] MatterController 초기화 및 스레드 구동 성공!" << std::endl;
@@ -135,6 +129,13 @@ int main() {
     });
     manager.registerDriver(ProtocolType::MATTER, &matterController);
     manager.initFromDatabase();
+
+    // 3. 포트 8080으로 TCP 서버 시작. 기기를 메모리에 올린 뒤에 열어야 접속 알림의 ip가 로드 값에 덮이지 않는다
+    // (initFromDatabase는 TCP 연결을 쓰지 않는다). 포트를 못 열면 반쯤 켜진 채 돌지 않고 바로 끝낸다
+    if (!tcpDriver.startServer(8080, *tcpBindAddress.value)) {
+        std::cerr << "❌ TCP 포트 8080을 열 수 없습니다(원인은 위 [TCPDriver] 로그). 서버를 종료합니다." << std::endl;
+        return 1;
+    }
 
     HTTPServer httpServer(manager, *apiToken, 8000, *httpBindAddress.value);
     // start()가 바인딩까지 마치므로 실패하면 바로 알 수 있다. 수락 스레드가 listen에 들어갈 때까지 한 번 더 확인한다

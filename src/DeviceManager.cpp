@@ -59,6 +59,8 @@ bool DeviceManager::addDevice(std::string id, std::string name, ProtocolType pro
         std::cerr << "[DeviceManager] 에러 : 기기 DB 저장 실패, 등록하지 않습니다 (" << id << ")" << std::endl;
         return false;
     }
+    // ip 없이 재등록하면 DB는 저장된 ip를 지킨다(COALESCE). 메모리도 그 값으로 맞춰 E1과 DB가 어긋나지 않게 한다
+    if (newDevice.ip.empty() && protocol_type == ProtocolType::TCP_DIY) newDevice.ip = db_.loadDeviceIp(id);
     {
         std::lock_guard<std::mutex> lock(mutex_);
         devices_[id] = std::move(newDevice);

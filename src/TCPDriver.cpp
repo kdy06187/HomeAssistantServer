@@ -14,6 +14,8 @@
 #include "TcpCommissionCandidate.hpp"
 #include "RequestValidation.hpp"
 #include <stdexcept>
+#include <memory>
+#include <mutex>
 #include <algorithm>
 
 using json = nlohmann::json;
@@ -44,6 +46,13 @@ Result<CommissionOutcome> TCPDriver::commission(const CommissionRequest& request
     std::string server_ip = request.payload.empty() ? "192.168.219.109" : request.payload;
     int server_port = 8080;
 
+    // 정리·스냅샷은 Wi-Fi 설정을 보내기 전에 한다. 보낸 뒤에 찍으면 빨리 붙은 새 기기가 "원래 있던 연결"로 들어가
+    // 대기 내내 후보에서 빠진다. DB(앱 목록)에 없는 ID가 소켓을 차지하고 있으면 닫되 에이전트 연결은 지킨다
+    std::unordered_set<std::string> keep = activeDeviceIds;
+    if (server_.pcAgentId()) keep.insert(*server_.pcAgentId());
+    server_.closeConnectionsNotIn(keep);
+    const std::vector<std::string> existing_ids = server_.connectedIds();
+
     // SimpleBLE는 어댑터·연결 오류를 예외로 알린다. 잡지 않으면 HTTP 스레드에서 std::terminate로 서버가 죽는다
     try {
         sendWifiConfigOverBle(request, server_ip, server_port);
@@ -55,11 +64,6 @@ Result<CommissionOutcome> TCPDriver::commission(const CommissionRequest& request
     }
 
     std::cout << "[TCPDriver] 와이파이 설정 전송 완료. TCP 접속 대기 중..." << std::endl;
-    // 소켓 목록과 DB 동기화: DB(앱 목록)에 없는 ID가 소켓을 차지하고 있으면 닫는다. 에이전트 연결은 지킨다
-    std::unordered_set<std::string> keep = activeDeviceIds;
-    if (server_.pcAgentId()) keep.insert(*server_.pcAgentId());
-    server_.closeConnectionsNotIn(keep);
-    const std::vector<std::string> existing_ids = server_.connectedIds();
 
     for (int waited = 0; waited < kCommissionConnectWaitSeconds; ++waited) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -86,18 +90,31 @@ void TCPDriver::sendWifiConfigOverBle(const CommissionRequest& request, const st
     }
     auto adapter = adapters[0];
 
-    bool found = false;
-    SimpleBLE::Peripheral target_device;
-
-    adapter.set_callback_on_scan_found([&](SimpleBLE::Peripheral peripheral) {
-        if (peripheral.identifier() == "TCPDevice_DIY") {
-            target_device = peripheral;
-            found = true;
-        }
+    // 스캔 콜백은 SimpleBLE 스레드에서 불릴 수 있다. 결과는 락으로 지키고, 이 함수가 끝난 뒤 늦게 불려도
+    // 사라진 지역 변수를 쓰지 않게 shared_ptr로 콜백과 함께 소유한다
+    struct ScanResult {
+        std::mutex mutex;
+        bool found = false;
+        SimpleBLE::Peripheral device;
+    };
+    auto scan = std::make_shared<ScanResult>();
+    adapter.set_callback_on_scan_found([scan](SimpleBLE::Peripheral peripheral) {
+        if (peripheral.identifier() != "TCPDevice_DIY") return;
+        std::lock_guard<std::mutex> lock(scan->mutex);
+        scan->device = peripheral;
+        scan->found = true;
     });
 
     adapter.scan_for(5000);
+    adapter.set_callback_on_scan_found([](SimpleBLE::Peripheral) {});  // 스캔이 끝나면 더 받지 않는다
 
+    bool found = false;
+    SimpleBLE::Peripheral target_device;
+    {
+        std::lock_guard<std::mutex> lock(scan->mutex);
+        found = scan->found;
+        target_device = scan->device;
+    }
     if (!found) {
         std::cerr << "❌ [TCPDriver] TCPDevice_DIY 기기를 찾지 못했습니다." << std::endl;
         throw CommissionAbort("BLE 기기 없음");
@@ -139,8 +156,10 @@ bool TCPDriver::startServer(int port, const std::string& bindAddress){
 }
 
 void TCPDriver::stopServer(){
+    // main·정지 가드·소멸자가 차례로 부르므로 실제로 멈춘 첫 번째만 로그를 남긴다
+    const bool wasRunning = server_.boundPort() != 0;
     server_.stop();
-    std::cout << "[TCPDriver] TCP 서버 종료" << std::endl;
+    if (wasRunning) std::cout << "[TCPDriver] TCP 서버 종료" << std::endl;
 }
 
 bool TCPDriver::unpairDevice(const std::string& deviceId){

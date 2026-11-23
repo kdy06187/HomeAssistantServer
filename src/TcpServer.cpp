@@ -272,7 +272,8 @@ TcpServer::RegisterOutcome TcpServer::tryRegister(const std::string& deviceId,
     std::lock_guard<std::mutex> lock(connectionsMutex_);
     auto it = connections_.find(deviceId);
     if (it != connections_.end()) {
-        // 확인하는 동안 맵의 값이 다른 연결로 바뀌었으면 그 연결을 지우지 않는다(비교 후 교체)
+        // 확인하는 동안 맵의 값이 다른 연결로 바뀌었으면 그 연결을 지우지 않는다(비교 후 교체).
+        // 지금은 맵에 넣는 쪽이 수락 스레드 하나뿐이라 도달하지 않지만, 넣는 곳이 늘어도 연결을 잃지 않게 둔다
         if (!isAgent && it->second != expected) return RegisterOutcome::Conflict;
         outReplaced = it->second;
         it->second = connection;
@@ -287,7 +288,8 @@ TcpServer::RegisterOutcome TcpServer::tryRegister(const std::string& deviceId,
 bool TcpServer::isAlive(const std::shared_ptr<TcpConnection>& connection) {
     const auto lines = connection->request(TcpProtocol::toLine(TcpProtocol::buildGetStateRequest()),
                                            kLivenessTimeout, isJsonObjectLine);
-    return lines && std::any_of(lines->begin(), lines->end(), isJsonObjectLine);
+    // 응답 직후 끊겼으면(request가 연결을 닫음) 살아 있지 않다 — 재접속한 진짜 기기를 거부하지 않게
+    return lines && std::any_of(lines->begin(), lines->end(), isJsonObjectLine) && !connection->isClosed();
 }
 
 std::size_t TcpServer::unidentifiedCount() {

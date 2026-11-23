@@ -16,6 +16,7 @@
 #include <chrono>
 #include <future>
 #include <algorithm>
+#include <cstdlib>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -563,14 +564,64 @@ TEST(TcpServerIdentityTest, DefaultUnidentifiedHoldIsThirtySeconds) {
 // 기존 연결이 생존 확인에 응답하면 같은 ID의 새 연결을 거부하고 기존을 지킨다
 TEST_F(TcpServerTest, SameIdReconnectIsRejectedWhileOldConnectionAnswers) {
     auto original = connect(2);
-    original->serveInBackground([](const std::string&) { return std::string("{\"state\":\"ON\"}\n"); });
+    std::mutex requestsMutex;
+    std::vector<std::string> requests;
+    original->serveInBackground([&](const std::string& request) {
+        std::lock_guard<std::mutex> lock(requestsMutex);
+        requests.push_back(request);
+        return std::string("{\"state\":\"ON\"}\n");
+    });
     FakeDevice impostor(server.boundPort(), 2);
     EXPECT_TRUE(impostor.waitClosedByServer(2000ms));
     EXPECT_EQ(registrations.load(), 1);
+    {
+        std::lock_guard<std::mutex> lock(requestsMutex);
+        ASSERT_EQ(requests.size(), 1u) << "기존 연결은 생존 확인 요청을 정확히 한 번 받는다";
+        EXPECT_EQ(requests[0], "{\"action\":\"GET_STATE\"}\n");
+    }
     const json result = server.sendAndReceive(original->id(), TcpProtocol::buildGetStateRequest());
     original->stopServing();
     ASSERT_TRUE(result.is_object()) << "기존 연결이 유지되어야 한다";
     EXPECT_EQ(result["state"], "ON");
+}
+
+// 생존 확인에 대답하고 바로 끊은 기존 연결은 살아 있지 않다 → 새 연결로 교체한다
+TEST_F(TcpServerTest, OldConnectionThatAnswersThenClosesIsReplaced) {
+    auto original = connect(2);
+    auto answerThenClose = std::async(std::launch::async, [&] {
+        const std::string request = original->readLine(3000ms);
+        original->send("{\"state\":\"ON\"}\n");
+        original->closeSocket();
+        return request;
+    });
+    FakeDevice next(server.boundPort(), 2);
+    EXPECT_EQ(answerThenClose.get(), "{\"action\":\"GET_STATE\"}\n");
+    EXPECT_TRUE(waitForRegistrations(2, 2500ms)) << "응답 직후 끊긴 연결 때문에 재접속을 거부하면 안 된다";
+    EXPECT_FALSE(next.waitClosedByServer(200ms));
+    EXPECT_TRUE(isConnected(next.id()));
+}
+
+// 생존 확인(1초)을 하는 동안 다른 스레드가 기존 연결을 해제(take)해도 새 연결이 빈 칸으로 들어간다
+TEST_F(TcpServerTest, TakeDuringLivenessCheckLetsNewConnectionIn) {
+    auto original = connect(2);
+    FakeDevice next(server.boundPort(), 2);
+    ASSERT_FALSE(original->readLine(1000ms).empty()) << "생존 확인이 시작돼야 한다";
+    auto taken = server.take(original->id());
+    ASSERT_NE(taken, nullptr);
+    taken->shutdown();
+    EXPECT_TRUE(waitForRegistrations(2, 2500ms));
+    EXPECT_FALSE(next.waitClosedByServer(200ms));
+    EXPECT_EQ(server.connectedIds().size(), 1u);
+}
+
+// 생존 확인 중 정리(closeConnectionsNotIn)가 기존 연결을 닫아도 경합 없이 끝난다(TSan)
+TEST_F(TcpServerTest, CleanupDuringLivenessCheckIsRaceFree) {
+    auto original = connect(2);
+    FakeDevice next(server.boundPort(), 2);
+    ASSERT_FALSE(original->readLine(1000ms).empty());
+    server.closeConnectionsNotIn({});
+    EXPECT_TRUE(waitForRegistrations(2, 2500ms));
+    EXPECT_TRUE(isConnected(next.id()));
 }
 
 // 기존 연결이 응답하지 않으면 1초 확인 뒤 새 연결로 교체한다
@@ -670,6 +721,26 @@ TEST(TcpServerIdentityTest, AgentUsesReserveSlotAndUnidentifiedCountTowardLimit)
     EXPECT_EQ(server.connectedIds().size(), TcpServer::kMaxConnections);
 }
 
+// 에이전트가 먼저 붙어 있어도 스위치 32대를 모두 받고(에이전트는 칸을 쓰지 않음), 33번째 스위치는 거부한다
+TEST(TcpServerIdentityTest, AgentConnectedFirstDoesNotTakeSwitchSlot) {
+    FakeMacResolver resolver;
+    TcpServer server(resolver, FakeMacResolver::loopbackId(250));
+    ASSERT_TRUE(server.start(0, "127.0.0.1"));
+    FakeDevice agent(server.boundPort(), 250);
+    std::vector<std::unique_ptr<FakeDevice>> switches;
+    for (std::size_t i = 0; i < TcpServer::kMaxConnections; ++i) {
+        switches.push_back(std::make_unique<FakeDevice>(server.boundPort(), static_cast<int>(10 + i)));
+    }
+    const auto deadline = std::chrono::steady_clock::now() + 3s;
+    while (server.connectedIds().size() < TcpServer::kMaxConnections + 1 && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(5ms);
+    }
+    EXPECT_EQ(server.connectedIds().size(), TcpServer::kMaxConnections + 1);
+    FakeDevice extra(server.boundPort(), 200);
+    EXPECT_TRUE(extra.waitClosedByServer());
+    EXPECT_FALSE(agent.waitClosedByServer(100ms));
+}
+
 // 접속 알림은 식별된 기기에만, 맵 락 없이 부른다(알림 안에서 서버를 불러도 교착이 없다)
 TEST(TcpServerIdentityTest, ListenerIsCalledOnlyForIdentifiedDevicesWithoutHoldingMapLock) {
     FakeMacResolver resolver;
@@ -714,24 +785,26 @@ TEST(TcpServerIdentityTest, StopClosesUnidentifiedConnectionsQuickly) {
     EXPECT_EQ(server.unidentifiedCount(), 0u);
 }
 
-// 같은 ID로 재접속이 겹쳐도(TSan) 맵에는 하나만 남고 연결이 새지 않는다
+// 같은 ID 재접속이 이어져도 기존이 응답하면 모두 거부되고(서버 쪽 fd도 닫힘) 맵에는 하나만 남는다
 TEST_F(TcpServerTest, RapidSameIdReconnectsLeaveOneConnection) {
-    std::vector<std::unique_ptr<FakeDevice>> clients;
-    for (int i = 0; i < 5; ++i) {
-        clients.push_back(std::make_unique<FakeDevice>(server.boundPort(), 4));
-        clients.back()->serveInBackground([](const std::string&) { return std::string("{\"state\":\"ON\"}\n"); });
+    auto first = connect(4);
+    first->serveInBackground([](const std::string&) { return std::string("{\"state\":\"ON\"}\n"); });
+    const int baseline = openFdCount();
+    std::vector<std::unique_ptr<FakeDevice>> rejected;
+    for (int i = 0; i < 4; ++i) {
+        rejected.push_back(std::make_unique<FakeDevice>(server.boundPort(), 4));
+        EXPECT_TRUE(rejected.back()->waitClosedByServer(2000ms)) << "재접속 " << i << "이 거부되지 않음";
     }
-    std::this_thread::sleep_for(200ms);
-    for (auto& client : clients) client->stopServing();
+    first->stopServing();
     EXPECT_EQ(server.connectedIds().size(), 1u);
     EXPECT_EQ(registrations.load(), 1) << "첫 연결이 응답하므로 나머지는 모두 거부";
+    EXPECT_LE(openFdCount(), baseline + 4) << "거부한 연결의 서버 쪽 fd가 남으면 안 된다(시험 쪽 소켓 4개만 늘어남)";
 }
 
 // ---- 12b: 요청 전 잔여 입력 로그 ----
 
-// 응답 뒤 늦게 온 "\r\n"은 다음 요청을 방해하지 않고 "버림" 로그도 남기지 않는다.
-// 공백이 아닌 잔여는 로그를 남긴다. 1회 진단은 프로세스에서 한 번만(앞선 시험이 썼을 수 있어 최대 1번으로 확인)
-TEST_F(TcpServerTest, TrailingWhitespaceIsDiscardedSilentlyAndDiagnosticAppearsAtMostOnce) {
+// 응답 뒤 늦게 온 "\r\n"은 다음 요청을 방해하지 않고 "버림" 로그도 남기지 않는다. 공백이 아닌 잔여는 로그를 남긴다
+TEST_F(TcpServerTest, TrailingWhitespaceIsDiscardedSilentlyButOtherResidueIsLogged) {
     auto device = connect(2);
     device->serveInBackground([](const std::string&) { return std::string("{\"state\":\"ON\"}"); });
 
@@ -752,34 +825,52 @@ TEST_F(TcpServerTest, TrailingWhitespaceIsDiscardedSilentlyAndDiagnosticAppearsA
     const auto firstDiscardLog = log.find("남아 있던 입력");
     ASSERT_NE(firstDiscardLog, std::string::npos) << "공백이 아닌 잔여는 로그";
     EXPECT_EQ(log.find("남아 있던 입력", firstDiscardLog + 1), std::string::npos) << "\\r\\n 잔여는 로그 없음";
-    const auto diagnostic = log.find("1회 진단");
-    if (diagnostic != std::string::npos) {
-        EXPECT_EQ(log.find("1회 진단", diagnostic + 1), std::string::npos);
-        EXPECT_NE(log.find("1회 진단): 0d 0a"), std::string::npos) << "이 프로세스의 첫 잔여는 \\r\\n";
-    }
 }
 
-// 1회 진단은 처음 잔여 내용을 16진으로(최대 16바이트) 남기고, 두 번째 잔여에는 남기지 않는다
-TEST_F(TcpServerTest, FirstDiscardDiagnosticShowsAtMostSixteenHexBytesOnce) {
-    auto device = connect(3);
-    device->serveInBackground([](const std::string&) { return std::string("{\"state\":\"ON\"}\n"); });
+// 1회 진단은 프로세스 전역 플래그라, 앞 시험이 먼저 써 버리지 않도록 새 프로세스에서 확인한다
+// (threadsafe 죽음 시험은 시험 실행 파일을 이 시험만으로 다시 실행한다 → 실행 순서와 무관)
+bool firstDiscardDiagnosticScenario(const std::string& firstResidue, const std::string& expectedHex) {
+    FakeMacResolver resolver;
+    TcpServer server(resolver);
+    if (!server.start(0, "127.0.0.1")) return false;
+    FakeDevice device(server.boundPort(), 3);
+    const auto deadline = std::chrono::steady_clock::now() + 2s;
+    while (server.connectedIds().empty() && std::chrono::steady_clock::now() < deadline) std::this_thread::sleep_for(5ms);
+    device.serveInBackground([](const std::string&) { return std::string("{\"state\":\"ON\"}\n"); });
     ::testing::internal::CaptureStderr();
-    device->send(std::string(40, 'z'));
+    device.send(firstResidue);
     std::this_thread::sleep_for(50ms);
-    server.sendAndReceive(device->id(), TcpProtocol::buildGetStateRequest());
-    device->send("\r\n");
+    server.sendAndReceive(device.id(), TcpProtocol::buildGetStateRequest());
+    device.send("zz");  // 두 번째 잔여: 진단을 다시 찍으면 안 된다
     std::this_thread::sleep_for(50ms);
-    server.sendAndReceive(device->id(), TcpProtocol::buildGetStateRequest());
+    server.sendAndReceive(device.id(), TcpProtocol::buildGetStateRequest());
     const std::string log = ::testing::internal::GetCapturedStderr();
-    device->stopServing();
-    const auto diagnostic = log.find("1회 진단");
-    if (diagnostic != std::string::npos) {  // 앞선 시험이 이미 썼으면 없다
-        std::string expected = "1회 진단): 7a";
-        for (int i = 1; i < 16; ++i) expected += " 7a";
-        expected += " (";
-        EXPECT_NE(log.find(expected), std::string::npos) << log;
-        EXPECT_EQ(log.find("1회 진단", diagnostic + 1), std::string::npos);
+    device.stopServing();
+    server.stop();
+    const std::string expected = "버린 잔여(1회 진단): " + expectedHex + " (";
+    const auto diagnostic = log.find(expected);
+    if (diagnostic == std::string::npos) {
+        std::cerr << "진단 없음 또는 값이 다름: " << log << std::endl;
+        return false;
     }
+    if (log.find("1회 진단", diagnostic + expected.size()) != std::string::npos) {
+        std::cerr << "진단이 두 번 찍힘" << std::endl;
+        return false;
+    }
+    return true;
+}
+
+TEST(TcpConnectionDiagnosticDeathTest, FirstResidueIsHexDumpedOnceInFreshProcess) {
+    ::testing::GTEST_FLAG(death_test_style) = "threadsafe";
+    EXPECT_EXIT(std::_Exit(firstDiscardDiagnosticScenario("\r\n", "0d 0a") ? 0 : 1), ::testing::ExitedWithCode(0), "");
+}
+
+TEST(TcpConnectionDiagnosticDeathTest, DiagnosticIsCappedAtSixteenBytes) {
+    ::testing::GTEST_FLAG(death_test_style) = "threadsafe";
+    std::string sixteen = "7a";
+    for (int i = 1; i < 16; ++i) sixteen += " 7a";
+    EXPECT_EXIT(std::_Exit(firstDiscardDiagnosticScenario(std::string(40, 'z'), sixteen) ? 0 : 1),
+                ::testing::ExitedWithCode(0), "");
 }
 
 }  // namespace
