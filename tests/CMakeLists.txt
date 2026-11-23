@@ -15,6 +15,7 @@ add_executable(hac_tests
     unit/DatabaseMigrationTest.cpp
     unit/ProcessChipToolRunnerTest.cpp
     unit/MacResolverTest.cpp
+    unit/TcpCommissionCandidateTest.cpp
     integration/DeviceManagerIntegrationTest.cpp
     integration/DeviceManagerBehaviorTest.cpp
     integration/HttpServerTest.cpp
