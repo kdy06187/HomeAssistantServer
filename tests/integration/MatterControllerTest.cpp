@@ -384,7 +384,8 @@ TEST_F(MatterControllerTest, ShortSecretsDoNotBreakSuccessTextUnderRealMasking) 
     const auto outcome = controller->commission(CommissionRequest{"plug", kGoodCode, "es", "on"}, {}, kNotCancelled);
     ASSERT_TRUE(outcome.ok());
     EXPECT_EQ(outcome.value->deviceId, "SN-NEW");
-    for (const auto& secret : runner.callsSnapshot().at(0).secretsToMask) EXPECT_GE(secret.size(), 4u) << secret;
+    const auto calls = runner.callsSnapshot();  // 임시 사본의 하위 참조를 range-for로 돌지 않게 변수에 담는다
+    for (const auto& secret : calls.at(0).secretsToMask) EXPECT_GE(secret.size(), 4u) << secret;
 }
 
 // P6: 4KiB 로그 경계에 걸친 비밀값도 실제 마스킹 뒤 잘리므로 조각이 남지 않는다
