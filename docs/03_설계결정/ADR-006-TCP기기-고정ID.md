@@ -161,3 +161,23 @@ IP와 MAC 비교(값 종류는 추천안으로 확정, 승인 2026-11-21):
 | C. 그대로 | 변경 0 | 로그 소음, 진짜 이상과 구분 어려움 |
 - **추천: A** → 추천안으로 확정(승인 2026-11-21). 영향: **12b**.
 - 실기 확인 방법 변경(K-8, 총괄 판정): `tcpdump`(권한 필요) 대신 **서버가 프로세스 시작 후 처음 버린 잔여 1회만 16진으로 출력**(`[TcpConnection] 버린 잔여(1회 진단): 0d 0a`, 최대 16바이트, 기기 응답 뒤 바이트라 비밀값 아님). `\r\n`(`0d 0a`)이면 A 그대로, 아니면 다시 판단.
+
+## 12b 구현 반영 (2026-11-23, [Server] 팀 — 변경 목록 `docs/12_변경목록-2차-12b.md`, 결정 43: D1~D8 모두 A, 설계 차이 ①~⑦ 승인)
+
+| 결정 | 결과(코드) |
+|---|---|
+| D1 A | `MacResolver::resolve(peerIpv4)` 인자 하나. 서브넷 검사 코드 없음(다른 서브넷은 ARP 줄이 없어 실패), 기본 게이트웨이 MAC과 같으면 없음. 재시도 100ms×3은 `ProcNetArpResolver` 안 |
+| D2 A | IP로 기기를 추정하는 대체 규칙 없음 → 미식별 |
+| D3 A | E1 `ip`(TCP 문자열·없으면 `null`, Matter `null`). 접속 알림 → `DeviceManager::onTcpConnected` → 메모리·DB(`updateDeviceIp`). 커미셔닝은 `CommissionOutcome.ip`로 등록 때 저장 |
+| D4 A | `DriverCreator`·`attachDriversToDevice`·`addDevice`에서 발송기 인자 삭제, MatterController `IMessageSender` 상속과 DeviceManager `dynamic_cast` 2곳을 한 커밋(`d7b3a25`)에서 삭제. 회귀 시험 `MatterPcDriverRegressionTest`(상속만 지우면 실패함을 확인) |
+| D5 A | hac_core `TcpMessageSender`(TcpServer 기반)가 `sendTo`·`sendToPcAgent`. TCPDriver는 위임 |
+| D6 A | 미식별 30초(`TcpServer` 생성자 인자, 시험은 짧게), 상한에 포함 |
+| D7 A | 에이전트 발송은 요청·응답(1초), 결과는 로그만 |
+| D8 A | 시작 때 `ARD_` TCP 기기 경고 1줄씩, 자동 이전 없음 |
+
+설계와 또 달라진 점(작음):
+- `DeviceManager::onTcpConnected(deviceId, ip)`: 설계 3.2의 `TcpConnectionInfo` 대신 문자열 두 개 — DeviceManager가 `TcpServer.hpp`에 의존하지 않게. main의 람다가 변환.
+- `initFromDatabase`는 프로토콜 드라이버 등록 여부와 무관하게 `driver_types`가 있으면 기기 드라이버를 붙인다(전에는 발송기를 찾으려고 등록 여부를 봤다).
+- 수락 소켓을 `SOCK_NONBLOCK`으로(poll 뒤 accept가 막히지 않게, 수락된 소켓에는 물려주지 않음). 에이전트 칸은 "에이전트를 뺀 연결 32 + 에이전트 1".
+- `TcpServer::peerIpOf(id)` 추가(커미셔닝 때 IP). 가짜 기기 `FakeDevice`를 `tests/support/FakeTcpDevice.hpp`로 옮김(PcAgentDispatchTest·TcpDeviceIpTest 공용).
+- 실기로만 확인: ARP 실제 값·stale(K-9), 등록 대기 30초(K-5), BLE 예외 처리, 에이전트 재접속(K-6), T5(K-10) → `docs/13_실기시험-2차-12b.md`.

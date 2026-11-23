@@ -25,7 +25,7 @@
 | 시각 | 응답은 ISO 8601 UTC(`2026-11-16T00:30:00Z`). `from`/`to`는 +09:00 날짜 `YYYY-MM-DD` | ADR-007 |
 | 성공 판정 | **HTTP 상태코드만**. 성공 본문에 `result`/`status`/`message` 없음 | I-01, I-03 |
 | `{deviceId}` 경로 | `[A-Za-z0-9_-]{1,64}`만. 아니면 404 `NOT_FOUND` | S-15 |
-| 포트 8080 | DIY 기기 전용 TCP. 앱은 안 씀 | |
+| 포트 8080 | DIY 기기·PC 에이전트용(앱은 안 씀) | |
 
 ### 1.1 오류 본문 (공통, 한 가지 모양)
 
@@ -237,7 +237,7 @@
 | 7 | E3 | 동기(120초+) | 202 + `jobId`, E8 폴링 | 등록 화면 흐름 | REQ-10, I-04 |
 | 8 | E8 | 없음 | `GET /api/commission/{jobId}` | 신규 호출 | REQ-10 |
 | 9 | E4 | 행 삭제, 실패 시 400 | 숨김, `deletedAt`·`restorableUntil`·`unpaired`, 없으면 404 | 완료 문구, `unpaired:false` 경고 | REQ-13, Q-03c |
-| 10 | 기기 ID | TCP_DIY `ARD_<IP>` | `TCP_<MAC12>` + `ip` 필드 | 해석 안 하면 없음. 저장된 ID는 첫 갱신 때 바뀜 | ADR-006 |
+| 10 | 기기 ID | TCP_DIY `ARD_<IP>` | `TCP_<MAC12>` + `ip` 필드 | 해석 안 하면 없음. **자동 이전 없음** — 2차 배포 때 TCP_DIY 기기는 삭제 후 재등록 | ADR-006 |
 | 11 | E5 | 없는 기기 200 + `UNKNOWN` | 404 | 404 처리 | I-02 |
 | 12 | E6 | 400 `{"error"}`, `device_status` | 404/400/502, `deviceId`·`state` | 오류·필드 | REQ-04, I-02 |
 | 13 | E7 시각 | `"YYYY-MM-DD HH:MM:SS"` | `"YYYY-MM-DDTHH:MM:SSZ"` | 파서 | I-03 |
@@ -245,7 +245,7 @@
 | 15 | 본문 크기 | 제한 없음 | 16KiB, 413 | 정상 사용 시 없음 | REQ-15 |
 | 16 | E3 입력 제한 | 검사 없음 | 길이·제어문자·`payload` 형식, 위반 시 400 | 수동 코드 `-` 제거, 앱 쪽 검사 | S-09, REQ-16 |
 
-MAJOR 아님: E7 `from/to/period/limit` 추가(MINOR, APP-REQ) / E7 순서 설명 정정 — 실제·v2.0 모두 최근 N건을 오래된 순(N-02(신규)) / POST 401 본문 전달(N-03(신규) 버그 수정) / 형식이 틀린 `{deviceId}` 404 `NOT_FOUND`(현재 ID 형식은 모두 통과, S-15).
+MAJOR 아님: E7 `from/to/period/limit` 추가(MINOR, APP-REQ) / E7 순서 설명 정정 — 실제·v2.0 모두 최근 N건을 오래된 순(N-02(신규)) / POST 401 본문 전달(N-03(신규) 버그 수정) / 형식이 틀린 `{deviceId}` 404 `NOT_FOUND`(2차 배포(재등록) 뒤 ID 형식은 모두 통과 — `TCP_<MAC12>`·Matter 시리얼, 서버 12b-7 시험, S-15).
 
 ## 7. 앱 반영 순서 (서버 먼저, 앱 나중)
 
@@ -279,3 +279,4 @@ MAJOR 아님: E7 `from/to/period/limit` 추가(MINOR, APP-REQ) / E7 순서 설�
 | | | 인증을 본문 읽은 뒤로, 본문 16KiB | REQ-15, N-03(신규) | ⬜ | ⬜ |
 | | 2026-11-18 | 접속 LAN 유지(HTTPS 보류), E3 입력 제한(#16), E7 400 조건 명시, 고정 오류 문구, `ALREADY_REGISTERED`, `{deviceId}` 형식, `unpaired:false` 경고 | ADR-011, S-05·09·10·11·15·16 | ⬜ | ⬜ |
 | | 2026-11-22 | E7 `from`·`to` 연도 2000~2100, 밖이면 400 `INVALID_REQUEST`(서버 12a-7 구현) | REQ-12 | ✅ 12a-7 | ⬜ |
+| | 2026-11-23 | §1 8080 "DIY 기기·PC 에이전트용", §6 10행 "자동 이전 없음 — 재등록", §6 `{deviceId}` 형식 문구(K5·K6·K10). E1 `ip`·`TCP_<MAC12>`는 초안 그대로 서버 구현 | REQ-05, REQ-13 | ✅ 12b | ⬜ |
