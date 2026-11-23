@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include "TcpServer.hpp"
+#include "fakes/FakeMacResolver.hpp"
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -11,14 +12,16 @@
 
 namespace {
 
+FakeMacResolver testResolver;
+
 TEST(TcpServerLifecycle, StopWithoutStartAndTwiceIsSafe) {
-    TcpServer server;
+    TcpServer server(testResolver);
     server.stop();
     server.stop();
 }
 
 TEST(TcpServerLifecycle, StartTwiceReturnsFalseAndKeepsOneListener) {
-    TcpServer server;
+    TcpServer server(testResolver);
     ASSERT_TRUE(server.start(0, "127.0.0.1"));
     const int port = server.boundPort();
     EXPECT_FALSE(server.start(0, "127.0.0.1"));
@@ -28,7 +31,7 @@ TEST(TcpServerLifecycle, StartTwiceReturnsFalseAndKeepsOneListener) {
 }
 
 TEST(TcpServerLifecycle, PortOutOfRangeFailsToStart) {
-    TcpServer server;
+    TcpServer server(testResolver);
     for (int bad : {-1, 65536, 100000}) {
         testing::internal::CaptureStderr();
         EXPECT_FALSE(server.start(bad, "127.0.0.1")) << bad;
@@ -38,7 +41,7 @@ TEST(TcpServerLifecycle, PortOutOfRangeFailsToStart) {
 }
 
 TEST(TcpServerLifecycle, RepeatedStartStopWorks) {
-    TcpServer server;
+    TcpServer server(testResolver);
     for (int i = 0; i < 20; ++i) {
         ASSERT_TRUE(server.start(0, "127.0.0.1")) << i;
         server.stop();
@@ -46,7 +49,7 @@ TEST(TcpServerLifecycle, RepeatedStartStopWorks) {
 }
 
 TEST(TcpServerLifecycle, ConcurrentStartsLetExactlyOneWinWithOneListener) {
-    TcpServer server;
+    TcpServer server(testResolver);
     std::atomic<int> successes{0};
     std::vector<std::thread> threads;
     for (int i = 0; i < 8; ++i) {
@@ -59,7 +62,7 @@ TEST(TcpServerLifecycle, ConcurrentStartsLetExactlyOneWinWithOneListener) {
 }
 
 TEST(TcpServerLifecycle, ConcurrentStartAndStopEndInACleanState) {
-    TcpServer server;
+    TcpServer server(testResolver);
     std::atomic<bool> go{false};
     std::thread starter([&] {
         while (!go) std::this_thread::yield();
@@ -78,11 +81,11 @@ TEST(TcpServerLifecycle, ConcurrentStartAndStopEndInACleanState) {
 }
 
 TEST(TcpServerLifecycle, BindFailureLogsAddressPortAndErrno) {
-    TcpServer holder;
+    TcpServer holder(testResolver);
     ASSERT_TRUE(holder.start(0, "127.0.0.1"));
     const int port = holder.boundPort();
 
-    TcpServer second;
+    TcpServer second(testResolver);
     testing::internal::CaptureStderr();
     EXPECT_FALSE(second.start(port, "127.0.0.1"));
     const std::string log = testing::internal::GetCapturedStderr();
@@ -97,7 +100,7 @@ TEST(TcpServerLifecycle, BindFailureLogsAddressPortAndErrno) {
 }
 
 TEST(TcpServerLifecycle, InvalidBindAddressFailsWithoutLeavingStateBehind) {
-    TcpServer server;
+    TcpServer server(testResolver);
     EXPECT_FALSE(server.start(0, "not-an-ip"));
     EXPECT_FALSE(server.start(0, std::string("127.0.0.1\0junk", 14))); // NUL 뒤를 무시하고 통과시키지 않는다
     EXPECT_TRUE(server.start(0, "127.0.0.1"));
@@ -116,7 +119,7 @@ bool canConnect(const char* address, int port) {
 }
 
 TEST(TcpServerLifecycle, BindsOnlyToTheGivenAddress) {
-    TcpServer server;
+    TcpServer server(testResolver);
     testing::internal::CaptureStdout();
     ASSERT_TRUE(server.start(0, "127.0.0.1"));
     const std::string log = testing::internal::GetCapturedStdout();
@@ -127,7 +130,7 @@ TEST(TcpServerLifecycle, BindsOnlyToTheGivenAddress) {
 }
 
 TEST(TcpServerLifecycle, DefaultAddressListensOnAllInterfaces) {
-    TcpServer server;
+    TcpServer server(testResolver);
     ASSERT_TRUE(server.start(0));
     EXPECT_TRUE(canConnect("127.0.0.2", server.boundPort()));
 }

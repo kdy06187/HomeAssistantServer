@@ -2,6 +2,8 @@
 #include "TcpProtocol.hpp"
 #include "TcpServer.hpp"
 #include "json.hpp"
+#include "fakes/FakeMacResolver.hpp"
+#include "support/FakeTcpDevice.hpp"
 #include <arpa/inet.h>
 #include <dirent.h>
 #include <fcntl.h>
@@ -13,7 +15,9 @@
 #include <atomic>
 #include <chrono>
 #include <future>
+#include <algorithm>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -23,92 +27,7 @@ using namespace std::chrono_literals;
 
 namespace {
 
-// 테스트가 흉내 내는 DIY 기기. 127.0.0.N에 bind해 접속하므로 기기마다 ID(ARD_127.0.0.N)가 다르다
-class FakeDevice {
-public:
-    FakeDevice(int serverPort, int lastOctet) : ip_("127.0.0." + std::to_string(lastOctet)) {
-        fd_ = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
-        // 닫을 때 RST로 끝내 TIME_WAIT를 남기지 않는다. 남기면 127.0.0.N의 임시 포트가 한동안 묶여,
-        // 0.0.0.0에 바인드하는 다른 테스트(HTTP 서버)가 같은 포트를 받았을 때 바인드에 실패할 수 있다
-        linger noLinger{1, 0};
-        setsockopt(fd_, SOL_SOCKET, SO_LINGER, &noLinger, sizeof(noLinger));
-        sockaddr_in local{};
-        local.sin_family = AF_INET;
-        inet_pton(AF_INET, ip_.c_str(), &local.sin_addr);
-        EXPECT_EQ(::bind(fd_, reinterpret_cast<sockaddr*>(&local), sizeof(local)), 0);
-        sockaddr_in server{};
-        server.sin_family = AF_INET;
-        server.sin_port = htons(static_cast<uint16_t>(serverPort));
-        inet_pton(AF_INET, "127.0.0.1", &server.sin_addr);
-        EXPECT_EQ(::connect(fd_, reinterpret_cast<sockaddr*>(&server), sizeof(server)), 0);
-    }
-    ~FakeDevice() { closeSocket(); }
-
-    std::string id() const { return "ARD_" + ip_; }
-    void send(const std::string& data) { ::send(fd_, data.data(), data.size(), MSG_NOSIGNAL); }
-    void closeSocket() {
-        if (fd_ >= 0) ::close(fd_);
-        fd_ = -1;
-    }
-
-    // 줄 하나를 읽는다. 시간 안에 못 읽거나 끊기면 빈 문자열
-    std::string readLine(std::chrono::milliseconds timeout = 2000ms) {
-        const auto deadline = std::chrono::steady_clock::now() + timeout;
-        for (;;) {
-            const auto newline = pending_.find('\n');
-            if (newline != std::string::npos) {
-                std::string line = pending_.substr(0, newline + 1);
-                pending_.erase(0, newline + 1);
-                return line;
-            }
-            const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
-            if (left.count() <= 0) return "";
-            pollfd waitFor{fd_, POLLIN, 0};
-            if (::poll(&waitFor, 1, static_cast<int>(left.count())) <= 0) return "";
-            char chunk[1024];
-            const ssize_t n = ::recv(fd_, chunk, sizeof(chunk), 0);
-            if (n <= 0) return "";
-            pending_.append(chunk, static_cast<std::size_t>(n));
-        }
-    }
-
-    // 서버가 이 연결을 닫았는지(EOF) 확인한다
-    bool waitClosedByServer(std::chrono::milliseconds timeout = 2000ms) {
-        const auto deadline = std::chrono::steady_clock::now() + timeout;
-        for (;;) {
-            const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
-            if (left.count() <= 0) return false;
-            pollfd waitFor{fd_, POLLIN, 0};
-            if (::poll(&waitFor, 1, static_cast<int>(left.count())) <= 0) return false;
-            char chunk[1024];
-            const ssize_t n = ::recv(fd_, chunk, sizeof(chunk), 0);
-            if (n <= 0) return true;
-        }
-    }
-
-    // 요청마다 respond(요청 줄)를 보내는 응답 스레드
-    void serveInBackground(std::function<std::string(const std::string&)> respond) {
-        stopServing_ = false;
-        server_ = std::thread([this, respond] {
-            while (!stopServing_) {
-                const std::string request = readLine(100ms);
-                if (request.empty()) continue;
-                send(respond(request));
-            }
-        });
-    }
-    void stopServing() {
-        stopServing_ = true;
-        if (server_.joinable()) server_.join();
-    }
-
-private:
-    std::string ip_;
-    int fd_ = -1;
-    std::string pending_;
-    std::thread server_;
-    std::atomic<bool> stopServing_{false};
-};
+using fake_tcp::FakeDevice;
 
 int openFdCount() {
     int count = 0;
@@ -121,7 +40,10 @@ int openFdCount() {
 
 class TcpServerTest : public ::testing::Test {
 protected:
-    void SetUp() override { ASSERT_TRUE(server.start(0, "127.0.0.1")); }
+    void SetUp() override {
+        server.setConnectionListener([this](const TcpConnectionInfo&) { ++registrations; });
+        ASSERT_TRUE(server.start(0, "127.0.0.1"));
+    }
     void TearDown() override { server.stop(); }
 
     std::unique_ptr<FakeDevice> connect(int lastOctet) {
@@ -142,7 +64,18 @@ protected:
         return false;
     }
 
-    TcpServer server;
+    bool waitForRegistrations(int count, std::chrono::milliseconds timeout = 2000ms) {
+        const auto deadline = std::chrono::steady_clock::now() + timeout;
+        while (registrations.load() < count) {
+            if (std::chrono::steady_clock::now() >= deadline) return false;
+            std::this_thread::sleep_for(5ms);
+        }
+        return true;
+    }
+
+    std::atomic<int> registrations{0};
+    FakeMacResolver resolver;
+    TcpServer server{resolver};
 };
 
 // ---- 메시지 호환: 기기 펌웨어가 받는 문자열은 이전과 바이트 단위로 같다 ----
@@ -294,15 +227,18 @@ TEST_F(TcpServerTest, ConcurrentRequestsToSameDeviceGetTheirOwnResponses) {
     EXPECT_EQ(mismatches.load(), 0);
 }
 
+// 끊고 다시 접속하는 기기(펌웨어 재접속)는 생존 확인 없이 바로 교체되고 fd가 새지 않는다
 TEST_F(TcpServerTest, ReconnectFromSameIpClosesOldConnectionWithoutLeakingFds) {
     auto first = connect(2);
+    ASSERT_TRUE(waitForRegistrations(1));
     const int baseline = openFdCount();
     for (int i = 0; i < 10; ++i) {
+        first->closeSocket();
         auto next = std::make_unique<FakeDevice>(server.boundPort(), 2);
-        EXPECT_TRUE(first->waitClosedByServer()) << "재접속 " << i << "에서 옛 연결이 닫히지 않음";
-        first = std::move(next);  // 옛 클라이언트 소켓도 닫힌다
+        EXPECT_TRUE(waitForRegistrations(2 + i, 500ms)) << "재접속 " << i << "이 바로 교체되지 않음";
+        first = std::move(next);
     }
-    ASSERT_TRUE(waitUntilConnected(first->id()));
+    EXPECT_TRUE(isConnected(first->id()));
     EXPECT_LE(openFdCount(), baseline + 1);
     EXPECT_EQ(server.connectedIds().size(), 1u);
 }
@@ -316,9 +252,9 @@ TEST_F(TcpServerTest, ConnectionsBeyondLimitAreRejectedImmediately) {
     EXPECT_TRUE(extra.waitClosedByServer());
     EXPECT_EQ(server.connectedIds().size(), TcpServer::kMaxConnections);
 
-    // 이미 있는 기기의 재접속은 상한과 상관없이 교체된다
+    // 이미 있는 기기의 재접속은 상한과 상관없이 교체된다(기존이 응답하지 않으므로 생존 확인 1초 뒤)
     auto replacement = std::make_unique<FakeDevice>(server.boundPort(), 10);
-    EXPECT_TRUE(devices[0]->waitClosedByServer());
+    EXPECT_TRUE(devices[0]->waitClosedByServer(3000ms));
     EXPECT_EQ(server.connectedIds().size(), TcpServer::kMaxConnections);
 }
 
@@ -335,7 +271,7 @@ TEST_F(TcpServerTest, TakeThenSendResetDeliversExactLineAndCloses) {
 
     EXPECT_EQ(device->readLine(), "{\"action\":\"RESET\"}\n");
     EXPECT_TRUE(device->waitClosedByServer());
-    EXPECT_EQ(server.take("ARD_127.0.0.99"), nullptr);
+    EXPECT_EQ(server.take(FakeMacResolver::loopbackId(99)), nullptr);
 }
 
 TEST_F(TcpServerTest, CloseConnectionsNotInKeepsOnlyListedIds) {
@@ -463,8 +399,9 @@ TEST_F(TcpServerTest, DisconnectRightAfterResponseUsesItAndDropsConnection) {
     ASSERT_TRUE(result.is_object());
     EXPECT_EQ(result["state"], "ON");
     // 드레인이 끊김을 못 본 경우에도 다음 요청에서 빠지므로, 둘 중 하나로 맵에서 사라져야 한다
-    if (isConnected("ARD_127.0.0.2")) server.sendAndReceive("ARD_127.0.0.2", TcpProtocol::buildGetStateRequest());
-    EXPECT_FALSE(isConnected("ARD_127.0.0.2"));
+    const std::string id = FakeMacResolver::loopbackId(2);
+    if (isConnected(id)) server.sendAndReceive(id, TcpProtocol::buildGetStateRequest());
+    EXPECT_FALSE(isConnected(id));
 }
 
 // 드레인 뒤 개행 없는 마지막 조각도 유효 객체면 마지막 줄로 쓴다
@@ -513,7 +450,8 @@ TEST(TcpServerCloexecTest, ServerSocketsAreCloseOnExec) {
         return fds;
     };
     const std::set<int> before = socketFds();
-    TcpServer server;
+    FakeMacResolver resolver;
+    TcpServer server(resolver);
     ASSERT_TRUE(server.start(0, "127.0.0.1"));
     FakeDevice device(server.boundPort(), 2);  // 클라이언트도 CLOEXEC로 만든다
     const auto deadline = std::chrono::steady_clock::now() + 2s;
@@ -534,13 +472,14 @@ TEST(TcpServerCloexecTest, ServerSocketsAreCloseOnExec) {
 // ---- 정지 ----
 
 TEST(TcpServerStopTest, StopReturnsQuicklyWhileAcceptingAndWithOpenConnections) {
-    TcpServer idle;
+    FakeMacResolver resolver;
+    TcpServer idle(resolver);
     ASSERT_TRUE(idle.start(0, "127.0.0.1"));
     auto started = std::chrono::steady_clock::now();
     idle.stop();
     EXPECT_LT(std::chrono::steady_clock::now() - started, 500ms);
 
-    TcpServer busy;
+    TcpServer busy(resolver);
     ASSERT_TRUE(busy.start(0, "127.0.0.1"));
     FakeDevice device(busy.boundPort(), 2);
     std::this_thread::sleep_for(50ms);
@@ -552,9 +491,10 @@ TEST(TcpServerStopTest, StopReturnsQuicklyWhileAcceptingAndWithOpenConnections) 
 }
 
 TEST(TcpServerStopTest, StartFailsWhenPortIsTaken) {
-    TcpServer first;
+    FakeMacResolver resolver;
+    TcpServer first(resolver);
     ASSERT_TRUE(first.start(0, "127.0.0.1"));
-    TcpServer second;
+    TcpServer second(resolver);
     EXPECT_FALSE(second.start(first.boundPort(), "127.0.0.1"));
 }
 
@@ -592,6 +532,199 @@ TEST_F(TcpServerTest, RequestsWhileDevicesReconnectAndAreRemovedAreSafe) {
     for (auto& device : devices) device->stopServing();
 
     for (const auto& device : devices) EXPECT_TRUE(isConnected(device->id()));
+}
+
+// ---- 12b: TCP_<MAC> 식별·미식별 유지·같은 ID 생존 확인·PC 에이전트 칸·접속 알림 ----
+
+// MAC을 못 찾은 연결은 맵에 넣지 않고(제어 불가) 유지 시간이 지나면 닫는다
+TEST(TcpServerIdentityTest, UnidentifiedConnectionIsNotControllableAndClosedAfterHold) {
+    FakeMacResolver resolver;
+    resolver.setFailing("127.0.0.7");
+    TcpServer server(resolver, std::nullopt, 300ms);
+    ASSERT_TRUE(server.start(0, "127.0.0.1"));
+    FakeDevice device(server.boundPort(), 7);
+    const auto started = std::chrono::steady_clock::now();
+    const auto deadline = started + 1s;
+    while (server.unidentifiedCount() == 0 && std::chrono::steady_clock::now() < deadline) std::this_thread::sleep_for(5ms);
+    EXPECT_EQ(server.unidentifiedCount(), 1u);
+    EXPECT_TRUE(server.connectedIds().empty());
+
+    EXPECT_TRUE(device.waitClosedByServer(2000ms));
+    const auto elapsed = std::chrono::steady_clock::now() - started;
+    EXPECT_GE(elapsed, 250ms);
+    EXPECT_LT(elapsed, 1500ms);
+    EXPECT_EQ(server.unidentifiedCount(), 0u);
+}
+
+TEST(TcpServerIdentityTest, DefaultUnidentifiedHoldIsThirtySeconds) {
+    EXPECT_EQ(TcpServer::kDefaultUnidentifiedHold, std::chrono::milliseconds(30000));
+}
+
+// 기존 연결이 생존 확인에 응답하면 같은 ID의 새 연결을 거부하고 기존을 지킨다
+TEST_F(TcpServerTest, SameIdReconnectIsRejectedWhileOldConnectionAnswers) {
+    auto original = connect(2);
+    original->serveInBackground([](const std::string&) { return std::string("{\"state\":\"ON\"}\n"); });
+    FakeDevice impostor(server.boundPort(), 2);
+    EXPECT_TRUE(impostor.waitClosedByServer(2000ms));
+    EXPECT_EQ(registrations.load(), 1);
+    const json result = server.sendAndReceive(original->id(), TcpProtocol::buildGetStateRequest());
+    original->stopServing();
+    ASSERT_TRUE(result.is_object()) << "기존 연결이 유지되어야 한다";
+    EXPECT_EQ(result["state"], "ON");
+}
+
+// 기존 연결이 응답하지 않으면 1초 확인 뒤 새 연결로 교체한다
+TEST_F(TcpServerTest, SameIdReconnectReplacesSilentOldConnection) {
+    auto original = connect(2);
+    const auto started = std::chrono::steady_clock::now();
+    FakeDevice next(server.boundPort(), 2);
+    EXPECT_TRUE(waitForRegistrations(2, 2500ms));
+    EXPECT_GE(std::chrono::steady_clock::now() - started, 900ms);
+    EXPECT_TRUE(original->waitClosedByServer());
+    EXPECT_FALSE(next.waitClosedByServer(200ms));
+    EXPECT_EQ(original->readLine(10ms), "");  // 받은 생존 확인 줄은 이미 소비됐거나 닫힘
+}
+
+// IP가 바뀐 같은 기기(같은 MAC)의 재접속은 교체되고, 알림에 새 IP가 실린다
+TEST(TcpServerIdentityTest, ReconnectWithChangedIpReplacesAndReportsNewIp) {
+    FakeMacResolver resolver;
+    resolver.setMac("127.0.0.8", FakeMacResolver::loopbackMac(2));
+    TcpServer server(resolver);
+    std::mutex infoMutex;
+    std::vector<TcpConnectionInfo> infos;
+    server.setConnectionListener([&](const TcpConnectionInfo& info) {
+        std::lock_guard<std::mutex> lock(infoMutex);
+        infos.push_back(info);
+    });
+    ASSERT_TRUE(server.start(0, "127.0.0.1"));
+    auto old = std::make_unique<FakeDevice>(server.boundPort(), 2);
+    const auto deadline = std::chrono::steady_clock::now() + 3s;
+    auto infoCount = [&] {
+        std::lock_guard<std::mutex> lock(infoMutex);
+        return infos.size();
+    };
+    while (infoCount() < 1 && std::chrono::steady_clock::now() < deadline) std::this_thread::sleep_for(5ms);
+    FakeDevice moved(server.boundPort(), 8);  // 옛 연결은 응답하지 않는다 → 교체
+    while (infoCount() < 2 && std::chrono::steady_clock::now() < deadline) std::this_thread::sleep_for(5ms);
+    EXPECT_TRUE(old->waitClosedByServer());
+    std::lock_guard<std::mutex> lock(infoMutex);
+    ASSERT_EQ(infos.size(), 2u);
+    EXPECT_EQ(infos[0].deviceId, FakeMacResolver::loopbackId(2));
+    EXPECT_EQ(infos[0].ip, "127.0.0.2");
+    EXPECT_EQ(infos[1].deviceId, FakeMacResolver::loopbackId(2));
+    EXPECT_EQ(infos[1].ip, "127.0.0.8");
+    EXPECT_EQ(server.connectedIds().size(), 1u);
+}
+
+// PC 에이전트는 생존 확인 없이 새 연결이 바로 이기고, 접속 알림을 보내지 않는다
+TEST(TcpServerIdentityTest, AgentReconnectReplacesImmediatelyWithoutProbeOrNotification) {
+    FakeMacResolver resolver;
+    const std::string agentId = FakeMacResolver::loopbackId(9);
+    TcpServer server(resolver, agentId);
+    std::atomic<int> notified{0};
+    server.setConnectionListener([&](const TcpConnectionInfo&) { ++notified; });
+    ASSERT_TRUE(server.start(0, "127.0.0.1"));
+    FakeDevice old(server.boundPort(), 9);
+    const auto deadline = std::chrono::steady_clock::now() + 2s;
+    while (server.connectedIds().empty() && std::chrono::steady_clock::now() < deadline) std::this_thread::sleep_for(5ms);
+    ASSERT_EQ(server.connectedIds().size(), 1u);
+
+    const auto started = std::chrono::steady_clock::now();
+    FakeDevice next(server.boundPort(), 9);
+    EXPECT_EQ(old.readLine(1500ms), "") << "에이전트는 생존 확인 요청을 받지 않아야 한다";
+    EXPECT_LT(std::chrono::steady_clock::now() - started, 500ms);
+    EXPECT_FALSE(next.waitClosedByServer(200ms));
+    EXPECT_EQ(server.connectedIds().size(), 1u);
+    EXPECT_EQ(notified.load(), 0);
+}
+
+// 32칸이 차도 에이전트는 예비 칸으로 받고, 그다음 스위치는 거부한다. 미식별 연결도 칸을 쓴다
+TEST(TcpServerIdentityTest, AgentUsesReserveSlotAndUnidentifiedCountTowardLimit) {
+    FakeMacResolver resolver;
+    resolver.setFailing("127.0.0.10");
+    const std::string agentId = FakeMacResolver::loopbackId(250);
+    TcpServer server(resolver, agentId);
+    ASSERT_TRUE(server.start(0, "127.0.0.1"));
+    std::vector<std::unique_ptr<FakeDevice>> devices;
+    devices.push_back(std::make_unique<FakeDevice>(server.boundPort(), 10));  // 미식별 1
+    for (std::size_t i = 1; i < TcpServer::kMaxConnections; ++i) {
+        devices.push_back(std::make_unique<FakeDevice>(server.boundPort(), static_cast<int>(10 + i)));
+    }
+    const auto deadline = std::chrono::steady_clock::now() + 3s;
+    while ((server.connectedIds().size() + server.unidentifiedCount()) < TcpServer::kMaxConnections &&
+           std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(5ms);
+    }
+    ASSERT_EQ(server.unidentifiedCount(), 1u);
+    ASSERT_EQ(server.connectedIds().size(), TcpServer::kMaxConnections - 1);
+
+    FakeDevice agent(server.boundPort(), 250);
+    while (server.connectedIds().size() < TcpServer::kMaxConnections && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(5ms);
+    }
+    EXPECT_FALSE(agent.waitClosedByServer(200ms));
+    EXPECT_EQ(server.connectedIds().size(), TcpServer::kMaxConnections);  // 31 + 에이전트
+
+    FakeDevice extra(server.boundPort(), 200);
+    EXPECT_TRUE(extra.waitClosedByServer());
+    EXPECT_EQ(server.connectedIds().size(), TcpServer::kMaxConnections);
+}
+
+// 접속 알림은 식별된 기기에만, 맵 락 없이 부른다(알림 안에서 서버를 불러도 교착이 없다)
+TEST(TcpServerIdentityTest, ListenerIsCalledOnlyForIdentifiedDevicesWithoutHoldingMapLock) {
+    FakeMacResolver resolver;
+    resolver.setFailing("127.0.0.5");
+    TcpServer server(resolver, FakeMacResolver::loopbackId(9));
+    std::mutex idsMutex;
+    std::vector<std::string> notifiedIds;
+    server.setConnectionListener([&](const TcpConnectionInfo& info) {
+        const auto connected = server.connectedIds();  // 락을 쥔 채 불렀다면 여기서 교착
+        std::lock_guard<std::mutex> lock(idsMutex);
+        EXPECT_NE(std::find(connected.begin(), connected.end(), info.deviceId), connected.end());
+        notifiedIds.push_back(info.deviceId);
+    });
+    ASSERT_TRUE(server.start(0, "127.0.0.1"));
+    FakeDevice sw(server.boundPort(), 3);
+    FakeDevice agent(server.boundPort(), 9);
+    FakeDevice unknown(server.boundPort(), 5);
+    const auto deadline = std::chrono::steady_clock::now() + 2s;
+    while ((server.connectedIds().size() < 2 || server.unidentifiedCount() < 1) && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(5ms);
+    }
+    std::this_thread::sleep_for(50ms);
+    std::lock_guard<std::mutex> lock(idsMutex);
+    ASSERT_EQ(notifiedIds.size(), 1u);
+    EXPECT_EQ(notifiedIds[0], FakeMacResolver::loopbackId(3));
+}
+
+// 미식별 연결이 있어도 정지는 빠르고 그 연결도 닫힌다
+TEST(TcpServerIdentityTest, StopClosesUnidentifiedConnectionsQuickly) {
+    FakeMacResolver resolver;
+    resolver.setFailing("127.0.0.7");
+    TcpServer server(resolver);
+    ASSERT_TRUE(server.start(0, "127.0.0.1"));
+    FakeDevice device(server.boundPort(), 7);
+    const auto deadline = std::chrono::steady_clock::now() + 1s;
+    while (server.unidentifiedCount() == 0 && std::chrono::steady_clock::now() < deadline) std::this_thread::sleep_for(5ms);
+    ASSERT_EQ(server.unidentifiedCount(), 1u);
+    const auto started = std::chrono::steady_clock::now();
+    server.stop();
+    EXPECT_LT(std::chrono::steady_clock::now() - started, 500ms);
+    EXPECT_TRUE(device.waitClosedByServer());
+    EXPECT_EQ(server.unidentifiedCount(), 0u);
+}
+
+// 같은 ID로 재접속이 겹쳐도(TSan) 맵에는 하나만 남고 연결이 새지 않는다
+TEST_F(TcpServerTest, RapidSameIdReconnectsLeaveOneConnection) {
+    std::vector<std::unique_ptr<FakeDevice>> clients;
+    for (int i = 0; i < 5; ++i) {
+        clients.push_back(std::make_unique<FakeDevice>(server.boundPort(), 4));
+        clients.back()->serveInBackground([](const std::string&) { return std::string("{\"state\":\"ON\"}\n"); });
+    }
+    std::this_thread::sleep_for(200ms);
+    for (auto& client : clients) client->stopServing();
+    EXPECT_EQ(server.connectedIds().size(), 1u);
+    EXPECT_EQ(registrations.load(), 1) << "첫 연결이 응답하므로 나머지는 모두 거부";
 }
 
 }  // namespace

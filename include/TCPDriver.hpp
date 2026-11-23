@@ -9,7 +9,7 @@
 
 class TCPDriver : public ProtocolDriver, public IMessageSender {
 public:
-    TCPDriver();
+    explicit TCPDriver(MacResolver& macResolver);
     ~TCPDriver() override;
     // TCPDriver의 sendCommand 메서드 구현
     bool sendCommand(const std::string& deviceId, const std::string& command) override;

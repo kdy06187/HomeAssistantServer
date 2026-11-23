@@ -4,6 +4,7 @@
 #include "DeviceManager.hpp"
 #include "DatabaseManager.hpp"
 #include "TCPDriver.hpp"
+#include "MacResolver.hpp"
 #include "MatterController.hpp"
 #include "ProcessChipToolRunner.hpp"
 #include "HTTPServer.hpp"
@@ -77,7 +78,8 @@ int main() {
     //    httpServer → periodicTasks → 스케줄러 가드 → manager → scheduler → 드라이버·러너 → clock → database 순으로 소멸
     DriverManager deviceDrivers;
     SystemClock clock;
-    TCPDriver tcpDriver;
+    ProcNetArpResolver macResolver;  // 접속 IP → MAC(기기 ID)
+    TCPDriver tcpDriver(macResolver);
     ProcessChipToolRunner chipToolRunner;  // chip-tool을 셸 없이 실행한다
     MatterController matterController(chipToolRunner, parseManualSetupPin);
     DelayedCommandScheduler scheduler(clock);

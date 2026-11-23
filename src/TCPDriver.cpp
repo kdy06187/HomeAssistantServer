@@ -14,7 +14,7 @@
 #include <algorithm>
 
 using json = nlohmann::json;
-TCPDriver::TCPDriver() {
+TCPDriver::TCPDriver(MacResolver& macResolver) : server_(macResolver) {
     std::cout << "[TCPDriver] 인스턴스 생성" << std::endl;
 }
 
