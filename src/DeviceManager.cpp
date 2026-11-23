@@ -22,20 +22,11 @@ void DeviceManager::registerDriver(ProtocolType type, ProtocolDriver* driver){
 void DeviceManager::initFromDatabase(){
     // DB 읽기와 드라이버 조립은 락 밖에서 하고, 맵에 넣을 때만 락을 잡는다
     auto loadedDevices = db_.loadActiveDevices();
-    const auto driversSnapshot = protocolDriversSnapshot();
     for(auto& dev : loadedDevices){
-
-        // 1. 이 기기가 사용하는 통신 프로토콜 드라이버(메신저) 찾기
-        auto driverIt = driversSnapshot.find(dev.protocol_type);
         std::cout << "[DeviceManager] DB에서 기기 로드 중: " << dev.name << " (" << dev.id << ") - 프로토콜: " << getProtocolString(dev.protocol_type) << std::endl;
-        if (driverIt != driversSnapshot.end()) {
-            std::cout << "[DeviceManager] 기기 로드 중: " << dev.name << " (" << dev.id << ") - 프로토콜: " << getProtocolString(dev.protocol_type) << std::endl;
-            IMessageSender* sender = dynamic_cast<IMessageSender*>(driverIt->second);
-
-            // 2. 조립할 부품(driver_types)이 있고, 발송기(sender)가 정상적으로 찾아졌다면 조립!
-            if (sender && !dev.driver_types.empty()) {
-                deviceDrivers_.attachDriversToDevice(dev, dev.driver_types, sender);
-            }
+        // 기기 드라이버는 프로토콜과 무관하게 붙인다(발송기는 팩토리가 쥐고 있다)
+        if (!dev.driver_types.empty()) {
+            deviceDrivers_.attachDriversToDevice(dev, dev.driver_types);
         }
     }
     const size_t loadedCount = loadedDevices.size();
@@ -51,13 +42,11 @@ void DeviceManager::initFromDatabase(){
 }
 // 기기 추가
 bool DeviceManager::addDevice(std::string id, std::string name, ProtocolType protocol_type,
-                              const std::vector<DriverType>& driverTypes, IMessageSender* sender){
+                              const std::vector<DriverType>& driverTypes){
     Device newDevice(id, name, protocol_type);
     newDevice.state = "UNKNOWN";
-    if (sender) {
-        newDevice.driver_types = driverTypes;
-        deviceDrivers_.attachDriversToDevice(newDevice, driverTypes, sender);
-    }
+    newDevice.driver_types = driverTypes;
+    deviceDrivers_.attachDriversToDevice(newDevice, driverTypes);
     // DB에 먼저 저장하고 성공했을 때만 메모리에 넣는다. 그래야 실패 시 되돌릴 것이 없고,
     // 다른 스레드가 "곧 사라질 기기"를 보는 틈도 없다. DB 호출은 맵 락 밖에서(L-2)
     if (!db_.insertDevice(newDevice)) {
@@ -225,7 +214,7 @@ bool DeviceManager::startCommissioning(ProtocolType type, std::string name, std:
     const auto outcome = driver->commission(CommissionRequest{name, payload, ssid, password}, idsSnapshot);
     bool isCommissioned = outcome.ok();
     if (isCommissioned && !outcome.value->deviceId.empty() &&
-        !addDevice(outcome.value->deviceId, name, type, driverTypes, dynamic_cast<IMessageSender*>(driver))) {
+        !addDevice(outcome.value->deviceId, name, type, driverTypes)) {
         // 기기는 페어링됐지만 서버 등록은 실패: 드라이버 쪽 등록(Matter 매핑·등록 파일, TCP 연결)도 정리해
         // "실패 = 아무것도 남지 않음"이 되게 한다. 락 밖에서 부른다
         isCommissioned = false;
@@ -467,11 +456,6 @@ Result<PurgeResult> DeviceManager::runRetentionCleanup() {
                   << result.value->deletedDevices << "개, 고아 " << result.value->deletedOrphans << "건" << std::endl;
     }
     return result;
-}
-
-std::unordered_map<ProtocolType, ProtocolDriver*> DeviceManager::protocolDriversSnapshot() {
-    std::lock_guard<std::mutex> lock(mutex_);
-    return drivers_;
 }
 
 std::shared_ptr<std::mutex> DeviceManager::energyLockFor(const std::string& deviceId) {

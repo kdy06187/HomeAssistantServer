@@ -1,6 +1,5 @@
 #pragma once
 #include "ProtocolDriver.hpp"
-#include "IMessageSender.hpp"
 #include "ChipToolRunner.hpp"
 #include <string>
 #include <cstdint>
@@ -12,7 +11,7 @@
 #include <unordered_map>
 #include "MatterSetupCode.hpp"
 
-class MatterController : public ProtocolDriver, public IMessageSender {
+class MatterController : public ProtocolDriver {
 public:
     // chip-tool은 모두 runner로 실행한다(셸 없음). runner는 이 객체보다 오래 살아야 한다.
     // parseSetupPin: 설정 코드 → PIN(실제는 parseManualSetupPin, 테스트는 가짜). 경로는 build/ 기준 기본값
@@ -66,11 +65,6 @@ public:
     std::string getPowerUsage(std::string deviceId, bool isManualRequest = false);
     std::string getCumulativeEnergy(std::string deviceId, bool isManualRequest = false);
 
-    // PC 종료 메시지는 main에서 항상 TCPDriver로 보내므로 Matter 쪽 발송은 쓰지 않는다
-    Status sendTo(const std::string& /*deviceId*/, const std::string& /*jsonLine*/) override {
-        return Status::failure(ErrorCode::UnsupportedOperation, "Matter 드라이버는 메시지 발송을 지원하지 않음");
-    }
-    void broadcast(const std::string& /*jsonLine*/) override {}
 private:
     // 노드 번호를 받는 전력 조회. readEnergy가 매핑을 한 번만 읽어 두 조회에 같은 번호를 쓰게 한다
     std::string readActivePowerText(uint64_t nodeId, bool isManualRequest);

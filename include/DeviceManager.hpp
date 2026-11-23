@@ -10,7 +10,6 @@
 #include "IDeviceDriver.hpp"
 #include <memory>
 #include "DriverType.hpp"
-#include "IMessageSender.hpp"
 #include "Clock.hpp"
 #include "DelayedCommandScheduler.hpp"
 #include <atomic>
@@ -62,7 +61,7 @@ public:
     // 디바이스 등록 API - 디바이스를 등록하고, 프로토콜 타입에 맞는 드라이버를 통해 초기화.
     // DB에 먼저 저장하고, 성공했을 때만 메모리에 넣는다. 실패하면 false(메모리 불변)
     bool addDevice(std::string id, std::string name, ProtocolType protocol_type,
-                   const std::vector<DriverType>& driverTypes, IMessageSender* sender);
+                   const std::vector<DriverType>& driverTypes);
     bool getDevice(std::string id, Device& outDevice);
     // 드라이버에 실제 상태를 묻고 바뀌었으면 저장한다. 없는 기기는 DeviceNotFound
     Result<std::string> refreshState(const std::string& id, bool isManualRefresh);
@@ -95,7 +94,6 @@ public:
     Result<PurgeResult> runRetentionCleanup();
 
 private:
-    std::unordered_map<ProtocolType, ProtocolDriver*> protocolDriversSnapshot();
     bool isRegistered(const std::string& id);
     // 드라이버에 명령을 보내고 결과에 따라 상태를 갱신한다. 즉시 실행과 지연 만기 실행이 함께 쓴다
     CommandResult executeHardware(const std::string& id, const std::string& command,

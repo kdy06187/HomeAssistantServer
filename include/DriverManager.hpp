@@ -7,7 +7,6 @@
 #include <iostream>
 #include "DriverType.hpp"
 #include "IDeviceDriver.hpp"
-#include "IMessageSender.hpp" // ProtocolDriver 대신 가벼운 인터페이스 사용
 #include "Device.hpp"
 
 class DriverManager {
@@ -16,8 +15,9 @@ public:
     DriverManager(const DriverManager&) = delete;
     DriverManager& operator=(const DriverManager&) = delete;
 
-    // 드라이버 생성 함수 규격: IMessageSender를 주입받아 특수 드라이버 객체를 생성
-    using DriverCreator = std::function<std::shared_ptr<IDeviceDriver>(IMessageSender*)>;
+    // 드라이버 생성 함수 규격. 필요한 의존성(PC 종료 메시지 발송기 등)은 main이 등록할 때 캡처한다.
+    // 기기의 프로토콜 드라이버에서 받아 오지 않으므로, 어떤 프로토콜 기기에 붙여도 같은 드라이버가 만들어진다
+    using DriverCreator = std::function<std::shared_ptr<IDeviceDriver>()>;
 
     // 1. 드라이버 생성 레시피 등록 (main이 부팅 때 호출)
     void registerDriver(DriverType type, DriverCreator creator) {
@@ -25,12 +25,12 @@ public:
     }
 
     // 2. 기기에 알맞은 특수 드라이버 객체들을 생성하여 Device 내부의 배열(주머니)에 부착
-    void attachDriversToDevice(Device& device, const std::vector<DriverType>& driverTypes, IMessageSender* messageSender) {
+    void attachDriversToDevice(Device& device, const std::vector<DriverType>& driverTypes) {
         for (DriverType type : driverTypes) {
             auto it = creators_.find(type);
             if (it != creators_.end()) {
                 // 생성된 드라이버 객체를 기기의 attached_drivers 벡터에 추가
-                device.attached_drivers.push_back(it->second(messageSender));
+                device.attached_drivers.push_back(it->second());
             } else {
                 std::cerr << "[DriverManager] ⚠️ 등록되지 않은 드라이버 타입 번호입니다: " << static_cast<int>(type) << "\n";
             }

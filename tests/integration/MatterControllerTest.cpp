@@ -539,10 +539,10 @@ TEST_F(CommissionRollbackTest, DatabaseFailureUndoesRegistrationAndReportsFailur
 
 // DB를 먼저 쓰므로 실패하면 메모리는 처음부터 바뀌지 않는다(이전 기기 그대로)
 TEST_F(CommissionRollbackTest, DatabaseFailureOnReRegistrationKeepsPreviousDevice) {
-    ASSERT_TRUE(manager.addDevice("A", "old name", ProtocolType::TCP_DIY, {}, &tcpFake));
+    ASSERT_TRUE(manager.addDevice("A", "old name", ProtocolType::TCP_DIY, {}));
     rejectDeviceInserts();
 
-    EXPECT_FALSE(manager.addDevice("A", "new name", ProtocolType::TCP_DIY, {}, &tcpFake));
+    EXPECT_FALSE(manager.addDevice("A", "new name", ProtocolType::TCP_DIY, {}));
 
     Device device;
     ASSERT_TRUE(manager.getDevice("A", device));

@@ -63,7 +63,7 @@ protected:
     }
 
     void addTcpDevice(const std::string& id) {
-        manager.addDevice(id, "dev-" + id, ProtocolType::TCP_DIY, {}, &tcpFake);
+        manager.addDevice(id, "dev-" + id, ProtocolType::TCP_DIY, {});
     }
 
     DatabaseManager database;
@@ -136,7 +136,7 @@ TEST_F(LockRulesTest, ConcurrentOperationsFinishWithoutDeadlock) {
     DeadlockWatchdog watchdog(std::chrono::seconds(60));
     const std::vector<std::string> ids = {"D0", "D1", "D2", "D3"};
     for (const auto& id : ids) addTcpDevice(id);
-    manager.addDevice("M0", "plug", ProtocolType::MATTER, {}, &matterFake);
+    manager.addDevice("M0", "plug", ProtocolType::MATTER, {});
     matterFake.energyResult = Result<EnergyReading>::success(EnergyReading{1500, 2000});
 
     constexpr int kIterations = 150;
@@ -191,7 +191,7 @@ TEST_F(LockRulesTest, ConcurrentOperationsFinishWithoutDeadlock) {
 // 이력 조회·집계·정리가 헬스체크 기록·삭제와 동시에 돌아도 교착·충돌 없이 끝난다
 TEST_F(LockRulesTest, ConcurrentHistoryQueryAndCleanupWithWritesAndRemovesFinish) {
     DeadlockWatchdog watchdog(std::chrono::seconds(60));
-    manager.addDevice("M0", "plug", ProtocolType::MATTER, {}, &matterFake);
+    manager.addDevice("M0", "plug", ProtocolType::MATTER, {});
     matterFake.energyResult = Result<EnergyReading>::success(EnergyReading{1500, 2000});
     HistoryQuery aggregate;
     aggregate.from = CivilDate{1970, 1, 1};
@@ -344,10 +344,10 @@ TEST_F(LockRulesTest, CommandResultStateIsNewStateOnSuccessAndOfflineOnFailure) 
 }
 
 TEST_F(LockRulesTest, CommandResultStateIsCurrentStateWhenBlocked) {
-    deviceDrivers.registerDriver(DriverType::PC_DRIVER, [this](IMessageSender*) {
+    deviceDrivers.registerDriver(DriverType::PC_DRIVER, [this]() {
         return std::make_shared<PCDriver>(&tcpFake);
     });
-    manager.addDevice("PC", "pc", ProtocolType::TCP_DIY, {DriverType::PC_DRIVER}, &tcpFake);
+    manager.addDevice("PC", "pc", ProtocolType::TCP_DIY, {DriverType::PC_DRIVER});
     manager.updateDeviceState("PC", "OFF");
 
     const auto result = manager.executeCommand("PC", "OFF");
@@ -359,7 +359,7 @@ TEST_F(LockRulesTest, CommandResultStateIsCurrentStateWhenBlocked) {
 TEST_F(LockRulesTest, CommandResultStateIsCurrentStateWhenProtocolDriverMissing) {
     DelayedCommandScheduler bareManagerScheduler{clock};
     DeviceManager bareManager(database, deviceDrivers, bareManagerScheduler, clock);
-    bareManager.addDevice("BARE", "bare", ProtocolType::TCP_DIY, {}, nullptr);
+    bareManager.addDevice("BARE", "bare", ProtocolType::TCP_DIY, {});
 
     const auto result = bareManager.executeCommand("BARE", "ON");
 
@@ -376,10 +376,10 @@ TEST(LockRulesDelayedTest, CommandResultStateIsCurrentStateWhenDelayed) {
     FakeProtocolDriver tcpFake;
     ASSERT_TRUE(database.init(":memory:"));
     manager.registerDriver(ProtocolType::TCP_DIY, &tcpFake);
-    deviceDrivers.registerDriver(DriverType::PC_DRIVER, [&tcpFake](IMessageSender*) {
+    deviceDrivers.registerDriver(DriverType::PC_DRIVER, [&tcpFake]() {
         return std::make_shared<PCDriver>(&tcpFake);
     });
-    manager.addDevice("PC", "pc", ProtocolType::TCP_DIY, {DriverType::PC_DRIVER}, &tcpFake);
+    manager.addDevice("PC", "pc", ProtocolType::TCP_DIY, {DriverType::PC_DRIVER});
     manager.updateDeviceState("PC", "ON");
 
     const auto result = manager.executeCommand("PC", "OFF");

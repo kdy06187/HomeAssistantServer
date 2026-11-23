@@ -71,13 +71,11 @@ protected:
 
     void addDevice(ProtocolType type, const std::string& id, const std::string& name,
                    const std::vector<DriverType>& driverTypes = {}) {
-        IMessageSender* sender = type == ProtocolType::TCP_DIY ? static_cast<IMessageSender*>(&tcpFake)
-                                                                : static_cast<IMessageSender*>(&matterFake);
-        manager.addDevice(id, name, type, driverTypes, sender);
+        manager.addDevice(id, name, type, driverTypes);
     }
 
     void registerPcDriver() {
-        deviceDrivers.registerDriver(DriverType::PC_DRIVER, [this](IMessageSender*) {
+        deviceDrivers.registerDriver(DriverType::PC_DRIVER, [this]() {
             return std::make_shared<PCDriver>(&tcpFake);
         });
     }
@@ -368,7 +366,7 @@ TEST_F(HttpServerTest, E2UnreachableDeviceReturns502) {
 TEST_F(HttpServerTest, E2MissingProtocolDriverReturns500) {
     DelayedCommandScheduler bareManagerScheduler{clock};
     DeviceManager bareManager(database, deviceDrivers, bareManagerScheduler, clock);
-    bareManager.addDevice("BARE_1", "bare", ProtocolType::TCP_DIY, {}, nullptr);
+    bareManager.addDevice("BARE_1", "bare", ProtocolType::TCP_DIY, {});
     const int barePort = findFreePort();
     HTTPServer bareServer(bareManager, kToken, barePort);
     ASSERT_TRUE(bareServer.start());
@@ -403,10 +401,10 @@ TEST(HttpServerDelayedCommandTest, E2DelayedCommandReturns202WithPendingCommand)
     FakeProtocolDriver tcpFake;
     ASSERT_TRUE(database.init(":memory:"));
     manager.registerDriver(ProtocolType::TCP_DIY, &tcpFake);
-    deviceDrivers.registerDriver(DriverType::PC_DRIVER, [&tcpFake](IMessageSender*) {
+    deviceDrivers.registerDriver(DriverType::PC_DRIVER, [&tcpFake]() {
         return std::make_shared<PCDriver>(&tcpFake);
     });
-    manager.addDevice("FAKE_1", "pc", ProtocolType::TCP_DIY, {DriverType::PC_DRIVER}, &tcpFake);
+    manager.addDevice("FAKE_1", "pc", ProtocolType::TCP_DIY, {DriverType::PC_DRIVER});
     manager.updateDeviceState("FAKE_1", "ON");
     const int serverPort = findFreePort();
     HTTPServer server(manager, kToken, serverPort);
@@ -433,10 +431,10 @@ TEST(HttpServerDelayedCommandTest, E2SameCommandWhilePendingReturns202WithRemain
     FakeProtocolDriver tcpFake;
     ASSERT_TRUE(database.init(":memory:"));
     manager.registerDriver(ProtocolType::TCP_DIY, &tcpFake);
-    deviceDrivers.registerDriver(DriverType::PC_DRIVER, [&tcpFake](IMessageSender*) {
+    deviceDrivers.registerDriver(DriverType::PC_DRIVER, [&tcpFake]() {
         return std::make_shared<PCDriver>(&tcpFake);
     });
-    manager.addDevice("FAKE_1", "pc", ProtocolType::TCP_DIY, {DriverType::PC_DRIVER}, &tcpFake);
+    manager.addDevice("FAKE_1", "pc", ProtocolType::TCP_DIY, {DriverType::PC_DRIVER});
     manager.updateDeviceState("FAKE_1", "ON");
     const int serverPort = findFreePort();
     HTTPServer server(manager, kToken, serverPort);
@@ -469,10 +467,10 @@ TEST(HttpServerDelayedCommandTest, E2DuringShutdownReturns502NotCancelled200) {
     FakeProtocolDriver tcpFake;
     ASSERT_TRUE(database.init(":memory:"));
     manager.registerDriver(ProtocolType::TCP_DIY, &tcpFake);
-    deviceDrivers.registerDriver(DriverType::PC_DRIVER, [&tcpFake](IMessageSender*) {
+    deviceDrivers.registerDriver(DriverType::PC_DRIVER, [&tcpFake]() {
         return std::make_shared<PCDriver>(&tcpFake);
     });
-    manager.addDevice("FAKE_1", "pc", ProtocolType::TCP_DIY, {DriverType::PC_DRIVER}, &tcpFake);
+    manager.addDevice("FAKE_1", "pc", ProtocolType::TCP_DIY, {DriverType::PC_DRIVER});
     manager.updateDeviceState("FAKE_1", "ON");
     manager.beginShutdown();
     scheduler.stopAndCancelAll();

@@ -39,8 +39,8 @@ protected:
 };
 
 TEST_F(DeviceManagerIntegrationTest, CommissioningSuccessRegistersDeviceWithDriverTypes) {
-    deviceDrivers.registerDriver(DriverType::PC_DRIVER, [](IMessageSender* sender) {
-        return std::make_shared<PCDriver>(sender);
+    deviceDrivers.registerDriver(DriverType::PC_DRIVER, [this]() {
+        return std::make_shared<PCDriver>(&tcpFake);
     });
 
     const bool result = manager.startCommissioning(ProtocolType::TCP_DIY, "desk", "10.0.0.1", "ssid", "pw",
@@ -131,7 +131,7 @@ TEST(DeviceManagerPcDriverTest, OffOnRunningPcSendsShutdownMessageAndDefersHardw
     FakeProtocolDriver tcpFake;
     ASSERT_TRUE(database.init(":memory:"));
     manager.registerDriver(ProtocolType::TCP_DIY, &tcpFake);
-    deviceDrivers.registerDriver(DriverType::PC_DRIVER, [&tcpFake](IMessageSender*) {
+    deviceDrivers.registerDriver(DriverType::PC_DRIVER, [&tcpFake]() {
         return std::make_shared<PCDriver>(&tcpFake);
     });
     manager.startCommissioning(ProtocolType::TCP_DIY, "pc", "", "", "", {DriverType::PC_DRIVER});
@@ -226,8 +226,8 @@ TEST_F(DeviceManagerIntegrationTest, EnergyFailureReturnsFalseAndKeepsStats) {
 }
 
 TEST_F(DeviceManagerIntegrationTest, InitFromDatabaseLoadsDevicesAndAttachesDrivers) {
-    deviceDrivers.registerDriver(DriverType::PC_DRIVER, [](IMessageSender* sender) {
-        return std::make_shared<PCDriver>(sender);
+    deviceDrivers.registerDriver(DriverType::PC_DRIVER, [this]() {
+        return std::make_shared<PCDriver>(&tcpFake);
     });
     Device stored("PRE_1", "stored", ProtocolType::TCP_DIY);
     stored.driver_types = {DriverType::PC_DRIVER};
@@ -261,10 +261,10 @@ protected:
     void SetUp() override {
         ASSERT_TRUE(database.init(":memory:"));
         manager.registerDriver(ProtocolType::TCP_DIY, &tcpFake);
-        deviceDrivers.registerDriver(DriverType::PC_DRIVER, [this](IMessageSender*) {
+        deviceDrivers.registerDriver(DriverType::PC_DRIVER, [this]() {
             return std::make_shared<PCDriver>(&tcpFake);
         });
-        ASSERT_TRUE(manager.addDevice("PC", "pc", ProtocolType::TCP_DIY, {DriverType::PC_DRIVER}, &tcpFake));
+        ASSERT_TRUE(manager.addDevice("PC", "pc", ProtocolType::TCP_DIY, {DriverType::PC_DRIVER}));
         manager.updateDeviceState("PC", "ON");
     }
     // 시간을 흘리고 만기 작업을 실행한다(스케줄러 스레드는 켜지 않는다)
@@ -428,7 +428,7 @@ TEST_F(DeviceManagerDelayedTest, ConcurrentRemoveScheduleAndTickAreRaceFree) {
     });
     for (int i = 0; i < 300; ++i) {
         manager.removeDevice("PC");
-        manager.addDevice("PC", "pc", ProtocolType::TCP_DIY, {DriverType::PC_DRIVER}, &tcpFake);
+        manager.addDevice("PC", "pc", ProtocolType::TCP_DIY, {DriverType::PC_DRIVER});
     }
     controller.join();
     done = true;

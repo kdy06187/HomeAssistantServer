@@ -51,7 +51,7 @@ protected:
         fs::remove(dbPath_);
     }
     void addPlug(const std::string& id) {
-        ASSERT_TRUE(manager.addDevice(id, "plug", ProtocolType::MATTER, {}, &matterFake));
+        ASSERT_TRUE(manager.addDevice(id, "plug", ProtocolType::MATTER, {}));
     }
     std::string nowText() { return UtcTime::toDbText(clock.utcNow()); }
 
@@ -161,7 +161,7 @@ TEST_F(DeviceRetentionFlowTest, SuccessfulRemoveCancelsPendingDelayedCommand) {
 
 // 전력은 Matter만 지원한다. 알 수 없는 프로토콜 기기는 조회 불가
 TEST_F(DeviceRetentionFlowTest, UnknownProtocolDeviceHistoryIsUnsupported) {
-    ASSERT_TRUE(manager.addDevice("FAKE_U", "x", ProtocolType::UNKNOWN, {}, &tcpFake));
+    ASSERT_TRUE(manager.addDevice("FAKE_U", "x", ProtocolType::UNKNOWN, {}));
 
     EXPECT_EQ(manager.getEnergyHistory("FAKE_U", HistoryQuery{}).error.code, ErrorCode::UnsupportedOperation);
 }
@@ -179,7 +179,7 @@ TEST_F(DeviceRetentionFlowTest, CleanupDuringShutdownIsCancelledAndDeletesNothin
 }
 
 TEST_F(DeviceRetentionFlowTest, TcpDeviceHistoryIsUnsupported) {
-    ASSERT_TRUE(manager.addDevice("FAKE_1", "lamp", ProtocolType::TCP_DIY, {}, &tcpFake));
+    ASSERT_TRUE(manager.addDevice("FAKE_1", "lamp", ProtocolType::TCP_DIY, {}));
 
     EXPECT_EQ(manager.getEnergyHistory("FAKE_1", HistoryQuery{}).error.code, ErrorCode::UnsupportedOperation);
     EXPECT_EQ(manager.readEnergy("FAKE_1").error.code, ErrorCode::UnsupportedOperation);

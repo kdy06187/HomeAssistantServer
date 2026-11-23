@@ -105,7 +105,7 @@ protected:
 // ---- REQ-03: 조회 실패는 통계에 반영하지 않는다 ----
 
 TEST_F(EnergyPathTest, NormalThenFailureThenNormalAddsOnlyTheDelta) {
-    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {}, &matterFake);
+    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {});
 
     matterFake.energyResult = Result<EnergyReading>::success(EnergyReading{10, 100});
     ASSERT_TRUE(manager.readEnergy("PLUG").ok());
@@ -122,7 +122,7 @@ TEST_F(EnergyPathTest, NormalThenFailureThenNormalAddsOnlyTheDelta) {
 }
 
 TEST_F(EnergyPathTest, HealthCheckFailureDoesNotWriteHistoryOrStats) {
-    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {}, &matterFake);
+    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {});
     matterFake.energyResult = Result<EnergyReading>::failure(ErrorCode::DeviceUnreachable, "누적 전력 값 없음");
 
     manager.runHealthCheck();
@@ -133,7 +133,7 @@ TEST_F(EnergyPathTest, HealthCheckFailureDoesNotWriteHistoryOrStats) {
 
 // D7: 32비트를 넘는 누적값(약 2.1 MWh 초과)도 잘리지 않는다
 TEST_F(EnergyPathTest, LargeCumulativeValuesAreNotTruncated) {
-    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {}, &matterFake);
+    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {});
     const int64_t big = 5'000'000'000LL;
     matterFake.energyResult = Result<EnergyReading>::success(EnergyReading{1, big});
     ASSERT_TRUE(manager.readEnergy("PLUG").ok());
@@ -148,7 +148,7 @@ TEST_F(EnergyPathTest, LargeCumulativeValuesAreNotTruncated) {
 // ---- REQ-04 / H6: 미등록·TCP 기기는 DB 행을 만들지 않는다 ----
 
 TEST_F(EnergyPathTest, E6ForUnregisteredAndTcpDeviceCreatesNoStatsRow) {
-    manager.addDevice("TCP_A1B2C3D4E5F6", "lamp", ProtocolType::TCP_DIY, {}, &tcpFake);
+    manager.addDevice("TCP_A1B2C3D4E5F6", "lamp", ProtocolType::TCP_DIY, {});
     matterFake.energyResult = Result<EnergyReading>::success(EnergyReading{5, 50});
     startServer();
 
@@ -168,7 +168,7 @@ TEST_F(EnergyPathTest, E6ForUnregisteredAndTcpDeviceCreatesNoStatsRow) {
 }
 
 TEST_F(EnergyPathTest, E6SuccessReturnsStateAndCorrectedTotal) {
-    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {}, &matterFake);
+    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {});
     manager.updateDeviceState("PLUG", "ON");
     matterFake.energyResult = Result<EnergyReading>::success(EnergyReading{15230, 1048576});
     startServer();
@@ -186,7 +186,7 @@ TEST_F(EnergyPathTest, E6SuccessReturnsStateAndCorrectedTotal) {
 // 먼저 시작한 조회(100)가 늦게 끝나고 나중 조회(120)가 먼저 끝나면, 락이 없을 때는
 // 120 저장 뒤 100이 "카운터 초기화"로 보여 합계가 220이 된다. 정답은 120.
 TEST_F(EnergyPathTest, ConcurrentReadsOfSameDeviceDoNotDoubleCount) {
-    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {}, &matterFake);
+    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {});
     std::promise<void> firstEntered;
     std::promise<void> releaseFirst;
     std::shared_future<void> releaseSignal = releaseFirst.get_future().share();
@@ -216,7 +216,7 @@ TEST_F(EnergyPathTest, ConcurrentReadsOfSameDeviceDoNotDoubleCount) {
 
 // 조회 도중 기기가 삭제되면 통계 행을 만들지 않는다
 TEST_F(EnergyPathTest, DeviceRemovedDuringReadCreatesNoStatsRow) {
-    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {}, &matterFake);
+    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {});
     std::promise<void> entered;
     std::promise<void> release;
     std::shared_future<void> releaseSignal = release.get_future().share();
@@ -239,8 +239,8 @@ TEST_F(EnergyPathTest, DeviceRemovedDuringReadCreatesNoStatsRow) {
 
 // 느린 전력 조회 중에도 목록·다른 기기 제어는 1초 안에 끝난다
 TEST_F(EnergyPathTest, SlowEnergyReadDoesNotBlockOtherRequests) {
-    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {}, &matterFake);
-    manager.addDevice("LAMP", "lamp", ProtocolType::TCP_DIY, {}, &tcpFake);
+    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {});
+    manager.addDevice("LAMP", "lamp", ProtocolType::TCP_DIY, {});
     std::promise<void> entered;
     std::promise<void> release;
     std::shared_future<void> releaseSignal = release.get_future().share();
@@ -266,7 +266,7 @@ TEST_F(EnergyPathTest, SlowEnergyReadDoesNotBlockOtherRequests) {
 
 // 드라이버의 "매핑 없음"은 등록된 기기에 대해 내부 오류로 답한다(E6에 "등록되지 않은 기기"로 보이지 않게)
 TEST_F(EnergyPathTest, DriverDeviceNotFoundIsReportedAsInternal) {
-    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {}, &matterFake);
+    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {});
     matterFake.energyResult = Result<EnergyReading>::failure(ErrorCode::DeviceNotFound, "시리얼 매핑 없음");
 
     const auto energy = manager.readEnergy("PLUG");
@@ -277,7 +277,7 @@ TEST_F(EnergyPathTest, DriverDeviceNotFoundIsReportedAsInternal) {
 
 // 드라이버가 돌려준 코드는 DeviceNotFound를 뺀 나머지를 그대로 전달한다(Cancelled 등이 왜곡되지 않게)
 TEST_F(EnergyPathTest, DriverFailureCodesArePassedThroughUnchanged) {
-    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {}, &matterFake);
+    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {});
     for (ErrorCode code : {ErrorCode::DeviceUnreachable, ErrorCode::Cancelled, ErrorCode::UnsupportedOperation,
                            ErrorCode::Internal}) {
         matterFake.energyResult = Result<EnergyReading>::failure(code, "driver failure");
@@ -289,7 +289,7 @@ TEST_F(EnergyPathTest, DriverFailureCodesArePassedThroughUnchanged) {
 
 // 상태를 확인하지 못한 기기(PAIRING·ERROR 포함)는 헬스체크에서 전력을 조회하지 않는다
 TEST_F(EnergyPathTest, HealthCheckSkipsEnergyForUnconfirmedStates) {
-    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {}, &matterFake);
+    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {});
     matterFake.energyResult = Result<EnergyReading>::success(EnergyReading{1, 100});
     for (const char* state : {"PAIRING", "ERROR", "OFFLINE", "UNKNOWN"}) {
         matterFake.stateToReturn = state;
@@ -329,7 +329,7 @@ TEST_F(EnergyPathTest, HistoryOrdersSameSecondByInsertionAndRejectsNonPositiveLi
 
 // E14: E7 응답 필드·순서 전체
 TEST_F(EnergyPathTest, E7ReturnsExactFieldsOldestFirst) {
-    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {}, &matterFake);
+    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {});
     manager.updateDeviceState("PLUG", "ON");
     RawDb raw(dbPath_);
     raw.exec("INSERT INTO state_history_logs (device_id, total_mwh, timestamp) VALUES "
@@ -354,7 +354,7 @@ TEST_F(EnergyPathTest, E7UnregisteredDeviceReturns404) {
 }
 
 TEST_F(EnergyPathTest, E6DriverFailureReturns502) {
-    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {}, &matterFake);
+    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {});
     matterFake.energyResult = Result<EnergyReading>::failure(ErrorCode::DeviceUnreachable, "누적 전력 값 없음");
     startServer();
     auto response = get("/api/devices/PLUG/energy");
@@ -383,7 +383,7 @@ TEST_F(EnergyPathTest, StatSelectFailureRollsBackAndReturnsFalse) {
 }
 
 TEST_F(EnergyPathTest, E6ReturnsInternalErrorWhenStatsCannotBeSaved) {
-    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {}, &matterFake);
+    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {});
     matterFake.energyResult = Result<EnergyReading>::success(EnergyReading{1, 100});
     RawDb raw(dbPath_);
     raw.exec("DROP TABLE device_energy_stats;");
@@ -408,7 +408,7 @@ TEST_F(EnergyPathTest, InsertEnergyLogReturnsFalseWhenStoreFails) {
 // ---- G11 / H12: E7은 존재 확인 먼저, DB 오류는 500 ----
 
 TEST_F(EnergyPathTest, E7ReportsDatabaseErrorInsteadOfEmptyList) {
-    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {}, &matterFake);
+    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {});
     RawDb raw(dbPath_);
     raw.exec("DROP TABLE state_history_logs;");
     startServer();
@@ -421,7 +421,7 @@ TEST_F(EnergyPathTest, E7ReportsDatabaseErrorInsteadOfEmptyList) {
 }
 
 TEST_F(EnergyPathTest, E7EmptyHistoryIsStillSuccess) {
-    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {}, &matterFake);
+    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {});
     startServer();
 
     auto response = get("/api/devices/PLUG/energy/history");
@@ -491,7 +491,7 @@ TEST(EnergyPathClosedDbTest, CallsOnUnopenedOrClosedDatabaseFailSafely) {
 
 // 숨김 저장이 실패하면 500이고 기기는 목록에 그대로 있다
 TEST_F(EnergyPathTest, E4HideFailureReturns500AndKeepsDevice) {
-    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {}, &matterFake);
+    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {});
     RawDb raw(dbPath_);
     raw.exec("CREATE TRIGGER block_hide BEFORE UPDATE OF deleted_at ON devices BEGIN SELECT RAISE(ABORT, 'blocked'); END;");
     startServer();

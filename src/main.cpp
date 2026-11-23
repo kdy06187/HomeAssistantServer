@@ -103,7 +103,7 @@ int main() {
         std::cerr << "[Main] MatterController 초기화 실패!" << std::endl;
     }
     // 어떤 프로토콜의 기기든 PC 종료 메시지는 TCP 드라이버로 보낸다
-    deviceDrivers.registerDriver(DriverType::PC_DRIVER, [&tcpDriver](IMessageSender*) {
+    deviceDrivers.registerDriver(DriverType::PC_DRIVER, [&tcpDriver]() {
         return std::make_shared<PCDriver>(&tcpDriver);
     });
     manager.registerDriver(ProtocolType::MATTER, &matterController);

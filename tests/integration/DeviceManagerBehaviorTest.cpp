@@ -54,7 +54,7 @@ TEST_F(DeviceManagerBehaviorTest, MatterRecoveryKeepsDriverReportedIdAndName) {
 }
 
 TEST_F(DeviceManagerBehaviorTest, FailedCommissioningDoesNotLeakDriverTypesToLaterSameNamedDevice) {
-    deviceDrivers.registerDriver(DriverType::PC_DRIVER, [](IMessageSender* s) { return std::make_shared<PCDriver>(s); });
+    deviceDrivers.registerDriver(DriverType::PC_DRIVER, [this]() { return std::make_shared<PCDriver>(&tcpFake); });
     tcpFake.commissionResult = Result<CommissionOutcome>::failure(ErrorCode::CommissionFailed, "fail");
     manager.startCommissioning(ProtocolType::TCP_DIY, "desk", "", "", "", {DriverType::PC_DRIVER});
     tcpFake.commissionResult = Result<CommissionOutcome>::success(CommissionOutcome{"FAKE_1"});
@@ -95,7 +95,7 @@ TEST_F(DeviceManagerBehaviorTest, EnergyWithoutProtocolDriverFailsAsInternal) {
     DriverManager drivers2;
     DelayedCommandScheduler bareScheduler{clock};
     DeviceManager bare(db2, drivers2, bareScheduler, clock);
-    bare.addDevice("PLUG", "plug", ProtocolType::MATTER, {}, nullptr);
+    bare.addDevice("PLUG", "plug", ProtocolType::MATTER, {});
 
     const auto energy = bare.readEnergy("PLUG");
 
@@ -167,7 +167,7 @@ TEST_F(DeviceManagerBehaviorTest, RemoveUnknownDeviceReturnsFalse) {
 
 // 오프라인 기기는 해제가 실패하지만 DB·메모리에서 숨겼으면 삭제 성공이다(unpaired=false)
 TEST_F(DeviceManagerBehaviorTest, RemoveSucceedsWhenUnpairFails) {
-    manager.addDevice("ARD_1", "lamp", ProtocolType::TCP_DIY, {}, &tcpFake);
+    manager.addDevice("ARD_1", "lamp", ProtocolType::TCP_DIY, {});
     tcpFake.unpairResult = false;
 
     const auto outcome = manager.removeDevice("ARD_1");
@@ -183,7 +183,7 @@ TEST_F(DeviceManagerBehaviorTest, RemoveSucceedsWhenUnpairFails) {
 
 // OFFLINE은 getDeviceState 경로에서 한 번 저장된다(재시작 뒤 OFF로 보임)
 TEST_F(DeviceManagerBehaviorTest, HealthCheckOfflineStoresInactiveOnce) {
-    manager.addDevice("ARD_1", "lamp", ProtocolType::TCP_DIY, {}, &tcpFake);
+    manager.addDevice("ARD_1", "lamp", ProtocolType::TCP_DIY, {});
     ASSERT_TRUE(manager.updateDeviceState("ARD_1", "ON"));
     tcpFake.stateToReturn = "OFFLINE";
 
@@ -197,7 +197,7 @@ TEST_F(DeviceManagerBehaviorTest, HealthCheckOfflineStoresInactiveOnce) {
 
 // 이력 조회의 DB 오류 코드(limit<=0 → InvalidRequest)를 Internal로 바꾸지 않는다
 TEST_F(DeviceManagerBehaviorTest, EnergyHistoryKeepsDbErrorCode) {
-    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {}, &matterFake);
+    manager.addDevice("PLUG", "plug", ProtocolType::MATTER, {});
 
     HistoryQuery query;
     query.limit = 0;

@@ -23,7 +23,7 @@ protected:
     void SetUp() override {
         ASSERT_TRUE(database.init(":memory:"));
         manager.registerDriver(ProtocolType::TCP_DIY, &tcpFake);
-        manager.addDevice("DEV_1", "시험 기기", ProtocolType::TCP_DIY, {}, &tcpFake);
+        manager.addDevice("DEV_1", "시험 기기", ProtocolType::TCP_DIY, {});
         port = findFreePort();
         server = std::make_unique<HTTPServer>(manager, kToken, port);
         ASSERT_TRUE(server->start());
