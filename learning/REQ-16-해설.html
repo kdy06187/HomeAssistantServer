@@ -149,6 +149,20 @@ if (longest &gt; 1) text.resize(text.size() - std::min(text.size(), longest - 1)
 </details>
 <p><b>응용 과제</b>: <code>trimTruncatedTail</code>를 바꾸지 않고, 비밀값이 출력 <em>중간</em>에서 1MiB 경계에 걸친 경우를 만드는 시험을 직접 써 보라(<code>tests/unit/ProcessChipToolRunnerTest.cpp</code>의 <code>SecretCutByOutputCapLeavesNoFragment</code>를 참고하되 비밀값 두 개, 길이 다르게).</p>
 </section>
+
+<section>
+<h2>8. 13a-5 보완 (Gemini 판정 P1~P8)</h2>
+<table>
+<tr><th>#</th><th>무엇이 틀렸나</th><th>고친 방법 · 배울 점</th></tr>
+<tr><td>P1</td><td>비밀번호가 "on"처럼 짧으면 성공 문구 "completed with success"의 <code>on</code>까지 <code>***</code>로 바뀌어 <b>성공을 실패로 판정</b></td><td>네 값 모두 4바이트 이상만 가린다. <em>마스킹은 판정 전에 일어난다</em> → 가리는 규칙이 판정 결과를 바꿀 수 있다. 가짜 러너는 마스킹을 안 해서 놓쳤다 → 가짜에 "실제 마스킹" 옵션</td></tr>
+<tr><td>P2</td><td>시리얼 읽기가 종료로 끊기면 "시리얼 없음"으로 보고 <code>UNKNOWN_SERIAL_&lt;노드&gt;</code>를 등록(유령 기기)</td><td>"취소"와 "없음"을 구분: <code>std::optional</code>로 취소를 돌려주고 아무것도 저장 안 함. DeviceManager도 등록 직전 종료를 다시 확인</td></tr>
+<tr><td>P3</td><td>끊긴 옛 연결을 지웠는지와 무관하게 "끊김" 보고 → 그 사이 새로 붙은 에이전트에 안 보냄</td><td><code>removeIfSame</code>이 <b>실제로 지웠는지</b> 돌려줌(비교 후 교체의 결과를 버리지 않기)</td></tr>
+<tr><td>P4·P8</td><td>스캔 1초 직후·대기 전·입구에 취소 확인이 빠짐, 예외 때 콜백 해제 누락</td><td>"오래 걸리는 단계의 앞과 뒤"에 확인. 해제는 RAII 가드 한 곳</td></tr>
+<tr><td>P5</td><td><code>[출력 잘림]</code> 표식을 마스킹 전에 붙임 / 시간 초과로 멈춘 출력은 끝 정리를 안 함</td><td>순서: 수집 → (잘렸거나 EOF 전에 멈췄으면) 끝 정리 → 마스킹 → 표식</td></tr>
+<tr><td>P7</td><td>인사 줄이 1회 진단 슬롯을 먼저 써 버림</td><td>원인을 아는 입력은 진단하지 않는다</td></tr>
+</table>
+<p><b>이해도 질문</b>: P3에서 <code>dropIfPeerGone</code>이 false를 돌려준 뒤 <code>sendTo</code>를 부르면, 왜 새 연결로 가는가? (힌트: <code>sendTo</code>는 맵을 다시 조회한다)</p>
+</section>
 </main>
 </body>
 </html>
