@@ -35,15 +35,21 @@ void TcpMessageSender::sendToPcAgent(const std::string& jsonLine) {
         for (const auto& id : server_.connectedIds()) sendTo(id, jsonLine);
         return;
     }
-    // 확인 뒤 끊기는 틈은 아래 sendTo가 "응답 없음"으로 로그를 남긴다
+    // 어느 실패 경로든 끝에 차단 예고를 붙인다(전원 차단 자체는 결과와 무관하게 45초 뒤 진행)
     if (!server_.peerIpOf(*agentId)) {
         std::cerr << "[TCPDriver] PC 에이전트(" << *agentId << ") 연결 없음 — 종료 메시지 못 보냄, 45초 뒤 전원 차단" << std::endl;
         return;
     }
+    // 에이전트가 방금 끊겼으면(FIN 도착) 서버는 아직 맵에 연결을 들고 있다. 1초 응답 대기 없이 바로 알린다
+    if (server_.dropIfPeerGone(*agentId)) {
+        std::cerr << "[TCPDriver] PC 에이전트(" << *agentId << ") 연결 끊김 — 종료 메시지 못 보냄, 45초 뒤 전원 차단" << std::endl;
+        return;
+    }
+    // 정전처럼 끊김 신호 없이 사라졌거나 확인 뒤 끊긴 경우는 아래 1초 응답 대기에서 드러난다
     if (sendTo(*agentId, jsonLine).ok()) {
         std::cout << "[TCPDriver] PC 에이전트(" << *agentId << ")가 종료 메시지를 받음" << std::endl;
     } else {
-        std::cerr << "[TCPDriver] PC 에이전트(" << *agentId << ") 종료 메시지 응답 없음 또는 오류" << std::endl;
+        std::cerr << "[TCPDriver] PC 에이전트(" << *agentId << ") 종료 메시지 응답 없음 또는 오류 — 45초 뒤 전원 차단" << std::endl;
     }
 }
 

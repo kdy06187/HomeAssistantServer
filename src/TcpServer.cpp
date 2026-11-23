@@ -356,6 +356,14 @@ std::optional<std::string> TcpServer::peerIpOf(const std::string& deviceId) {
     return connection->peerIp();
 }
 
+bool TcpServer::dropIfPeerGone(const std::string& deviceId) {
+    auto connection = find(deviceId);
+    if (!connection || !connection->isPeerGone()) return false;  // 끊김 확인(poll)은 맵 락 밖에서
+    removeIfSame(deviceId, connection);
+    connection->shutdown();
+    return true;
+}
+
 std::shared_ptr<TcpConnection> TcpServer::take(const std::string& deviceId) {
     std::lock_guard<std::mutex> lock(connectionsMutex_);
     auto it = connections_.find(deviceId);

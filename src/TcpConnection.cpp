@@ -1,4 +1,5 @@
 #include "TcpConnection.hpp"
+#include "json.hpp"
 #include <algorithm>
 #include <cerrno>
 #include <cstdio>
@@ -33,6 +34,18 @@ std::string toHexBytes(const std::string& bytes) {
 
 void stripCarriageReturn(std::string& line) {
     if (!line.empty() && line.back() == '\r') line.pop_back();
+}
+
+// 접속 직후 기기가 보내는 인사 줄: 개행으로 끝나는 JSON 객체 한 줄(+공백류)뿐인가.
+// 줄 안의 deviceId 등은 믿지 않는다(기기 ID는 MAC으로 정한다)
+bool isSingleJsonObjectLine(const std::string& data) {
+    const std::size_t newline = data.find('\n');
+    if (newline == std::string::npos) return false;
+    if (!isWhitespaceOnly(data.data() + newline, data.size() - newline)) return false;
+    std::string line = data.substr(0, newline);
+    stripCarriageReturn(line);
+    const auto parsed = nlohmann::json::parse(line, nullptr, false);
+    return !parsed.is_discarded() && parsed.is_object();
 }
 
 }  // namespace
@@ -85,6 +98,10 @@ bool TcpConnection::discardPendingInputLocked() {
     // 펌웨어가 응답 뒤에 늦게 보내는 줄바꿈("\r\n")은 해롭지 않으므로 공백류뿐이면 로그를 남기지 않는다
     bool whitespaceOnly = isWhitespaceOnly(buffer_.data(), buffer_.size());
     std::string sample = buffer_.substr(0, kDiscardSampleBytes);
+    // 첫 요청이면 인사 줄인지 보려고 한 줄 상한까지만 모아 둔다(넘으면 인사 줄이 아니다)
+    const bool isFirstRequest = firstRequestPending_;
+    firstRequestPending_ = false;
+    std::string firstDiscard = isFirstRequest ? buffer_ : std::string();
     buffer_.clear();
     const auto deadline = std::chrono::steady_clock::now() + kMaxDiscardTime;
     char chunk[kRecvChunkBytes];
@@ -99,6 +116,7 @@ bool TcpConnection::discardPendingInputLocked() {
             const std::size_t received = static_cast<std::size_t>(n);
             discarded += received;
             whitespaceOnly = whitespaceOnly && isWhitespaceOnly(chunk, received);
+            if (isFirstRequest && firstDiscard.size() <= kMaxLineBytes) firstDiscard.append(chunk, received);
             if (sample.size() < kDiscardSampleBytes) {
                 sample.append(chunk, std::min(received, kDiscardSampleBytes - sample.size()));
             }
@@ -113,9 +131,12 @@ bool TcpConnection::discardPendingInputLocked() {
     if (!discardDiagnosticLogged.exchange(true)) {
         std::cerr << "[TcpConnection] 버린 잔여(1회 진단): " << toHexBytes(sample) << " (" << peerIp_ << ")" << std::endl;
     }
-    if (!whitespaceOnly) {
-        std::cerr << "[TcpConnection] 요청 전 남아 있던 입력 " << discarded << "바이트 버림 (" << peerIp_ << ")" << std::endl;
+    if (whitespaceOnly) return true;
+    if (isFirstRequest && firstDiscard.size() <= kMaxLineBytes && isSingleJsonObjectLine(firstDiscard)) {
+        std::cout << "[TcpConnection] 접속 인사 줄 " << discarded << "바이트 처리 (" << peerIp_ << ")" << std::endl;
+        return true;
     }
+    std::cerr << "[TcpConnection] 요청 전 남아 있던 입력 " << discarded << "바이트 버림 (" << peerIp_ << ")" << std::endl;
     return true;
 }
 

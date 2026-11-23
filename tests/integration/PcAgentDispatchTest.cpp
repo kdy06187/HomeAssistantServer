@@ -156,7 +156,7 @@ TEST_F(PcAgentDispatchTest, SilentOrErrorAgentIsLoggedAndSwitchesStayUntouched) 
     std::string log = ::testing::internal::GetCapturedStderr();
     EXPECT_GE(elapsed, 900ms);
     EXPECT_LT(elapsed, 1500ms);
-    EXPECT_NE(log.find("종료 메시지 응답 없음 또는 오류"), std::string::npos) << log;
+    EXPECT_NE(log.find("종료 메시지 응답 없음 또는 오류 — 45초 뒤 전원 차단"), std::string::npos) << log;
     EXPECT_EQ(silentAgent.readLine(100ms), kShutdownLine);  // 받기는 했다
     EXPECT_TRUE(silentAgent.waitClosedByServer());          // 답이 없으니 서버가 그 연결을 닫았다
     EXPECT_TRUE(switchA.lines().empty());
@@ -174,6 +174,28 @@ TEST_F(PcAgentDispatchTest, SilentOrErrorAgentIsLoggedAndSwitchesStayUntouched) 
     errorAgent.stopServing();
     EXPECT_NE(log.find("기기에서 에러 반환: busy"), std::string::npos) << log;
     EXPECT_NE(log.find("종료 메시지 응답 없음 또는 오류"), std::string::npos);
+    EXPECT_TRUE(switchA.lines().empty());
+}
+
+// 에이전트가 방금 끊겼으면(FIN) 1초 응답을 기다리지 않고 "연결 끊김" + 차단 예고, 보내지 않는다
+TEST_F(PcAgentDispatchTest, JustDisconnectedAgentIsReportedImmediatelyWithShutdownWarning) {
+    startServer(FakeMacResolver::loopbackId(kAgent));
+    RecordingDevice switchA(server->boundPort(), kSwitchA);
+    auto agent = std::make_unique<FakeDevice>(server->boundPort(), kAgent);
+    ASSERT_TRUE(waitUntilConnectedCount(2));
+    agent->closeSocket();
+    std::this_thread::sleep_for(50ms);  // FIN이 서버에 도착할 시간
+    ASSERT_TRUE(isConnected(FakeMacResolver::loopbackId(kAgent))) << "서버는 아직 끊김을 모른다";
+
+    ::testing::internal::CaptureStderr();
+    const auto started = std::chrono::steady_clock::now();
+    sender->sendToPcAgent(kShutdownPayload);
+    const auto elapsed = std::chrono::steady_clock::now() - started;
+    const std::string log = ::testing::internal::GetCapturedStderr();
+
+    EXPECT_LT(elapsed, 500ms);
+    EXPECT_NE(log.find("연결 끊김 — 종료 메시지 못 보냄, 45초 뒤 전원 차단"), std::string::npos) << log;
+    EXPECT_FALSE(isConnected(FakeMacResolver::loopbackId(kAgent)));
     EXPECT_TRUE(switchA.lines().empty());
 }
 

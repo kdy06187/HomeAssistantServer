@@ -828,6 +828,45 @@ TEST_F(TcpServerTest, TrailingWhitespaceIsDiscardedSilentlyButOtherResidueIsLogg
     EXPECT_EQ(log.find("남아 있던 입력", firstDiscardLog + 1), std::string::npos) << "\\r\\n 잔여는 로그 없음";
 }
 
+// ---- 13a-4: 접속 인사 줄 ----
+
+// 기기가 접속하자마자 보내는 JSON 한 줄은 첫 요청 때 경고 없이 처리한다(실기 스위치 69바이트 인사 줄)
+TEST_F(TcpServerTest, GreetingJsonLineBeforeFirstRequestIsNotWarned) {
+    auto device = connect(2);
+    device->send("{\"deviceId\":\"ARD_192.168.0.2\",\"state\":\"OFF\"}\r\n");
+    std::this_thread::sleep_for(50ms);
+    device->serveInBackground([](const std::string&) { return std::string("{\"state\":\"ON\"}\n"); });
+
+    ::testing::internal::CaptureStderr();
+    ::testing::internal::CaptureStdout();
+    const json response = server.sendAndReceive(device->id(), TcpProtocol::buildGetStateRequest());
+    const std::string errors = ::testing::internal::GetCapturedStderr();
+    const std::string info = ::testing::internal::GetCapturedStdout();
+    device->stopServing();
+
+    ASSERT_TRUE(response.is_object());
+    EXPECT_EQ(response["state"], "ON");  // 인사 줄의 OFF가 응답으로 섞이지 않는다
+    EXPECT_EQ(errors.find("남아 있던 입력"), std::string::npos) << errors;
+    EXPECT_NE(info.find("접속 인사 줄"), std::string::npos) << info;
+    EXPECT_EQ(info.find("ARD_"), std::string::npos) << "인사 줄 내용은 로그에 쓰지 않는다";
+}
+
+// 첫 요청 전이라도 JSON 객체 한 줄이 아니면(쓰레기·여러 줄) 지금처럼 경고한다
+TEST_F(TcpServerTest, NonGreetingResidueBeforeFirstRequestIsWarned) {
+    for (const std::string& residue : {std::string("garbage\n"), std::string("{\"a\":1}\n{\"b\":2}\n"),
+                                      std::string("[1,2]\n"), std::string("{\"a\":1}")}) {
+        auto device = connect(2);
+        device->send(residue);
+        std::this_thread::sleep_for(50ms);
+        device->serveInBackground([](const std::string&) { return std::string("{\"state\":\"ON\"}\n"); });
+        ::testing::internal::CaptureStderr();
+        server.sendAndReceive(device->id(), TcpProtocol::buildGetStateRequest());
+        const std::string errors = ::testing::internal::GetCapturedStderr();
+        device->stopServing();
+        EXPECT_NE(errors.find("남아 있던 입력"), std::string::npos) << residue;
+    }
+}
+
 // 1회 진단은 프로세스 전역 플래그라, 앞 시험이 먼저 써 버리지 않도록 새 프로세스에서 확인한다
 // (threadsafe 죽음 시험은 시험 실행 파일을 이 시험만으로 다시 실행한다 → 실행 순서와 무관)
 bool firstDiscardDiagnosticScenario(const std::string& firstResidue, const std::string& expectedHex) {

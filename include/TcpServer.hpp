@@ -67,6 +67,8 @@ public:
     std::vector<std::string> connectedIds();
     // 그 ID 연결의 상대 IP(없으면 nullopt)
     std::optional<std::string> peerIpOf(const std::string& deviceId);
+    // 그 ID 연결이 있고 상대가 이미 끊었으면 맵에서 빼고(같은 연결일 때만) 닫은 뒤 true. 기다리지 않는다
+    bool dropIfPeerGone(const std::string& deviceId);
     // 맵에서 빼서 돌려준다(없으면 nullptr). 닫기는 호출자가 한다
     std::shared_ptr<TcpConnection> take(const std::string& deviceId);
     // keep에 없는 ID의 연결을 모두 닫고, 같은 락 안에서 남은 연결 ID를 돌려준다(커미셔닝 전 좀비 정리·스냅샷).

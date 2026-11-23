@@ -56,5 +56,7 @@ private:
     const std::string peerIp_;
     std::mutex ioMutex_;   // 이 소켓의 송수신과 buffer_
     std::string buffer_;
+    // 첫 요청 전 버림인지(ioMutex_). 기기는 접속하자마자 상태 줄 하나를 먼저 보내므로 그 한 줄은 경고하지 않는다
+    bool firstRequestPending_ = true;
     std::atomic<bool> closed_{false};
 };
