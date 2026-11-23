@@ -183,7 +183,7 @@ TEST_F(PcAgentDispatchTest, JustDisconnectedAgentIsReportedImmediatelyWithShutdo
     RecordingDevice switchA(server->boundPort(), kSwitchA);
     auto agent = std::make_unique<FakeDevice>(server->boundPort(), kAgent);
     ASSERT_TRUE(waitUntilConnectedCount(2));
-    agent->closeSocket();
+    agent->closeGracefully();  // 정상 종료(FIN) → 서버 쪽은 POLLRDHUP
     std::this_thread::sleep_for(50ms);  // FIN이 서버에 도착할 시간
     ASSERT_TRUE(isConnected(FakeMacResolver::loopbackId(kAgent))) << "서버는 아직 끊김을 모른다";
 
@@ -197,6 +197,37 @@ TEST_F(PcAgentDispatchTest, JustDisconnectedAgentIsReportedImmediatelyWithShutdo
     EXPECT_NE(log.find("연결 끊김 — 종료 메시지 못 보냄, 45초 뒤 전원 차단"), std::string::npos) << log;
     EXPECT_FALSE(isConnected(FakeMacResolver::loopbackId(kAgent)));
     EXPECT_TRUE(switchA.lines().empty());
+}
+
+// P3: 끊긴 옛 연결이 이미 새 에이전트 연결로 바뀌었으면 새 연결로 보낸다
+TEST_F(PcAgentDispatchTest, ReconnectedAgentReceivesShutdownInsteadOfDroppedOldConnection) {
+    startServer(FakeMacResolver::loopbackId(kAgent));
+    auto oldAgent = std::make_unique<FakeDevice>(server->boundPort(), kAgent);
+    ASSERT_TRUE(waitUntilConnectedCount(1));
+    oldAgent->closeGracefully();
+    RecordingDevice newAgent(server->boundPort(), kAgent);  // 같은 MAC 재접속: 에이전트는 확인 없이 교체(R-2)
+    const auto deadline = std::chrono::steady_clock::now() + 2s;
+    while (server->peerIpOf(FakeMacResolver::loopbackId(kAgent)) && std::chrono::steady_clock::now() < deadline) {
+        if (!server->dropIfPeerGone(FakeMacResolver::loopbackId(kAgent))) break;  // 교체됐으면 false
+        std::this_thread::sleep_for(5ms);
+    }
+    ASSERT_TRUE(waitUntilConnectedCount(1));
+
+    ::testing::internal::CaptureStderr();
+    sender->sendToPcAgent(kShutdownPayload);
+    const std::string log = ::testing::internal::GetCapturedStderr();
+    EXPECT_EQ(newAgent.lines(), std::vector<std::string>{kShutdownLine}) << log;
+    EXPECT_EQ(log.find("연결 끊김"), std::string::npos) << log;
+}
+
+// P3: 살아 있는 연결은 dropIfPeerGone이 지우지 않는다
+TEST_F(PcAgentDispatchTest, DropIfPeerGoneKeepsLiveConnection) {
+    startServer(FakeMacResolver::loopbackId(kAgent));
+    RecordingDevice agent(server->boundPort(), kAgent);
+    ASSERT_TRUE(waitUntilConnectedCount(1));
+    EXPECT_FALSE(server->dropIfPeerGone(agent.id()));
+    EXPECT_TRUE(isConnected(agent.id()));
+    EXPECT_FALSE(server->dropIfPeerGone("TCP_NOT_CONNECTED"));
 }
 
 TEST(TcpAgentConfigTest, ParsesMacIntoAgentIdOrRejectsMalformedValue) {

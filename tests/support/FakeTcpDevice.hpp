@@ -40,6 +40,8 @@ public:
     std::string id() const { return FakeMacResolver::loopbackId(lastOctet_); }
     const std::string& ip() const { return ip_; }
     void send(const std::string& data) { ::send(fd_, data.data(), data.size(), MSG_NOSIGNAL); }
+    // 정상 종료(FIN)만 보낸다. 서버는 poll의 POLLRDHUP로 끊김을 본다(closeSocket은 RST)
+    void closeGracefully() { if (fd_ >= 0) ::shutdown(fd_, SHUT_WR); }
     void closeSocket() {
         if (fd_ >= 0) ::close(fd_);
         fd_ = -1;

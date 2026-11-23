@@ -1,5 +1,6 @@
 #pragma once
 #include "ChipToolRunner.hpp"
+#include "ProcessChipToolRunner.hpp"
 #include <atomic>
 #include <thread>
 #include <functional>
@@ -20,8 +21,12 @@ public:
             std::lock_guard<std::mutex> lock(recordMutex);
             calls.push_back(Call{args, stdinText, timeout, secretsToMask});
         }
-        return respond ? respond(subcommand) : ProcessResult{0, "CHIP_NO_ERROR", false, false, false};
+        ProcessResult result = respond ? respond(subcommand) : ProcessResult{0, "CHIP_NO_ERROR", false, false, false};
+        // 실제 러너처럼 가린 출력을 돌려준다(가린 뒤 성공 문구가 남는지 확인할 때)
+        if (applyRealMasking) result.output = ProcessChipToolRunner::maskSecrets(std::move(result.output), secretsToMask);
+        return result;
     }
+    bool applyRealMasking = false;  // 스레드를 띄우기 전에 정한다
 
     void cancelAll() override { cancelled = true; }
 

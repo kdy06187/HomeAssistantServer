@@ -74,6 +74,10 @@ Result<CommissionOutcome> TCPDriver::commission(const CommissionRequest& request
     }
 
     std::cout << "[TCPDriver] 와이파이 설정 전송 완료. TCP 접속 대기 중..." << std::endl;
+    if (cancelRequested) {  // BLE 쓰기 중에 종료가 시작됐으면 대기 첫 1초도 쓰지 않는다
+        std::cerr << "[TCPDriver] 서버 종료로 TCP 접속 대기를 중단했습니다" << std::endl;
+        return Result<CommissionOutcome>::failure(ErrorCode::Cancelled, "접속 대기 취소");
+    }
 
     for (int waited = 0; waited < kCommissionConnectWaitSeconds; ++waited) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -122,17 +126,27 @@ void TCPDriver::sendWifiConfigOverBle(const CommissionRequest& request, const st
 
     bool found = false;
     SimpleBLE::Peripheral target_device;
-    for (int round = 0; round < kBleScanRounds && !found; ++round) {
-        if (cancelRequested) {
-            adapter.set_callback_on_scan_found([](SimpleBLE::Peripheral) {});
-            throw CommissionCancelled("BLE 스캔 중 취소");
+    {
+        // 스캔이 어떻게 끝나든(찾음·못 찾음·취소·라이브러리 예외) 콜백을 빈 것으로 바꿔 더 받지 않는다
+        struct ScanCallbackReset {
+            SimpleBLE::Adapter& adapter;
+            ~ScanCallbackReset() {
+                try {
+                    adapter.set_callback_on_scan_found([](SimpleBLE::Peripheral) {});
+                } catch (...) {  // 소멸자에서 예외를 내보내지 않는다(원래 오류를 가리지 않게)
+                }
+            }
+        } resetCallback{adapter};
+        for (int round = 0; round < kBleScanRounds && !found; ++round) {
+            if (cancelRequested) throw CommissionCancelled("BLE 스캔 중 취소");
+            adapter.scan_for(1000);
+            // 스캔 1초 사이에 종료가 시작됐으면 찾았어도 연결하지 않는다
+            if (cancelRequested) throw CommissionCancelled("BLE 스캔 중 취소");
+            std::lock_guard<std::mutex> lock(scan->mutex);
+            found = scan->found;
+            target_device = scan->device;
         }
-        adapter.scan_for(1000);
-        std::lock_guard<std::mutex> lock(scan->mutex);
-        found = scan->found;
-        target_device = scan->device;
     }
-    adapter.set_callback_on_scan_found([](SimpleBLE::Peripheral) {});  // 스캔이 끝나면 더 받지 않는다
     if (!found) {
         std::cerr << "❌ [TCPDriver] TCPDevice_DIY 기기를 찾지 못했습니다." << std::endl;
         throw CommissionAbort("BLE 기기 없음");

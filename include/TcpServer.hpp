@@ -67,7 +67,8 @@ public:
     std::vector<std::string> connectedIds();
     // 그 ID 연결의 상대 IP(없으면 nullopt)
     std::optional<std::string> peerIpOf(const std::string& deviceId);
-    // 그 ID 연결이 있고 상대가 이미 끊었으면 맵에서 빼고(같은 연결일 때만) 닫은 뒤 true. 기다리지 않는다
+    // 그 ID 연결이 있고 상대가 이미 끊었으면 맵에서 빼고 닫은 뒤 true. 기다리지 않는다.
+    // 확인과 제거 사이에 새 연결로 바뀌었으면 false(호출자는 새 연결로 보내면 된다)
     bool dropIfPeerGone(const std::string& deviceId);
     // 맵에서 빼서 돌려준다(없으면 nullptr). 닫기는 호출자가 한다
     std::shared_ptr<TcpConnection> take(const std::string& deviceId);
@@ -103,7 +104,8 @@ private:
     std::size_t pruneDeadConnections();
     std::shared_ptr<TcpConnection> find(const std::string& deviceId);
     // 맵의 연결이 아직 같은 객체일 때만 뺀다(그 사이 재접속한 새 연결을 지우지 않는다)
-    void removeIfSame(const std::string& deviceId, const std::shared_ptr<TcpConnection>& connection);
+    // 맵의 값이 아직 그 연결일 때만 지운다. 실제로 지웠으면 true(그 사이 재접속으로 바뀌었으면 false)
+    bool removeIfSame(const std::string& deviceId, const std::shared_ptr<TcpConnection>& connection);
 
     // start·stop 호출끼리만 직렬화한다. 수락 스레드와 연결 맵 락은 이 락을 잡지 않는다
     std::mutex lifecycleMutex_;

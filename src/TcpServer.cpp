@@ -336,10 +336,12 @@ std::shared_ptr<TcpConnection> TcpServer::find(const std::string& deviceId) {
     return it == connections_.end() ? nullptr : it->second;
 }
 
-void TcpServer::removeIfSame(const std::string& deviceId, const std::shared_ptr<TcpConnection>& connection) {
+bool TcpServer::removeIfSame(const std::string& deviceId, const std::shared_ptr<TcpConnection>& connection) {
     std::lock_guard<std::mutex> lock(connectionsMutex_);
     auto it = connections_.find(deviceId);
-    if (it != connections_.end() && it->second == connection) connections_.erase(it);
+    if (it == connections_.end() || it->second != connection) return false;
+    connections_.erase(it);
+    return true;
 }
 
 std::vector<std::string> TcpServer::connectedIds() {
@@ -359,9 +361,8 @@ std::optional<std::string> TcpServer::peerIpOf(const std::string& deviceId) {
 bool TcpServer::dropIfPeerGone(const std::string& deviceId) {
     auto connection = find(deviceId);
     if (!connection || !connection->isPeerGone()) return false;  // 끊김 확인(poll)은 맵 락 밖에서
-    removeIfSame(deviceId, connection);
-    connection->shutdown();
-    return true;
+    connection->shutdown();  // 끊긴 옛 연결은 맵에서 빠졌든 아니든 닫는다
+    return removeIfSame(deviceId, connection);
 }
 
 std::shared_ptr<TcpConnection> TcpServer::take(const std::string& deviceId) {

@@ -41,6 +41,7 @@ public:
     std::vector<std::string> pcAgentMessages;                        // sendToPcAgent: jsonLine
     std::vector<std::string> energyReadIds;
     std::function<void()> onCommission;
+    bool ignoreCancel = false;  // 드라이버가 끝난 "직후" 종료가 시작되는 경우를 흉내 낸다
     std::vector<bool> readStateManualFlags;                          // readDeviceState의 isManualRequest
 
     bool sendCommand(const std::string& deviceId, const std::string& command) override {
@@ -60,7 +61,7 @@ public:
         }
         // 진행 중 취소를 시험할 때 쓴다(예: 이 안에서 beginShutdown). 끝난 뒤 플래그가 서 있으면 실제 드라이버처럼 취소
         if (onCommission) onCommission();
-        if (cancelRequested) return Result<CommissionOutcome>::failure(ErrorCode::Cancelled, "fake cancelled");
+        if (cancelRequested && !ignoreCancel) return Result<CommissionOutcome>::failure(ErrorCode::Cancelled, "fake cancelled");
         return commissionResult;
     }
     bool unpairDevice(const std::string& deviceId) override {

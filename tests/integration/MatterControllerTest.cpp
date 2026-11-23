@@ -371,6 +371,75 @@ TEST_F(MatterControllerTest, CancelAfterPairingSkipsSerialReadAndMapping) {
     EXPECT_FALSE(controller->sendCommand("SN-NEW", "ON"));  // 매핑 없음
 }
 
+// ---- 13a-5 ----
+
+// P1: 짧은 비밀번호("on")는 가리지 않아, 실제 마스킹을 거쳐도 성공 문구("…completed with success")가 남는다
+TEST_F(MatterControllerTest, ShortSecretsDoNotBreakSuccessTextUnderRealMasking) {
+    runner.applyRealMasking = true;
+    runner.respond = [](const std::vector<std::string>& sub) {
+        if (startsWith(sub, {"pairing", "ble-wifi"})) return FakeChipToolOutput::ok("Device commissioning completed with success");
+        if (startsWith(sub, {"basicinformation"})) return FakeChipToolOutput::ok("SerialNumber: SN-NEW");
+        return FakeChipToolOutput::ok("");
+    };
+    const auto outcome = controller->commission(CommissionRequest{"plug", kGoodCode, "es", "on"}, {}, kNotCancelled);
+    ASSERT_TRUE(outcome.ok());
+    EXPECT_EQ(outcome.value->deviceId, "SN-NEW");
+    for (const auto& secret : runner.callsSnapshot().at(0).secretsToMask) EXPECT_GE(secret.size(), 4u) << secret;
+}
+
+// P6: 4KiB 로그 경계에 걸친 비밀값도 실제 마스킹 뒤 잘리므로 조각이 남지 않는다
+TEST_F(MatterControllerTest, FourKiBLogBoundaryLeavesNoSecretFragmentUnderRealMasking) {
+    runner.applyRealMasking = true;
+    const std::string secret = "password1";
+    // 끝 4096바이트가 비밀값 중간("pass|word1")에서 시작하도록 배치
+    const std::string output = std::string(5000, 'x') + secret.substr(0) + std::string(4096 - 5, 'y');
+    runner.respond = [&](const std::vector<std::string>&) { return failedPairing(output); };
+    testing::internal::CaptureStderr();
+    ASSERT_FALSE(controller->commission(CommissionRequest{"plug", kGoodCode, "home wifi", secret}, {}, kNotCancelled).ok());
+    const std::string log = testing::internal::GetCapturedStderr();
+    EXPECT_EQ(log.find("word1"), std::string::npos) << "비밀값 조각";
+    EXPECT_EQ(log.find("pass"), std::string::npos);
+}
+
+// P2: 페어링 뒤 시리얼 읽기가 종료로 끊기면 UNKNOWN_SERIAL로 등록하지 않고 취소, 매핑·파일 불변
+TEST_F(MatterControllerTest, SerialReadCancelledByShutdownRegistersNothing) {
+    runner.respond = [](const std::vector<std::string>& sub) {
+        if (startsWith(sub, {"pairing", "ble-wifi"})) return FakeChipToolOutput::ok("Device commissioning completed with success");
+        return ProcessResult{143, "", false, true, false};  // 시리얼 읽기가 cancelAll로 끊김
+    };
+    const auto before = readConfig();
+    testing::internal::CaptureStderr();
+    const auto outcome = controller->commission(CommissionRequest{"plug", kGoodCode, "home wifi", "password1"}, {}, kNotCancelled);
+    const std::string log = testing::internal::GetCapturedStderr();
+    EXPECT_EQ(outcome.error.code, ErrorCode::Cancelled);
+    EXPECT_EQ(readConfig(), before);
+    EXPECT_EQ(readConfig().find("UNKNOWN_SERIAL"), std::string::npos);
+    EXPECT_NE(log.find("기기 fabric에 노드"), std::string::npos) << log;
+}
+
+// P2: 시리얼 읽기 도중 취소 플래그가 서도 같다(시리얼을 읽었어도 저장하지 않음)
+TEST_F(MatterControllerTest, CancelFlagDuringSerialReadRegistersNothing) {
+    std::atomic<bool> cancelled{false};
+    runner.respond = [&](const std::vector<std::string>& sub) {
+        if (startsWith(sub, {"pairing", "ble-wifi"})) return FakeChipToolOutput::ok("Device commissioning completed with success");
+        cancelled = true;
+        return FakeChipToolOutput::ok("SerialNumber: SN-NEW");
+    };
+    const auto before = readConfig();
+    const auto outcome = controller->commission(CommissionRequest{"plug", kGoodCode, "home wifi", "password1"}, {}, cancelled);
+    EXPECT_EQ(outcome.error.code, ErrorCode::Cancelled);
+    EXPECT_EQ(readConfig(), before);
+    EXPECT_FALSE(controller->sendCommand("SN-NEW", "ON"));
+}
+
+// P6: unpair도 걸린 시간을 남긴다
+TEST_F(MatterControllerTest, UnpairLogsDuration) {
+    testing::internal::CaptureStdout();
+    controller->removeDeviceRegistration("SN-1");
+    const std::string log = testing::internal::GetCapturedStdout();
+    EXPECT_NE(log.find("chip-tool pairing unpair 끝: 종료 코드 0, 걸린 시간 "), std::string::npos) << log;
+}
+
 TEST_F(MatterControllerTest, BadSetupCodeFailsWithoutRunningChipTool) {
     const auto outcome = controller->commission(CommissionRequest{"plug", "000", "ssid", "pw"}, {}, kNotCancelled);
     EXPECT_EQ(outcome.error.code, ErrorCode::CommissionFailed);

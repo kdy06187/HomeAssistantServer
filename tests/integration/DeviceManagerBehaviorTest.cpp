@@ -1,4 +1,6 @@
 #include <gtest/gtest.h>
+#include <chrono>
+#include <thread>
 #include "DeviceManager.hpp"
 #include "DatabaseManager.hpp"
 #include "support/HistoryTestHelper.hpp"
@@ -75,6 +77,41 @@ TEST_F(DeviceManagerBehaviorTest, ShutdownDuringCommissioningCancelsWithoutRegis
 
     EXPECT_TRUE(manager.getAllDevices().empty());
     EXPECT_TRUE(database.loadActiveDevices().empty());
+}
+
+// P2: 드라이버가 성공을 돌려준 직후 종료가 시작되면 등록하지 않고 드라이버 쪽 등록을 정리한다
+TEST_F(DeviceManagerBehaviorTest, ShutdownRightAfterDriverSuccessDoesNotRegister) {
+    tcpFake.commissionResult = Result<CommissionOutcome>::success(CommissionOutcome{"FAKE_1"});
+    tcpFake.ignoreCancel = true;
+    tcpFake.onCommission = [this] { manager.beginShutdown(); };
+
+    EXPECT_FALSE(manager.startCommissioning(ProtocolType::TCP_DIY, "lamp", ""));
+
+    EXPECT_TRUE(manager.getAllDevices().empty());
+    EXPECT_TRUE(database.loadActiveDevices().empty());
+    EXPECT_EQ(tcpFake.unpairedIds, std::vector<std::string>{"FAKE_1"});
+}
+
+// P8: 종료가 시작된 뒤에는 드라이버를 부르지 않는다
+TEST_F(DeviceManagerBehaviorTest, CommissioningAfterShutdownDoesNotCallDriver) {
+    manager.beginShutdown();
+    EXPECT_FALSE(manager.startCommissioning(ProtocolType::MATTER, "plug", "pin"));
+    EXPECT_TRUE(matterFake.commissionRequests.empty());
+}
+
+// P6: 커미셔닝과 종료 시작이 동시에 일어나도 경합 없이 끝난다(TSan)
+TEST_F(DeviceManagerBehaviorTest, ConcurrentShutdownAndCommissioningIsRaceFree) {
+    tcpFake.commissionResult = Result<CommissionOutcome>::success(CommissionOutcome{"FAKE_1"});
+    std::thread commissioner([this] {
+        for (int i = 0; i < 50; ++i) manager.startCommissioning(ProtocolType::TCP_DIY, "lamp", "");
+    });
+    std::thread stopper([this] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        manager.beginShutdown();
+    });
+    commissioner.join();
+    stopper.join();
+    EXPECT_FALSE(manager.startCommissioning(ProtocolType::TCP_DIY, "lamp", ""));
 }
 
 TEST_F(DeviceManagerBehaviorTest, EnergyForUnregisteredIdFailsWithoutReadingDriver) {

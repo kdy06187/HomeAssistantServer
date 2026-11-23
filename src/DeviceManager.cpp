@@ -217,13 +217,22 @@ bool DeviceManager::startCommissioning(ProtocolType type, std::string name, std:
         std::cerr << "[DeviceManager] 에러 : " << getProtocolString(type) << " 드라이버를 찾을 수 없습니다 " << std::endl;
         return false;
     }
+    if (isShuttingDown_) {
+        std::cerr << "[DeviceManager] 종료 중이라 커미셔닝을 시작하지 않습니다" << std::endl;
+        return false;
+    }
 
     // 커미셔닝은 수십 초 걸리므로 락 밖에서 하고, 드라이버에는 활성 ID 사본만 넘긴다
     const auto outcome = driver->commission(CommissionRequest{name, payload, ssid, password}, idsSnapshot, isShuttingDown_);
     bool isCommissioned = outcome.ok();
+    // 드라이버가 끝난 직후 종료가 시작됐으면 등록하지 않는다(종료 중 DB에 새 기기를 쓰지 않음)
+    const bool shutdownBeforeRegister = isCommissioned && isShuttingDown_;
+    if (shutdownBeforeRegister) {
+        std::cerr << "[DeviceManager] 종료 중이라 커미셔닝 결과를 등록하지 않습니다 : " << outcome.value->deviceId << std::endl;
+    }
     if (isCommissioned && !outcome.value->deviceId.empty() &&
-        !addDevice(outcome.value->deviceId, name, type, driverTypes, outcome.value->ip)) {
-        // 기기는 페어링됐지만 서버 등록은 실패: 드라이버 쪽 등록(Matter 매핑·등록 파일, TCP 연결)도 정리해
+        (shutdownBeforeRegister || !addDevice(outcome.value->deviceId, name, type, driverTypes, outcome.value->ip))) {
+        // 기기는 페어링됐지만 서버 등록은 실패·취소: 드라이버 쪽 등록(Matter 매핑·등록 파일, TCP 연결)도 정리해
         // "실패 = 아무것도 남지 않음"이 되게 한다. 락 밖에서 부른다
         isCommissioned = false;
         try {
@@ -232,6 +241,7 @@ bool DeviceManager::startCommissioning(ProtocolType type, std::string name, std:
             std::cerr << "[DeviceManager] 등록 실패 정리 중 예외 : " << outcome.value->deviceId << " (" << e.what() << ")" << std::endl;
         }
     }
+    if (shutdownBeforeRegister) isCommissioned = false;
     std::cout << "[DeviceManager] " << getProtocolString(type) << " 커미셔닝 결과: "
               << (isCommissioned ? "성공" : "실패") << std::endl;
     return isCommissioned;

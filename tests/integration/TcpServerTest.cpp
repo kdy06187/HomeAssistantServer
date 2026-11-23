@@ -277,9 +277,16 @@ TEST_F(TcpServerTest, TakeThenSendResetDeliversExactLineAndCloses) {
 
 TEST_F(TcpServerTest, CloseConnectionsNotInKeepsOnlyListedIds) {
     auto keep = connect(2);
+    auto keep2 = connect(4);
     auto drop = connect(3);
-    const auto remaining = server.closeConnectionsNotIn({keep->id()});
-    EXPECT_EQ(remaining, std::vector<std::string>{keep->id()});  // 정리와 같은 락 안에서 찍은 스냅샷
+    auto remaining = server.closeConnectionsNotIn({keep->id(), keep2->id(), "TCP_NOT_CONNECTED"});
+    std::sort(remaining.begin(), remaining.end());
+    std::vector<std::string> expected{keep->id(), keep2->id()};
+    std::sort(expected.begin(), expected.end());
+    EXPECT_EQ(remaining, expected);  // 정리와 같은 락 안에서 찍은 스냅샷: 남긴 것만, 연결 안 된 keep 항목은 없음
+    auto now = server.connectedIds();
+    std::sort(now.begin(), now.end());
+    EXPECT_EQ(now, expected);
     EXPECT_TRUE(isConnected(keep->id()));
     EXPECT_FALSE(isConnected(drop->id()));
     EXPECT_TRUE(drop->waitClosedByServer());
@@ -851,11 +858,32 @@ TEST_F(TcpServerTest, GreetingJsonLineBeforeFirstRequestIsNotWarned) {
     EXPECT_EQ(info.find("ARD_"), std::string::npos) << "인사 줄 내용은 로그에 쓰지 않는다";
 }
 
+// 인사 줄은 첫 요청에서만 봐준다: 둘째 요청 전에 온 JSON 줄은 경고
+TEST_F(TcpServerTest, GreetingAllowanceEndsAfterFirstRequest) {
+    auto device = connect(2);
+    device->send("{\"state\":\"OFF\"}\n");
+    std::this_thread::sleep_for(50ms);
+    device->serveInBackground([](const std::string&) { return std::string("{\"state\":\"ON\"}\n"); });
+    ::testing::internal::CaptureStderr();
+    ASSERT_TRUE(server.sendAndReceive(device->id(), TcpProtocol::buildGetStateRequest()).is_object());
+    const std::string firstErrors = ::testing::internal::GetCapturedStderr();
+    device->send("{\"state\":\"OFF\"}\n");
+    std::this_thread::sleep_for(50ms);
+    ::testing::internal::CaptureStderr();
+    ASSERT_TRUE(server.sendAndReceive(device->id(), TcpProtocol::buildGetStateRequest()).is_object());
+    const std::string secondErrors = ::testing::internal::GetCapturedStderr();
+    device->stopServing();
+    EXPECT_EQ(firstErrors.find("남아 있던 입력"), std::string::npos) << firstErrors;
+    EXPECT_NE(secondErrors.find("남아 있던 입력"), std::string::npos) << secondErrors;
+}
+
 // 첫 요청 전이라도 JSON 객체 한 줄이 아니면(쓰레기·여러 줄) 지금처럼 경고한다
 TEST_F(TcpServerTest, NonGreetingResidueBeforeFirstRequestIsWarned) {
+    // 같은 ID 재접속(옛 연결 생존 확인 1초)에 기대지 않도록 회차마다 다른 주소를 쓴다
+    int lastOctet = 20;
     for (const std::string& residue : {std::string("garbage\n"), std::string("{\"a\":1}\n{\"b\":2}\n"),
                                       std::string("[1,2]\n"), std::string("{\"a\":1}")}) {
-        auto device = connect(2);
+        auto device = connect(lastOctet++);
         device->send(residue);
         std::this_thread::sleep_for(50ms);
         device->serveInBackground([](const std::string&) { return std::string("{\"state\":\"ON\"}\n"); });
@@ -903,6 +931,13 @@ bool firstDiscardDiagnosticScenario(const std::string& firstResidue, const std::
 TEST(TcpConnectionDiagnosticDeathTest, FirstResidueIsHexDumpedOnceInFreshProcess) {
     ::testing::GTEST_FLAG(death_test_style) = "threadsafe";
     EXPECT_EXIT(std::_Exit(firstDiscardDiagnosticScenario("\r\n", "0d 0a") ? 0 : 1), ::testing::ExitedWithCode(0), "");
+}
+
+// P7: 인사 줄은 1회 진단 슬롯을 쓰지 않는다 → 그다음 진짜 잔여("zz")가 진단된다
+TEST(TcpConnectionDiagnosticDeathTest, GreetingLineDoesNotConsumeDiagnostic) {
+    ::testing::GTEST_FLAG(death_test_style) = "threadsafe";
+    EXPECT_EXIT(std::_Exit(firstDiscardDiagnosticScenario("{\"state\":\"OFF\"}\n", "7a 7a") ? 0 : 1),
+                ::testing::ExitedWithCode(0), "");
 }
 
 TEST(TcpConnectionDiagnosticDeathTest, DiagnosticIsCappedAtSixteenBytes) {

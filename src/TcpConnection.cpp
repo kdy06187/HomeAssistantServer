@@ -128,14 +128,15 @@ bool TcpConnection::discardPendingInputLocked() {
         return false;
     }
     if (discarded == 0) return true;
-    if (!discardDiagnosticLogged.exchange(true)) {
-        std::cerr << "[TcpConnection] 버린 잔여(1회 진단): " << toHexBytes(sample) << " (" << peerIp_ << ")" << std::endl;
-    }
-    if (whitespaceOnly) return true;
+    // 인사 줄은 원인이 알려진 정상 입력이라 1회 진단 슬롯을 쓰지 않는다(진짜 잔여가 진단되게)
     if (isFirstRequest && firstDiscard.size() <= kMaxLineBytes && isSingleJsonObjectLine(firstDiscard)) {
         std::cout << "[TcpConnection] 접속 인사 줄 " << discarded << "바이트 처리 (" << peerIp_ << ")" << std::endl;
         return true;
     }
+    if (!discardDiagnosticLogged.exchange(true)) {
+        std::cerr << "[TcpConnection] 버린 잔여(1회 진단): " << toHexBytes(sample) << " (" << peerIp_ << ")" << std::endl;
+    }
+    if (whitespaceOnly) return true;
     std::cerr << "[TcpConnection] 요청 전 남아 있던 입력 " << discarded << "바이트 버림 (" << peerIp_ << ")" << std::endl;
     return true;
 }

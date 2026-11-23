@@ -1,6 +1,7 @@
 #pragma once
 #include "ProtocolDriver.hpp"
 #include "ChipToolRunner.hpp"
+#include <optional>
 #include <string>
 #include <cstdint>
 #include <vector>
@@ -117,7 +118,9 @@ private:
         uint64_t nodeId_;
     };
     uint64_t mLastIssuedNodeId = 0; // stateMutex_
-    std::string onDevicePairingComplete(uint64_t nodeId, const std::string& deviceName);
+    // 시리얼을 읽어 매핑·등록 파일에 저장한다. 시리얼 읽기가 취소됐으면 아무것도 저장하지 않고 nullopt
+    std::optional<std::string> onDevicePairingComplete(uint64_t nodeId, const std::string& deviceName,
+                                                       const std::atomic<bool>& cancelRequested);
     bool saveDeviceRegistration(const std::string& serialNumber,uint64_t nodeId);
     // 등록 파일 읽기·쓰기(호출자가 fileMutex_를 잡는다). 쓰기는 임시 파일 → fsync → rename으로 원자적
     std::vector<std::string> readRegistrationLinesLocked();
@@ -129,7 +132,8 @@ private:
     std::unordered_set<uint64_t> mPairingNodes;
 
     std::unordered_map<std::string, uint64_t> mSerialToNodeId;
-    std::string getDeviceSerialNumber(uint64_t nodeId);
+    // 취소(종료)면 nullopt. 시리얼을 지원하지 않는 기기면 UNKNOWN_SERIAL_<노드>
+    std::optional<std::string> getDeviceSerialNumber(uint64_t nodeId, const std::atomic<bool>& cancelRequested);
     std::uint64_t getNodeId(const std::string& serialNumber);
     // 오프라인 상태인 기기의 NodeId(문자열)와 타임아웃 발생 시간을 기록
     std::unordered_map<std::string, std::chrono::steady_clock::time_point> mOfflineNodes;

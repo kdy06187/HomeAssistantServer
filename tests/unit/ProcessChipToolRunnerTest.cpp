@@ -327,6 +327,23 @@ TEST(ProcessChipToolRunnerTest, SecretCutByOutputCapLeavesNoFragment) {
     EXPECT_EQ(result.output.size(), ProcessChipToolRunner::kMaxOutputBytes - (secret.size() - 1) + marker.size());
 }
 
+// 표식은 마스킹 뒤에 붙는다: 비밀값이 표식 글자와 겹쳐도 표식이 가려지지 않는다
+TEST(ProcessChipToolRunnerTest, TruncatedMarkerIsAppendedAfterMasking) {
+    ProcessChipToolRunner runner;
+    const auto result = runner.run({"/usr/bin/head", "-c", "3000000", "/dev/zero"}, "", 5000ms, {"출력 잘림"});
+    const std::string marker = ProcessChipToolRunner::kTruncatedMarker;
+    ASSERT_GE(result.output.size(), marker.size());
+    EXPECT_EQ(result.output.substr(result.output.size() - marker.size()), marker);
+}
+
+// 시간 초과로 출력 중간에 끊긴 경우도 끝을 정리한다(비밀값 앞부분만 읽힌 채 멈춘 출력)
+TEST(ProcessChipToolRunnerTest, OutputCutByTimeoutLeavesNoSecretFragment) {
+    ProcessChipToolRunner runner;
+    const auto result = runner.run(sh("printf 'aaaaSECR'; sleep 5"), "", 500ms, {"SECRETPASS"});
+    EXPECT_TRUE(result.timedOut);
+    EXPECT_EQ(result.output.find("SECR"), std::string::npos) << result.output;
+}
+
 TEST(ProcessChipToolRunnerTest, TrimTruncatedTailUsesLongestSecret) {
     EXPECT_EQ(ProcessChipToolRunner::trimTruncatedTail("abcdefgh", {"xy", "wxyz"}), "abcde");
     EXPECT_EQ(ProcessChipToolRunner::trimTruncatedTail("abcdefgh", {}), "abcdefgh");

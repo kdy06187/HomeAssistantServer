@@ -278,13 +278,14 @@ ProcessResult ProcessChipToolRunner::run(const std::vector<std::string>& args, c
             }
         }
     }
+    // 출력이 끝(EOF)까지 오기 전에 멈췄으면(시간 초과·취소) 마지막 조각이 비밀값 중간에서 끊겼을 수 있다
+    const bool stoppedBeforeEof = outputOpen;
     closeIfOpen(outputPipe[0]);
     closeIfOpen(stdinWriter);
     if (truncated) {
         std::cerr << "[ChipToolRunner] 출력이 상한(" << kMaxOutputBytes << "바이트)을 넘어 잘랐습니다" << std::endl;
-        result.output = trimTruncatedTail(std::move(result.output), secretsToMask);
-        result.output += kTruncatedMarker;
     }
+    if (truncated || stoppedBeforeEof) result.output = trimTruncatedTail(std::move(result.output), secretsToMask);
     // cancelAll의 SIGTERM으로 자식이 먼저 끝나면 출력이 닫혀 위 반복이 정상 종료처럼 빠져나온다
     if (cancelled_ && !result.timedOut) result.cancelled = true;
 
@@ -309,6 +310,8 @@ ProcessResult ProcessChipToolRunner::run(const std::vector<std::string>& args, c
     reaped = true;
     result.exitCode = toExitCode(status);
     result.output = maskSecrets(std::move(result.output), secretsToMask);
+    // 표식은 마스킹 뒤에 붙인다(표식 글자가 비밀값과 겹쳐 가려지거나 비밀값 조각과 이어지지 않게)
+    if (truncated) result.output += kTruncatedMarker;
     return result;
 }
 

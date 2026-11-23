@@ -121,12 +121,12 @@ void MatterController::logChipToolDuration(const std::vector<std::string>& subco
 std::vector<std::string> MatterController::pairingSecrets(const std::string& wifiSsid, const std::string& wifiPassword,
                                                           const std::string& manualPincode, const std::string& pinText) {
     std::vector<std::string> secrets;
-    // SSID는 비밀은 아니지만 집 위치를 특정할 수 있어 가린다. 4바이트 미만은 공개 방송되는 값이라 가리지 않는다
-    // (1~3바이트를 ***로 바꾸면 16진 덤프 등 출력 전체가 망가진다)
-    if (wifiSsid.size() >= kMinMaskableSecretBytes) secrets.push_back(wifiSsid);
-    // 빈 값은 넣지 않는다(열린 Wi-Fi의 빈 비밀번호)
-    for (const std::string* secret : {&wifiPassword, &manualPincode, &pinText}) {
-        if (!secret->empty()) secrets.push_back(*secret);
+    // 네 값 모두 4바이트 이상만 가린다. 1~3바이트("on" 등)를 ***로 바꾸면 성공 문구까지 깨져 성공한 페어링을
+    // 실패로 판정하고, 16진 덤프 등 출력 전체가 망가진다. 빈 값(열린 Wi-Fi 비밀번호)도 여기서 빠진다.
+    // SSID는 비밀은 아니지만 집 위치를 특정할 수 있어 가리고, 짧은 SSID는 공개 방송 값이라 그대로 둔다.
+    // 짧은 비밀번호·코드·PIN은 가리지 못하므로 실패 출력을 아예 남기지 않는다(hasShortSecret)
+    for (const std::string* secret : {&wifiSsid, &wifiPassword, &manualPincode, &pinText}) {
+        if (secret->size() >= kMinMaskableSecretBytes) secrets.push_back(*secret);
     }
     return secrets;
 }
@@ -312,9 +312,15 @@ Result<CommissionOutcome> MatterController::commissionDevice(uint64_t nodeId, co
         return Result<CommissionOutcome>::failure(ErrorCode::Cancelled, "페어링 취소");
     }
     if (pairing.ok && ChipToolOutputParser::isCommissioningSuccessful(output)) {
-        const std::string serialNumber = this->onDevicePairingComplete(nodeId, name);
+        const auto serialNumber = this->onDevicePairingComplete(nodeId, name, cancelRequested);
+        if (!serialNumber) {
+            // 종료 중이라 chip-tool unpair도 거부된다. 기기 쪽 fabric에는 이 노드가 남는다(다음 등록 전 기기 초기화)
+            std::cerr << "[MatterController] 시리얼 읽기 중 취소 — 등록하지 않음, 기기 fabric에 노드 " << nodeId
+                      << "가 남을 수 있음(다시 등록하려면 기기 초기화)" << std::endl;
+            return Result<CommissionOutcome>::failure(ErrorCode::Cancelled, "시리얼 읽기 취소");
+        }
         std::cout << "[MatterController] 커미셔닝 성공. 기기 정보를 내부 스토리지에 저장" << std::endl;
-        outcome = Result<CommissionOutcome>::success(CommissionOutcome{serialNumber});
+        outcome = Result<CommissionOutcome>::success(CommissionOutcome{*serialNumber});
     } else {
         // 4바이트 미만 비밀값은 가리지 않으므로(위 pairingSecrets) 그런 값이 있으면 출력을 아예 남기지 않는다
         if (hasShortSecret(wifiPassword, manualPincode, pinText)) {
@@ -327,13 +333,15 @@ Result<CommissionOutcome> MatterController::commissionDevice(uint64_t nodeId, co
     return outcome;  // "페어링 중" 표시는 호출자의 PairingGuard가 푼다
 }
 
-std::string MatterController::getDeviceSerialNumber(uint64_t nodeId) {
+std::optional<std::string> MatterController::getDeviceSerialNumber(uint64_t nodeId, const std::atomic<bool>& cancelRequested) {
     std::cout << "[MatterController] 기기 시리얼 넘버 조회 중... (NodeID: " << nodeId << ")" << std::endl;
     
     // chip-tool basic 클러스터 사용
     const ChipToolOutcome result = runChipTool({"basicinformation", "read", "serial-number", std::to_string(nodeId), "0"},
                                                kSlowCommandTimeout, {}, true);
 
+    // 취소된 읽기를 "시리얼 없음"으로 보면 UNKNOWN_SERIAL_<노드>로 유령 기기가 등록된다
+    if (result.cancelled || cancelRequested) return std::nullopt;
     if (result.ok) {
         auto serial = ChipToolOutputParser::extractSerialNumber(result.output);
         if (serial) return *serial;
@@ -396,13 +404,18 @@ bool MatterController::sendCommand(const std::string& deviceId, const std::strin
 Result<CommissionOutcome> MatterController::commission(const CommissionRequest& request,
                                                        const std::unordered_set<std::string>& /*activeDeviceIds*/,
                                                        const std::atomic<bool>& cancelRequested){
+    // 종료 중이면 노드 번호를 쓰지 않고 바로 끝낸다
+    if (cancelRequested) return Result<CommissionOutcome>::failure(ErrorCode::Cancelled, "등록 전 취소");
     const uint64_t nodeId = reserveNodeIdForPairing();
     PairingGuard pairingGuard(*this, nodeId);
     return commissionDevice(nodeId, request.name, request.payload, request.ssid, request.password, cancelRequested);
 }
-std::string MatterController::onDevicePairingComplete(uint64_t nodeId, const std::string& deviceName) {
+std::optional<std::string> MatterController::onDevicePairingComplete(uint64_t nodeId, const std::string& deviceName,
+                                                                     const std::atomic<bool>& cancelRequested) {
     std::cout << "[MatterController] 기기 페어링 완료: NodeId=" << nodeId << ", DeviceName=" << deviceName << std::endl;
-    std::string serialNumber = getDeviceSerialNumber(nodeId);
+    const auto serial = getDeviceSerialNumber(nodeId, cancelRequested);
+    if (!serial) return std::nullopt;  // 매핑·등록 파일은 건드리지 않는다
+    const std::string& serialNumber = *serial;
     {
         std::lock_guard<std::mutex> stateLock(stateMutex_);
         mSerialToNodeId[serialNumber] = nodeId; // 시리얼 넘버와 NodeId 매핑 저장
