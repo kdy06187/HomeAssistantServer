@@ -81,8 +81,7 @@ private:
     std::string readCumulativeEnergyText(uint64_t nodeId, bool isManualRequest);
     std::string mChipToolPath;
     Result<CommissionOutcome> commissionDevice(uint64_t nodeId, const std::string& name, const std::string& manualPincode,
-                          const std::string& wifiSsid, const std::string& wifiPassword,
-                          const std::unordered_set<std::string>& activeDeviceIds);
+                          const std::string& wifiSsid, const std::string& wifiPassword);
     // chip-tool 한 번 실행 결과. ok는 "정상 실행·정상 종료(0)"일 때만 true —
     // 시간 초과·실행 실패·비정상 종료는 출력에 성공 표지가 있어도 실패다
     struct ChipToolOutcome {
@@ -116,7 +115,6 @@ private:
     };
     uint64_t mLastIssuedNodeId = 0; // stateMutex_
     std::string onDevicePairingComplete(uint64_t nodeId, const std::string& deviceName);
-    bool checkDeviceRegistered(uint64_t nodeId);
     bool saveDeviceRegistration(const std::string& serialNumber,uint64_t nodeId);
     // 등록 파일 읽기·쓰기(호출자가 fileMutex_를 잡는다). 쓰기는 임시 파일 → fsync → rename으로 원자적
     std::vector<std::string> readRegistrationLinesLocked();

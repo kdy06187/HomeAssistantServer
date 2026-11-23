@@ -216,22 +216,6 @@ bool MatterController::removeDeviceRegistration(const std::string& serialNumber)
     std::cout << "[MatterController] 기기(" << deviceIdStr << ") 정상 페어링 해제 완료" << std::endl;
     return true;
 }
-bool MatterController::checkDeviceRegistered(uint64_t nodeId) {
-    std::lock_guard<std::mutex> fileLock(fileMutex_);
-    std::ifstream file(mConfigFilePath);
-    std::string line;
-    while (std::getline(file, line)) {
-        size_t commaPos = line.find(',');
-        if (commaPos != std::string::npos) {
-            std::string savedNodeId = line.substr(commaPos + 1);
-            if (savedNodeId == std::to_string(nodeId)) {
-                return true; // 파일에 해당 Node ID가 존재하면 true
-            }
-        }
-    }
-    return false;
-}
-
 bool MatterController::saveDeviceRegistration(const std::string& serialNumber, uint64_t nodeId) {
     std::lock_guard<std::mutex> fileLock(fileMutex_);
     // 같은 시리얼의 옛 줄은 지우고 새 줄로 바꾼다(중복 줄이 쌓이면 시작 때 어느 노드가 맞는지 모호해진다)
@@ -294,19 +278,7 @@ bool MatterController::writeRegistrationLinesLocked(const std::vector<std::strin
 }
 //기기 등록
 Result<CommissionOutcome> MatterController::commissionDevice(uint64_t nodeId, const std::string& name,const std::string& manualPincode,
-                                const std::string& wifiSsid, const std::string& wifiPassword,
-                                const std::unordered_set<std::string>& activeDeviceIds){
-    if (checkDeviceRegistered(nodeId)) {
-        std::cout << "[MatterController]" << name <<  "(" << nodeId << ")는 이미 등록되어 있습니다. 커미셔닝을 건너뜁니다." << std::endl;
-        std::string deviceIdStr = std::to_string(nodeId);
-
-        if (activeDeviceIds.count(deviceIdStr) == 0) {
-            std::cout << "[MatterController] ⚠️ DB에 기기 정보가 누락되어 복구(Sync)를 수행합니다." << std::endl;
-            return Result<CommissionOutcome>::success(CommissionOutcome{deviceIdStr});
-        }
-        std::cout << "[MatterController] ✅ DB에도 이미 존재합니다. 커미셔닝을 완전히 건너뜁니다." << std::endl;
-        return Result<CommissionOutcome>::success(CommissionOutcome{});
-    }
+                                const std::string& wifiSsid, const std::string& wifiPassword){
     std::cout << "[MatterController] 기기 등록 시도: NodeId=" << nodeId << std::endl;
     const auto setupPin = mParseSetupPin ? mParseSetupPin(manualPincode)
                                          : Result<uint32_t>::failure(ErrorCode::Internal, "설정 코드 해석기 없음");
@@ -413,11 +385,12 @@ bool MatterController::sendCommand(const std::string& deviceId, const std::strin
     }
     return false;
 }
+// Matter 기기 ID(시리얼)는 페어링 뒤에야 알 수 있어 활성 ID 목록은 쓰지 않는다
 Result<CommissionOutcome> MatterController::commission(const CommissionRequest& request,
-                                                       const std::unordered_set<std::string>& activeDeviceIds){
+                                                       const std::unordered_set<std::string>& /*activeDeviceIds*/){
     const uint64_t nodeId = reserveNodeIdForPairing();
     PairingGuard pairingGuard(*this, nodeId);
-    return commissionDevice(nodeId, request.name, request.payload, request.ssid, request.password, activeDeviceIds);
+    return commissionDevice(nodeId, request.name, request.payload, request.ssid, request.password);
 }
 std::string MatterController::onDevicePairingComplete(uint64_t nodeId, const std::string& deviceName) {
     std::cout << "[MatterController] 기기 페어링 완료: NodeId=" << nodeId << ", DeviceName=" << deviceName << std::endl;

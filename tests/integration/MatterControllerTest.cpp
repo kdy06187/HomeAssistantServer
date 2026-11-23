@@ -13,6 +13,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdlib>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <future>
@@ -310,6 +311,26 @@ TEST_F(MatterControllerTest, SlowCommandsLogDurationWithoutArguments) {
     EXPECT_EQ(log.find("chip-tool onoff"), std::string::npos) << log;
     EXPECT_EQ(log.find("password1"), std::string::npos);
     EXPECT_EQ(log.find("home wifi"), std::string::npos);
+}
+
+// 등록 파일에만 있는(메모리와 어긋난) 노드 번호와 겹쳐도 페어링을 실제로 하고 시리얼을 ID로 돌려준다
+TEST_F(MatterControllerTest, StaleRegistrationFileLineDoesNotSkipPairing) {
+    const uint64_t now = static_cast<uint64_t>(std::time(nullptr));
+    {
+        std::ofstream out(configPath_, std::ios::app);
+        for (uint64_t node = now; node < now + 120; ++node) out << "SN-STALE-" << node << "," << node << "\n";
+    }
+    runner.respond = [](const std::vector<std::string>& sub) {
+        if (startsWith(sub, {"pairing", "ble-wifi"})) return FakeChipToolOutput::ok("Device commissioning completed with success");
+        if (startsWith(sub, {"basicinformation"})) return FakeChipToolOutput::ok("SerialNumber: SN-NEW");
+        return FakeChipToolOutput::ok("");
+    };
+    const auto outcome = controller->commission(CommissionRequest{"plug", kGoodCode, "home wifi", "password1"}, {});
+    ASSERT_TRUE(outcome.ok());
+    EXPECT_EQ(outcome.value->deviceId, "SN-NEW");
+    const auto calls = subcommands();
+    ASSERT_FALSE(calls.empty());
+    EXPECT_TRUE(startsWith(calls[0], {"pairing", "ble-wifi"}));
 }
 
 TEST_F(MatterControllerTest, BadSetupCodeFailsWithoutRunningChipTool) {

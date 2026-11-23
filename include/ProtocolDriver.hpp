@@ -12,7 +12,6 @@ struct CommissionRequest {
 };
 
 struct CommissionOutcome {
-    // 비어 있으면 이미 등록된 기기라 호출자가 등록할 것이 없다는 뜻
     std::string deviceId;
     // 등록 시점의 접속 IP(TCP만, 모르면 빈 문자열). 등록 때 함께 저장한다
     std::string ip;
