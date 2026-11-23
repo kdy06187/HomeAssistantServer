@@ -11,8 +11,9 @@
 
 class TCPDriver : public ProtocolDriver, public IMessageSender {
 public:
-    // Wi-Fi 설정을 보낸 뒤 기기가 접속하기를 기다리는 시간(초). 실기에서 잰 최댓값의 3배(20~30초)로 정한다
-    static constexpr int kCommissionConnectWaitSeconds = 30;
+    // Wi-Fi 설정을 보낸 뒤 기기가 접속하기를 기다리는 시간(초). 규칙은 "실기 측정 최댓값×3, 20~30초".
+    // 실기(2026-11-23) 3회 2·5·2초 → 5×3=15초가 하한 20초보다 작아 20초
+    static constexpr int kCommissionConnectWaitSeconds = 20;
 
     // pcAgentId: "TCP_" + MAC 12자(PC 종료 메시지를 받을 에이전트), 없으면 모든 연결에 보낸다
     explicit TCPDriver(MacResolver& macResolver, std::optional<std::string> pcAgentId = std::nullopt);
