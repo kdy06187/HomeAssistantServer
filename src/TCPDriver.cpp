@@ -68,7 +68,7 @@ Result<CommissionOutcome> TCPDriver::commission(const CommissionRequest& request
         if (candidate) {
             // 수락 스레드가 이미 TCP_<MAC> ID로 연결을 맵에 넣었으므로 ID만 돌려주면 된다
             std::cout << "[TCPDriver] 커미셔닝 완료 : " << name << " (" << *candidate << ", " << (waited + 1) << "초)" << std::endl;
-            return Result<CommissionOutcome>::success(CommissionOutcome{*candidate});
+            return Result<CommissionOutcome>::success(CommissionOutcome{*candidate, server_.peerIpOf(*candidate).value_or("")});
         }
     }
 

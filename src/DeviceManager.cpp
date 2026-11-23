@@ -24,6 +24,11 @@ void DeviceManager::initFromDatabase(){
     auto loadedDevices = db_.loadActiveDevices();
     for(auto& dev : loadedDevices){
         std::cout << "[DeviceManager] DB에서 기기 로드 중: " << dev.name << " (" << dev.id << ") - 프로토콜: " << getProtocolString(dev.protocol_type) << std::endl;
+        // 1차 ID(ARD_<IP>)는 자동으로 옮기지 않는다. 2차 서버에서는 그 ID로 연결되는 기기가 없다
+        if (dev.protocol_type == ProtocolType::TCP_DIY && dev.id.rfind("ARD_", 0) == 0) {
+            std::cerr << "[DeviceManager] 옛 TCP 기기 ID(" << RequestValidation::sanitizeForLog(dev.id)
+                      << ") — 2차에서는 연결되지 않음, 삭제 후 재등록 필요" << std::endl;
+        }
         // 기기 드라이버는 프로토콜과 무관하게 붙인다(발송기는 팩토리가 쥐고 있다)
         if (!dev.driver_types.empty()) {
             deviceDrivers_.attachDriversToDevice(dev, dev.driver_types);
@@ -42,9 +47,10 @@ void DeviceManager::initFromDatabase(){
 }
 // 기기 추가
 bool DeviceManager::addDevice(std::string id, std::string name, ProtocolType protocol_type,
-                              const std::vector<DriverType>& driverTypes){
+                              const std::vector<DriverType>& driverTypes, const std::string& ip){
     Device newDevice(id, name, protocol_type);
     newDevice.state = "UNKNOWN";
+    newDevice.ip = ip;
     newDevice.driver_types = driverTypes;
     deviceDrivers_.attachDriversToDevice(newDevice, driverTypes);
     // DB에 먼저 저장하고 성공했을 때만 메모리에 넣는다. 그래야 실패 시 되돌릴 것이 없고,
@@ -214,7 +220,7 @@ bool DeviceManager::startCommissioning(ProtocolType type, std::string name, std:
     const auto outcome = driver->commission(CommissionRequest{name, payload, ssid, password}, idsSnapshot);
     bool isCommissioned = outcome.ok();
     if (isCommissioned && !outcome.value->deviceId.empty() &&
-        !addDevice(outcome.value->deviceId, name, type, driverTypes)) {
+        !addDevice(outcome.value->deviceId, name, type, driverTypes, outcome.value->ip)) {
         // 기기는 페어링됐지만 서버 등록은 실패: 드라이버 쪽 등록(Matter 매핑·등록 파일, TCP 연결)도 정리해
         // "실패 = 아무것도 남지 않음"이 되게 한다. 락 밖에서 부른다
         isCommissioned = false;
@@ -227,6 +233,22 @@ bool DeviceManager::startCommissioning(ProtocolType type, std::string name, std:
     std::cout << "[DeviceManager] " << getProtocolString(type) << " 커미셔닝 결과: "
               << (isCommissioned ? "성공" : "실패") << std::endl;
     return isCommissioned;
+}
+void DeviceManager::onTcpConnected(const std::string& deviceId, const std::string& ip){
+    bool writeDatabase = true;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto it = devices_.find(deviceId);
+        if (it != devices_.end()) {
+            if (it->second.protocol_type != ProtocolType::TCP_DIY || it->second.ip == ip) {
+                writeDatabase = false;  // Matter 기기와 같은 ID이거나 바뀐 것이 없다
+            } else {
+                it->second.ip = ip;
+            }
+        }
+    }
+    // DB는 락 밖에서. 로드 전·미등록이면 0행으로 끝난다
+    if (writeDatabase) db_.updateDeviceIp(deviceId, ip);
 }
 // 순서: [락] 맵에서 꺼냄 → DB에 숨김 표시(실패 시 되돌림) → 대기 명령 취소 → 락 없이 해제.
 // 숨김을 먼저 저장해, 해제가 실패하거나 예외를 던져도 재시작 뒤 기기가 되살아나지 않게 한다.

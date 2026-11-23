@@ -18,6 +18,8 @@ struct Device {
     std::string name;
     ProtocolType protocol_type;
     std::string state;
+    // TCP_DIY 기기의 마지막 접속 IP(표시용). 모르면 빈 문자열, Matter는 항상 빈 문자열
+    std::string ip;
 
     // 🌟 핵심: 기기에 부착된 특수 드라이버들을 담아두는 배열
     // (이 드라이버들을 꺼내서 실행하는 역할은 DriverManager가 담당합니다)

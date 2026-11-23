@@ -65,6 +65,8 @@ public:
                                   std::chrono::milliseconds timeout = kResponseTimeout);
 
     std::vector<std::string> connectedIds();
+    // 그 ID 연결의 상대 IP(없으면 nullopt)
+    std::optional<std::string> peerIpOf(const std::string& deviceId);
     // 맵에서 빼서 돌려준다(없으면 nullptr). 닫기는 호출자가 한다
     std::shared_ptr<TcpConnection> take(const std::string& deviceId);
     // keep에 없는 ID의 연결을 모두 닫는다(커미셔닝 전 좀비 정리)

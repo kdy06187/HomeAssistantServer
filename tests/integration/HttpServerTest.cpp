@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <algorithm>
+#include <map>
 #include "DatabaseManager.hpp"
 #include "UtcTime.hpp"
 #include "support/HistoryTestHelper.hpp"
@@ -312,7 +313,47 @@ TEST_F(HttpServerTest, E1ListsDevices) {
     ASSERT_TRUE(one);
     EXPECT_EQ(json::parse(one->body),
               json::parse(R"({"totalCount":1,"devices":[
-                  {"deviceId":"FAKE_1","name":"lamp","protocolType":"TCP_DIY","state":"UNKNOWN"}]})"));
+                  {"deviceId":"FAKE_1","name":"lamp","protocolType":"TCP_DIY","state":"UNKNOWN","ip":null}]})"));
+}
+
+// TCP 기기는 마지막 접속 IP(문자열), Matter는 null. 재접속으로 IP가 바뀌면 목록에 반영된다
+TEST_F(HttpServerTest, E1ShowsTcpIpAndNullForMatter) {
+    manager.addDevice("TCP_A1B2C3D4E5F6", "lamp", ProtocolType::TCP_DIY, {}, "192.168.0.50");
+    addDevice(ProtocolType::MATTER, "SN12345", "plug");
+    manager.onTcpConnected("SN12345", "192.168.0.99");  // Matter와 같은 ID가 접속해도 ip를 붙이지 않는다
+    auto listIps = [&] {
+        auto response = httplib::Client("127.0.0.1", port).Get("/api/devices", authHeaders());
+        std::map<std::string, json> ips;
+        if (!response) return ips;
+        const json body = json::parse(response->body);  // 임시 객체의 하위 참조를 돌면 수명이 끝난 값을 읽는다
+        for (const auto& device : body["devices"]) ips[device["deviceId"].get<std::string>()] = device["ip"];
+        return ips;
+    };
+    auto ips = listIps();
+    EXPECT_EQ(ips["TCP_A1B2C3D4E5F6"], "192.168.0.50");
+    EXPECT_TRUE(ips["SN12345"].is_null());
+
+    manager.onTcpConnected("TCP_A1B2C3D4E5F6", "192.168.0.51");
+    EXPECT_EQ(listIps()["TCP_A1B2C3D4E5F6"], "192.168.0.51");
+}
+
+// 2차 ID 모양(TCP_<MAC12>)도 경로 검증을 통과하고 E5 200, E6·E7 400 UNSUPPORTED_OPERATION이다
+TEST_F(HttpServerTest, RealTcpMacIdPassesPathValidationForE5E6E7) {
+    const std::string id = "TCP_A1B2C3D4E5F6";
+    manager.addDevice(id, "lamp", ProtocolType::TCP_DIY, {});
+    tcpFake.stateToReturn = "ON";
+    httplib::Client client("127.0.0.1", port);
+    auto state = client.Get("/api/devices/" + id + "/state", authHeaders());
+    ASSERT_TRUE(state);
+    EXPECT_EQ(state->status, 200);
+    EXPECT_EQ(json::parse(state->body)["deviceId"], id);
+    const json unsupported = json::parse(R"({"error":{"code":"UNSUPPORTED_OPERATION","message":"이 기기에서 지원하지 않는 요청입니다."}})");
+    for (const std::string suffix : {"/energy", "/energy/history"}) {
+        auto response = client.Get("/api/devices/" + id + suffix, authHeaders());
+        ASSERT_TRUE(response) << suffix;
+        EXPECT_EQ(response->status, 400) << suffix;
+        EXPECT_EQ(json::parse(response->body), unsupported) << suffix;
+    }
 }
 
 // 이름이 "error"여도 오류 응답으로 오인되지 않고 200 목록이다

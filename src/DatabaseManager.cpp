@@ -246,10 +246,11 @@ bool DatabaseManager::migrateToV1Locked() {
 bool DatabaseManager::insertDevice(const Device& device) {
     // INSERT OR REPLACE는 행을 지우고 다시 넣어 ip 등 다른 열을 NULL로 되돌리므로 UPSERT로 갱신한다.
     // 다시 등록된 기기는 활성이므로 deleted_at은 지운다.
-    const char* sql = "INSERT INTO devices (device_id, display_name, protocol_type, is_active, driverTypes) VALUES (?, ?, ?, ?, ?) "
+    // ip가 비어 있으면(NULL) 저장된 ip를 그대로 둔다
+    const char* sql = "INSERT INTO devices (device_id, display_name, protocol_type, is_active, driverTypes, ip) VALUES (?, ?, ?, ?, ?, ?) "
                       "ON CONFLICT(device_id) DO UPDATE SET display_name = excluded.display_name, "
                       "protocol_type = excluded.protocol_type, is_active = excluded.is_active, "
-                      "driverTypes = excluded.driverTypes, deleted_at = NULL;";
+                      "driverTypes = excluded.driverTypes, ip = COALESCE(excluded.ip, devices.ip), deleted_at = NULL;";
     std::lock_guard<std::mutex> lock(mutex_);
     if (!db_) return false;
     sqlite3_stmt* stmt;
@@ -276,6 +277,11 @@ bool DatabaseManager::insertDevice(const Device& device) {
         }
     }
     sqlite3_bind_text(stmt, 5, driverStr.c_str(), -1, SQLITE_TRANSIENT);
+    if (device.ip.empty()) {
+        sqlite3_bind_null(stmt, 6);
+    } else {
+        sqlite3_bind_text(stmt, 6, device.ip.c_str(), -1, SQLITE_STATIC);
+    }
     bool success = (sqlite3_step(stmt) == SQLITE_DONE);
     if (!success) {
         std::cerr << "[DB 에러] 기기 저장 실패: " << sqlite3_errmsg(db_) << "\n";
@@ -290,7 +296,7 @@ std::vector<Device> DatabaseManager::loadActiveDevices() {
     std::lock_guard<std::mutex> lock(mutex_);
     std::vector<Device> devices;
     if (!db_) return devices;
-    const char* sql = "SELECT device_id, display_name, protocol_type, is_active, driverTypes FROM devices WHERE deleted_at IS NULL;";
+    const char* sql = "SELECT device_id, display_name, protocol_type, is_active, driverTypes, ip FROM devices WHERE deleted_at IS NULL;";
     sqlite3_stmt* stmt;
 
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
@@ -314,6 +320,8 @@ std::vector<Device> DatabaseManager::loadActiveDevices() {
         
         int isActive = sqlite3_column_int(stmt, 3);
         dev.state = (isActive == 1) ? "ON" : "OFF"; // 1/0을 다시 문자열로 복원
+        const unsigned char* ipText = sqlite3_column_text(stmt, 5);
+        dev.ip = ipText ? reinterpret_cast<const char*>(ipText) : "";
         
         const unsigned char* driverTypesText = sqlite3_column_text(stmt, 4);
         if (driverTypesText != nullptr) {
@@ -363,6 +371,23 @@ bool DatabaseManager::updateDeviceState(const std::string& device_id, int is_act
 
     bool success = (sqlite3_step(stmt) == SQLITE_DONE);
     if (!success) std::cerr << "[DB 에러] 상태 저장 실패(" << device_id << "): " << sqlite3_errmsg(db_) << "\n";
+    sqlite3_finalize(stmt);
+    return success;
+}
+bool DatabaseManager::updateDeviceIp(const std::string& device_id, const std::string& ip) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!db_) return false;
+    // 숨긴 기기는 되살리지 않으므로 갱신하지 않는다
+    const char* sql = "UPDATE devices SET ip = ? WHERE device_id = ? AND deleted_at IS NULL;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "[DB 에러] IP 저장 준비 실패(" << device_id << "): " << sqlite3_errmsg(db_) << "\n";
+        return false;
+    }
+    sqlite3_bind_text(stmt, 1, ip.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 2, device_id.c_str(), -1, SQLITE_STATIC);
+    const bool success = (sqlite3_step(stmt) == SQLITE_DONE);
+    if (!success) std::cerr << "[DB 에러] IP 저장 실패(" << device_id << "): " << sqlite3_errmsg(db_) << "\n";
     sqlite3_finalize(stmt);
     return success;
 }

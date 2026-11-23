@@ -21,6 +21,15 @@
 #include <unistd.h>
 #include <sys/stat.h>  // umask
 namespace {
+// 소멸 시 TCP 수락 스레드를 멈춘다. 수락 스레드가 접속 알림으로 DeviceManager를 부르므로,
+// manager보다 늦게 선언해(먼저 소멸) 조기 return에서도 소멸한 manager를 부르지 않게 한다
+struct TcpServerStopGuard {
+    explicit TcpServerStopGuard(TCPDriver& target) : driver(target) {}
+    ~TcpServerStopGuard() { driver.stopServer(); }
+    TcpServerStopGuard(const TcpServerStopGuard&) = delete;
+    TcpServerStopGuard& operator=(const TcpServerStopGuard&) = delete;
+    TCPDriver& driver;
+};
 // 소멸 시 스케줄러를 멈춘다(이미 멈췄으면 아무 일도 하지 않음)
 struct SchedulerStopGuard {
     explicit SchedulerStopGuard(DelayedCommandScheduler& target) : scheduler(target) {}
@@ -87,7 +96,7 @@ int main() {
     }
     std::cout << "✅ 데이터베이스 로드 완료!" << std::endl;
     // 1. 조립. 선언의 역순으로 소멸하므로 "쓰는 쪽"을 나중에 선언한다:
-    //    httpServer → periodicTasks → 스케줄러 가드 → manager → scheduler → 드라이버·러너 → clock → database 순으로 소멸
+    //    httpServer → periodicTasks → TCP 정지 가드 → 스케줄러 가드 → manager → scheduler → 드라이버·러너 → clock → database 순으로 소멸
     DriverManager deviceDrivers;
     SystemClock clock;
     ProcNetArpResolver macResolver;  // 접속 IP → MAC(기기 ID)
@@ -98,7 +107,13 @@ int main() {
     DeviceManager manager(database, deviceDrivers, scheduler, clock);
     // 예외·조기 return으로 나가도 만기 작업이 해제된 드라이버를 쓰기 전에 스케줄러 스레드를 멈춘다
     SchedulerStopGuard schedulerStopGuard(scheduler);
+    TcpServerStopGuard tcpServerStopGuard(tcpDriver);
     PeriodicTasks periodicTasks(manager);
+
+    // 접속한 TCP 기기의 IP를 목록(E1)·DB에 반영한다. 수락 스레드가 맵 락 없이 부른다
+    tcpDriver.setConnectionListener([&manager](const TcpConnectionInfo& info) {
+        manager.onTcpConnected(info.deviceId, info.ip);
+    });
 
     // 2. 포트 8080으로 TCP 서버 시작
     // 포트를 못 열면(이전 프로세스가 남아 있는 등) 반쯤 켜진 채 돌지 않고 바로 끝낸다

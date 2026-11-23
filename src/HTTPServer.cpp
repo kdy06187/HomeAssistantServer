@@ -356,6 +356,12 @@ ApiResponse HTTPServer::handleGetDevices(){
         item["name"] = device.name;
         item["protocolType"] = mDeviceManager.getProtocolString(device.protocol_type);
         item["state"] = device.state;
+        // 표시용. Matter와 아직 접속한 적 없는 TCP 기기는 null
+        if (device.protocol_type == ProtocolType::TCP_DIY && !device.ip.empty()) {
+            item["ip"] = device.ip;
+        } else {
+            item["ip"] = nullptr;
+        }
         devices.push_back(std::move(item));
     }
     json response;

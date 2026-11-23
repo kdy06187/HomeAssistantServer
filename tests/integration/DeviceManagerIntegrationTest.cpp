@@ -242,6 +242,92 @@ TEST_F(DeviceManagerIntegrationTest, InitFromDatabaseLoadsDevicesAndAttachesDriv
     EXPECT_EQ(loaded.attached_drivers.size(), 1u);
 }
 
+// ---- 마지막 접속 IP ----
+
+TEST_F(DeviceManagerIntegrationTest, TcpReconnectWithNewIpUpdatesMemoryAndDatabase) {
+    ASSERT_TRUE(manager.addDevice("TCP_A1B2C3D4E5F6", "lamp", ProtocolType::TCP_DIY, {}, "192.168.0.50"));
+    EXPECT_EQ(findInDatabase("TCP_A1B2C3D4E5F6").ip, "192.168.0.50");
+
+    manager.onTcpConnected("TCP_A1B2C3D4E5F6", "192.168.0.77");
+
+    Device inMemory;
+    ASSERT_TRUE(manager.getDevice("TCP_A1B2C3D4E5F6", inMemory));
+    EXPECT_EQ(inMemory.ip, "192.168.0.77");
+    EXPECT_EQ(findInDatabase("TCP_A1B2C3D4E5F6").ip, "192.168.0.77");
+}
+
+TEST_F(DeviceManagerIntegrationTest, ReRegistrationWithoutIpKeepsStoredIp) {
+    ASSERT_TRUE(manager.addDevice("TCP_A1B2C3D4E5F6", "lamp", ProtocolType::TCP_DIY, {}, "192.168.0.50"));
+    ASSERT_TRUE(manager.addDevice("TCP_A1B2C3D4E5F6", "lamp2", ProtocolType::TCP_DIY, {}));
+    EXPECT_EQ(findInDatabase("TCP_A1B2C3D4E5F6").ip, "192.168.0.50");
+}
+
+TEST_F(DeviceManagerIntegrationTest, CommissioningStoresConnectionIp) {
+    tcpFake.commissionResult = Result<CommissionOutcome>::success(CommissionOutcome{"TCP_A1B2C3D4E5F6", "192.168.0.60"});
+    ASSERT_TRUE(manager.startCommissioning(ProtocolType::TCP_DIY, "lamp", ""));
+    EXPECT_EQ(findInDatabase("TCP_A1B2C3D4E5F6").ip, "192.168.0.60");
+    Device inMemory;
+    ASSERT_TRUE(manager.getDevice("TCP_A1B2C3D4E5F6", inMemory));
+    EXPECT_EQ(inMemory.ip, "192.168.0.60");
+}
+
+// 시작 때 메모리에 올리기 전에 접속하면 DB만 바뀌고, 로드하면 그 값이 보인다
+TEST_F(DeviceManagerIntegrationTest, ConnectionBeforeLoadUpdatesDatabaseOnly) {
+    Device stored("TCP_A1B2C3D4E5F6", "lamp", ProtocolType::TCP_DIY);
+    stored.ip = "192.168.0.50";
+    ASSERT_TRUE(database.insertDevice(stored));
+
+    manager.onTcpConnected("TCP_A1B2C3D4E5F6", "192.168.0.88");
+    EXPECT_TRUE(manager.getAllDevices().empty());
+    manager.initFromDatabase();
+
+    Device loaded;
+    ASSERT_TRUE(manager.getDevice("TCP_A1B2C3D4E5F6", loaded));
+    EXPECT_EQ(loaded.ip, "192.168.0.88");
+}
+
+TEST_F(DeviceManagerIntegrationTest, HiddenDeviceIpIsNotUpdated) {
+    ASSERT_TRUE(manager.addDevice("TCP_A1B2C3D4E5F6", "lamp", ProtocolType::TCP_DIY, {}, "192.168.0.50"));
+    ASSERT_TRUE(manager.removeDevice("TCP_A1B2C3D4E5F6").ok());
+
+    manager.onTcpConnected("TCP_A1B2C3D4E5F6", "192.168.0.99");
+    EXPECT_TRUE(findInDatabase("TCP_A1B2C3D4E5F6").id.empty()) << "숨긴 기기를 되살리면 안 된다";
+
+    // ip 없이 재등록하면 저장된 ip가 보존되므로, 숨긴 동안 바뀌지 않았는지 볼 수 있다
+    ASSERT_TRUE(manager.addDevice("TCP_A1B2C3D4E5F6", "lamp", ProtocolType::TCP_DIY, {}));
+    EXPECT_EQ(findInDatabase("TCP_A1B2C3D4E5F6").ip, "192.168.0.50");
+}
+
+TEST_F(DeviceManagerIntegrationTest, LegacyArdIdLoadedFromDatabaseLogsReRegistrationWarning) {
+    ASSERT_TRUE(database.insertDevice(Device("ARD_192.168.0.10", "old switch", ProtocolType::TCP_DIY)));
+    ASSERT_TRUE(database.insertDevice(Device("TCP_A1B2C3D4E5F6", "new switch", ProtocolType::TCP_DIY)));
+    ::testing::internal::CaptureStderr();
+    manager.initFromDatabase();
+    const std::string log = ::testing::internal::GetCapturedStderr();
+    EXPECT_NE(log.find("옛 TCP 기기 ID(ARD_192.168.0.10)"), std::string::npos) << log;
+    EXPECT_EQ(log.find("옛 TCP 기기 ID(TCP_"), std::string::npos);
+    EXPECT_EQ(manager.getAllDevices().size(), 2u);  // 자동 이전·삭제 없음
+}
+
+// 수락 스레드의 접속 알림과 목록 조회·상태 변경이 겹쳐도 경쟁이 없다(TSan)
+TEST_F(DeviceManagerIntegrationTest, ConcurrentConnectionNotificationsAndReadsAreRaceFree) {
+    ASSERT_TRUE(manager.addDevice("TCP_A1B2C3D4E5F6", "lamp", ProtocolType::TCP_DIY, {}));
+    std::atomic<bool> stop{false};
+    std::thread notifier([&] {
+        for (int i = 0; i < 200; ++i) manager.onTcpConnected("TCP_A1B2C3D4E5F6", "10.0.0." + std::to_string(i % 250));
+        stop = true;
+    });
+    while (!stop) {
+        for (const auto& device : manager.getAllDevices()) EXPECT_FALSE(device.id.empty());
+        manager.updateDeviceState("TCP_A1B2C3D4E5F6", "ON");
+    }
+    notifier.join();
+    Device device;
+    ASSERT_TRUE(manager.getDevice("TCP_A1B2C3D4E5F6", device));
+    EXPECT_EQ(device.ip, "10.0.0.199");
+    EXPECT_EQ(findInDatabase("TCP_A1B2C3D4E5F6").ip, "10.0.0.199");
+}
+
 TEST_F(DeviceManagerIntegrationTest, PeriodicTasksStopReturnsQuickly) {
     PeriodicTasks tasks(manager);
     tasks.start();

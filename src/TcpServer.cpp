@@ -348,6 +348,12 @@ std::vector<std::string> TcpServer::connectedIds() {
     return ids;
 }
 
+std::optional<std::string> TcpServer::peerIpOf(const std::string& deviceId) {
+    auto connection = find(deviceId);
+    if (!connection) return std::nullopt;
+    return connection->peerIp();
+}
+
 std::shared_ptr<TcpConnection> TcpServer::take(const std::string& deviceId) {
     std::lock_guard<std::mutex> lock(connectionsMutex_);
     auto it = connections_.find(deviceId);

@@ -28,6 +28,8 @@ public:
     void sendToPcAgent(const std::string& jsonLine) override;
     // TCP 서버 시작 및 종료 메서드
     bool startServer(int port, const std::string& bindAddress = "0.0.0.0");  // 포트를 열지 못하면 false
+    // 기기 연결 알림. startServer 전에 한 번만 설정한다
+    void setConnectionListener(TcpServer::ConnectionListener listener) { server_.setConnectionListener(std::move(listener)); }
     void stopServer();
 private:
     // BLE로 기기를 찾아 Wi-Fi·서버 주소를 쓴다. 실패는 예외(이유가 정해진 실패는 CommissionAbort)

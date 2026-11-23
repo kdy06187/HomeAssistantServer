@@ -61,7 +61,7 @@ public:
     // 디바이스 등록 API - 디바이스를 등록하고, 프로토콜 타입에 맞는 드라이버를 통해 초기화.
     // DB에 먼저 저장하고, 성공했을 때만 메모리에 넣는다. 실패하면 false(메모리 불변)
     bool addDevice(std::string id, std::string name, ProtocolType protocol_type,
-                   const std::vector<DriverType>& driverTypes);
+                   const std::vector<DriverType>& driverTypes, const std::string& ip = "");
     bool getDevice(std::string id, Device& outDevice);
     // 드라이버에 실제 상태를 묻고 바뀌었으면 저장한다. 없는 기기는 DeviceNotFound
     Result<std::string> refreshState(const std::string& id, bool isManualRefresh);
@@ -76,6 +76,10 @@ public:
     // 숨김 삭제. 없는(이미 숨긴) 기기는 DeviceNotFound, 숨김 저장 실패는 Internal(기기는 그대로 남는다)
     Result<DeleteOutcome> removeDevice(const std::string& id);
     std::unordered_set<std::string> activeDeviceIds();
+
+    // TCP 기기 연결이 맵에 들어갔을 때(TcpServer 수락 스레드, 락 없이) 부른다.
+    // 메모리의 ip가 다르면 바꾸고 DB에도 쓴다. 아직 메모리에 없는 ID는 DB 갱신만 시도한다(숨긴·없는 기기는 0행)
+    void onTcpConnected(const std::string& deviceId, const std::string& ip);
 
     // 종료가 시작됐음을 알린다. 이후 드라이버 호출 실패(취소된 chip-tool 등)는 기기 상태·DB에 기록하지 않는다
     void beginShutdown() { isShuttingDown_ = true; }

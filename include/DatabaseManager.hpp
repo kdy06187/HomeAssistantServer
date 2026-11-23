@@ -41,6 +41,8 @@ public:
     bool insertDevice(const Device& device);               // 기기 저장(이미 있으면 갱신, ip는 보존)
     std::vector<Device> loadActiveDevices();               // 숨기지 않은 기기만 불러오기
     bool updateDeviceState(const std::string& id, int isActive); // 상태 변경
+    // 숨기지 않은 기기의 마지막 접속 IP를 바꾼다. 없는·숨긴 기기는 0행이며 실패가 아니다(DB 오류만 false)
+    bool updateDeviceIp(const std::string& id, const std::string& ip);
     // 기기를 숨긴다(통계·이력은 유지). 없거나 이미 숨긴 기기는 DeviceNotFound, DB 오류는 Internal
     Status markDeleted(const std::string& id, const std::string& deletedAtUtc);
     void close();
