@@ -106,16 +106,16 @@
 |---|---|---|
 | `protocolType` | 예 | `"MATTER"` / `"TCP_DIY"` |
 | `deviceName` | 예 | 표시 이름. 1~64자 |
-| `payload` | 예 | MATTER: 수동 코드 **숫자만 11 또는 21자리**(앱이 `-`·공백 제거) 또는 QR 내용 `MT:` + `0-9 A-Z . -`. TCP_DIY: 기기가 접속할 서버 LAN IP(IPv4 점 표기) 또는 `""`(서버 기본값) |
+| `payload` | 예 | MATTER: 수동 코드 **숫자만 11 또는 21자리**(앱이 `-`·공백 제거) 또는 QR 내용 `MT:` + `0-9 A-Z . -`. TCP_DIY: 기기가 접속할 서버 LAN IP(IPv4 점 표기) 또는 `""`(**앱이 접속한 서버 주소**) |
 | `ssid` | 아니오 | 0~32바이트(UTF-8), 빠지면 `""` |
 | `password` | 아니오 | 0~63바이트, 빠지면 `""` |
 | `driverTypes` | 아니오 | §1.2의 값만 |
 
-- 공통: 모든 문자열 필드에 제어문자(개행 `\r` `\n`, Tab, `\0` 등) 금지. SSID·비밀번호의 공백·따옴표 허용 여부는 **확인 필요**(실기 C-6 뒤 확정, 안전하게 처리 못 하는 문자는 400).
+- 공통: 모든 문자열 필드에 제어문자(개행 `\r` `\n`, Tab, `\0` 등) 금지. SSID·비밀번호의 공백·따옴표는 **허용**(제어문자만 금지).
 
 | 경우 | HTTP | 본문 |
 |---|---|---|
-| 접수 | **202** | `{"jobId": "c-20261117-0001", "state": "PENDING"}` |
+| 접수 | **202** | `{"jobId": "c-tk3q5s-1", "state": "PENDING"}` |
 | 다른 등록 실행 중 | 409 | `COMMISSION_BUSY` |
 | 필드 오류·입력 제한 위반 | 400 | `INVALID_REQUEST` |
 
@@ -124,7 +124,7 @@
 
 ### E8. GET `/api/commission/{jobId}` (신규)
 
-**200** `{"jobId": "c-20261117-0001", "state": "SUCCEEDED", "deviceId": "SN12345", "restored": false, "error": null}`
+**200** `{"jobId": "c-tk3q5s-1", "state": "SUCCEEDED", "deviceId": "SN12345", "restored": false, "error": null}`
 
 | 필드 | 설명 |
 |---|---|
@@ -135,13 +135,13 @@
 
 | `error.code` | `message` | 언제 |
 |---|---|---|
-| `COMMISSION_FAILED` | 기기 등록에 실패했습니다. | BLE 기기 못 찾음·페어링 실패 등 |
+| `COMMISSION_FAILED` | 기기 등록에 실패했습니다. | BLE 기기 못 찾음·페어링 실패·서버 저장 실패 등 |
 | `COMMISSION_TIMEOUT` | 기기 등록 시간이 초과되었습니다. | 작업 제한 시간 |
 | `CANCELLED` | 서버 종료로 취소되었습니다. | 서버 종료 |
-| `ALREADY_REGISTERED` | 이미 등록된 기기입니다. | 이미 활성으로 등록된 기기(덮어쓰지 않음, S-05) |
+| `ALREADY_REGISTERED` | 이미 등록된 기기입니다. | 이미 활성으로 등록된 기기(덮어쓰지 않음, S-05). 등록된 TCP 기기를 초기화해 다시 등록한 경우, 등록된 Matter 기기를 다시 페어링한 경우 포함(삭제 뒤 재등록하면 기록을 이어받음) |
 
 - 없는 작업 → 404 `JOB_NOT_FOUND`(E1로 등록 여부 확인).
-- 폴링 2초 간격. 서버 제한 시간: TCP_DIY 약 25초, MATTER 120초(**확인 필요** C-7). 앱은 180초가 지나면 E1로 확인.
+- 폴링 2초 간격. 서버 제한 시간: TCP_DIY 약 30초(BLE 스캔 5 + 연결 0.8 + 쓰기 + 접속 대기 20 + 여유), MATTER 190초(페어링 180 + 시리얼 10, 실기 K-1 측정 뒤 다시 계산). 앱은 210초가 지나면 E1로 확인.
 - 작업 상태는 서버 메모리에만, 끝난 작업은 1시간 조회 가능.
 
 ### E4. POST `/api/devices/delete` (숨김)
@@ -280,3 +280,4 @@ MAJOR 아님: E7 `from/to/period/limit` 추가(MINOR, APP-REQ) / E7 순서 설�
 | | 2026-11-18 | 접속 LAN 유지(HTTPS 보류), E3 입력 제한(#16), E7 400 조건 명시, 고정 오류 문구, `ALREADY_REGISTERED`, `{deviceId}` 형식, `unpaired:false` 경고 | ADR-011, S-05·09·10·11·15·16 | ⬜ | ⬜ |
 | | 2026-11-22 | E7 `from`·`to` 연도 2000~2100, 밖이면 400 `INVALID_REQUEST`(서버 12a-7 구현) | REQ-12 | ✅ 12a-7 | ⬜ |
 | | 2026-11-23 | §1 8080 "DIY 기기·PC 에이전트용", §6 10행 "자동 이전 없음 — 재등록", §6 `{deviceId}` 형식 문구(K5·K6·K10). E1 `ip`·`TCP_<MAC12>`는 초안 그대로 서버 구현 | REQ-05, REQ-13 | ✅ 12b | ⬜ |
+| | 2026-11-24 | E3 SSID·비밀번호 공백·따옴표 허용, TCP_DIY `""` = 앱이 접속한 서버 주소 / E8 jobId 예시, 제한 시간 TCP 약 30초·MATTER 190초·앱 210초, `ALREADY_REGISTERED`(초기화·재페어링)·`COMMISSION_FAILED`(서버 저장 실패) 설명(K1·K2·K3·K7·K15~K17) | REQ-10, REQ-13 | ✅ 13b | ⬜ |

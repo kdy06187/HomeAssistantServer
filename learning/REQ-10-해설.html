@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>REQ-10 해설 - 비동기 커미셔닝</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--fg:#1d2330;--sub:#5b6477;--ac:#2f6fed;--code:#0f1523;--codefg:#e6edf7;--add:#12391f;--del:#4a1620;--bd:#dde1e8}
+@media (prefers-color-scheme:dark){:root{--bg:#10131a;--card:#181d28;--fg:#e6e9ef;--sub:#9aa4b8;--ac:#6b9cff;--code:#0a0d14;--bd:#2a3142}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.65 -apple-system,"Noto Sans KR",sans-serif}
+main{max-width:920px;margin:0 auto;padding:20px 14px 60px}
+h1{font-size:2rem;margin:.4em 0 .1em}
+h2{font-size:1.3rem;margin:0 0 .6em;color:var(--ac)}
+h3{font-size:1.05rem;margin:1em 0 .3em}
+.lead{color:var(--sub);margin-bottom:20px}
+section{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:18px 20px;margin:16px 0}
+table{border-collapse:collapse;width:100%;font-size:.92rem;display:block;overflow-x:auto}
+th,td{border:1px solid var(--bd);padding:6px 10px;text-align:left;vertical-align:top}
+th{background:rgba(127,127,127,.12)}
+pre{background:var(--code);color:var(--codefg);padding:12px 14px;border-radius:8px;overflow-x:auto;font-size:.85rem;line-height:1.5;margin:8px 0}
+code{font-family:ui-monospace,Consolas,monospace}
+p code,li code,td code{background:rgba(127,127,127,.18);padding:1px 5px;border-radius:4px;font-size:.88em}
+.add{background:var(--add);display:block}.del{background:var(--del);display:block}
+.three{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+.three div{border:1px dashed var(--bd);border-radius:8px;padding:8px 10px;font-size:.92rem}
+.three b{display:block;color:var(--ac)}
+details{border:1px solid var(--bd);border-radius:8px;padding:6px 12px;margin:8px 0}
+summary{cursor:pointer;font-weight:600}
+svg{width:100%;height:auto;max-width:860px}
+svg text{fill:var(--fg);font-size:13px}
+svg .b{fill:var(--card);stroke:var(--ac);stroke-width:1.5}
+svg .w{fill:rgba(240,160,40,.15);stroke:#e0a030;stroke-width:1.5}
+svg .r{fill:rgba(220,60,60,.12);stroke:#d04040;stroke-width:1.5}
+svg .l{stroke:var(--sub);stroke-width:1.5;fill:none}
+svg .rl{stroke:#d04040;stroke-width:1.5;fill:none}
+</style>
+</head>
+<body>
+<main>
+<h1>REQ-10 · REQ-13 해설 (2차 13b)</h1>
+<p class="lead">기기 등록을 "기다리는 요청"에서 "작업 접수 → 상태 조회"로 바꾸고(비동기 작업 패턴), 등록 결과를 DB 상태에 맞게 판정하며, 같은 기기의 삭제·재등록이 엇갈리지 않게 줄 세운다 (3단계 2차 13b, 학습 강도: 균형).</p>
+
+<section>
+<h2>1. 한눈에 보기</h2>
+<div class="three">
+<div><b>13b-1 DB</b><code>findDevice</code>: 없음·활성·숨김(+숨긴 시각). <code>purgeDeviceRecords</code>: 숨김 행 하나의 기록을 한 트랜잭션으로 영구 삭제.</div>
+<div><b>13b-2 등록 판정</b><code>registerCommissioned</code>: 활성이면 ALREADY_REGISTERED, 90일 안 숨김이면 복구(<code>restored</code>), 지났으면 새 기기. 같은 ID 삭제·등록은 ID별 락으로 차례로. 드라이버 확정 훅.</div>
+<div><b>13b-3 작업 서비스</b><code>CommissioningService</code>: 작업 스레드 1개, 작업 표(메모리), 동시 1개, 취소·정지.</div>
+<div><b>13b-4 HTTP</b>E3 → 202 + <code>jobId</code>, E8 <code>GET /api/commission/{jobId}</code>, TCP 빈 payload = 앱이 접속한 서버 주소.</div>
+</div>
+<table>
+<tr><th>파일</th><th>역할</th><th>변경 요약</th></tr>
+<tr><td><code>DatabaseManager</code></td><td>저장소</td><td><code>findDevice</code>, <code>purgeDeviceRecords</code></td></tr>
+<tr><td><code>ProtocolDriver.hpp</code></td><td>드라이버 인터페이스</td><td><code>finalizeCommission(outcome, accepted)</code>, <code>CommissionOutcome::nodeId</code></td></tr>
+<tr><td><code>MatterController</code></td><td>Matter 드라이버</td><td>매핑·등록 파일은 확정 뒤에만, 거절이면 새 노드만 unpair</td></tr>
+<tr><td><code>TCPDriver</code>, <code>TcpCommissionCandidate</code></td><td>TCP 드라이버</td><td>거절이면 RESET, 등록 기기 재접속이면 ALREADY_REGISTERED, 하드코딩 IP 삭제</td></tr>
+<tr><td><code>DeviceManager</code></td><td>응용</td><td><code>registerCommissioned</code>, ID별 등록 락, <code>startCommissioning</code> 삭제</td></tr>
+<tr><td><code>CommissioningService</code> (신규)</td><td>응용</td><td>작업 접수·실행·조회·취소</td></tr>
+<tr><td><code>HTTPServer</code>, <code>RequestValidation</code>, <code>main</code></td><td>입구·조립</td><td>E3 202·E8·<code>local_addr</code>, 종료 0단계 취소 요청·2단계 join</td></tr>
+</table>
+</section>
+
+<section>
+<h2>2. 흐름 그림: 접수 → 작업 스레드 → 조회</h2>
+<svg viewBox="0 0 860 330" role="img" aria-label="앱이 E3로 접수하고 작업 스레드가 커미셔닝과 등록을 한 뒤 앱이 E8로 결과를 조회한다">
+  <rect class="b" x="10" y="20" width="120" height="50" rx="6"/><text x="22" y="42">앱</text><text x="22" y="60">E3 POST</text>
+  <rect class="b" x="170" y="20" width="160" height="50" rx="6"/><text x="182" y="42">HTTPServer</text><text x="182" y="60">검증 · 빈 payload→접속 주소</text>
+  <rect class="w" x="370" y="20" width="200" height="50" rx="6"/><text x="382" y="42">submit</text><text x="382" y="60">작업 표에 PENDING, jobId</text>
+  <path class="l" d="M130 45 H170 M330 45 H370"/>
+  <path class="l" d="M470 70 V95 H180 V110"/><text x="200" y="90">202 {jobId, PENDING} (즉시)</text>
+  <rect class="b" x="370" y="120" width="200" height="50" rx="6"/><text x="382" y="142">작업 스레드</text><text x="382" y="160">RUNNING · 요청 꺼냄</text>
+  <path class="l" d="M470 70 V120"/>
+  <rect class="b" x="610" y="120" width="240" height="50" rx="6"/><text x="622" y="142">드라이버 commission</text><text x="622" y="160">BLE·페어링 (취소 플래그)</text>
+  <path class="l" d="M570 145 H610"/>
+  <rect class="r" x="610" y="200" width="240" height="70" rx="6"/><text x="622" y="222">registerCommissioned [ID 락]</text><text x="622" y="242">findDevice → 저장 → 메모리</text><text x="622" y="262">→ finalizeCommission(true/false)</text>
+  <path class="l" d="M730 170 V200"/>
+  <rect class="w" x="370" y="215" width="200" height="50" rx="6"/><text x="382" y="237">작업 표</text><text x="382" y="255">SUCCEEDED / FAILED(code)</text>
+  <path class="l" d="M610 240 H570"/>
+  <rect class="b" x="10" y="215" width="160" height="50" rx="6"/><text x="22" y="237">앱 E8 GET</text><text x="22" y="255">2초마다 조회</text>
+  <path class="l" d="M170 240 H370"/>
+  <text x="10" y="300">요청(비밀번호)은 작업 표에 넣지 않는다. 작업 스레드가 꺼내 쓰고 끝나면 지운다.</text>
+</svg>
+</section>
+
+<section>
+<h2>3. 코드 해설</h2>
+<h3>① 등록 판정과 확정 훅 (<code>DeviceManager::registerCommissioned</code>)</h3>
+<pre><code>const auto idLock = registrationLockFor(id);          // 같은 ID의 삭제(unpair까지)가 끝날 때까지 기다림
+std::lock_guard&lt;std::mutex&gt; registrationLock(*idLock);
+if (isShuttingDown_) return decline(Cancelled, ...);
+switch (db_.findDevice(id).value-&gt;kind) {
+case Active: return decline(AlreadyRegistered, ...);  // 덮어쓰지 않음
+case Hidden: 90일 안이면 restored = true, 지났으면 purgeDeviceRecords
+case None:   break;
+}
+if (!addDevice(...)) return decline(Internal, ...);    // DB 먼저 → 메모리
+finalizeQuietly(driver, outcome, true);                // 여기서야 Matter 매핑 기록</code></pre>
+<div class="three">
+<div><b>무엇을</b>커미셔닝 결과를 DB 상태로 판정하고, 결과를 드라이버에 "확정/거절"로 알린다.</div>
+<div><b>왜</b>예전에는 Matter가 commission 안에서 매핑을 먼저 썼다. 활성 기기를 다시 페어링하면 그 기기 매핑이 새 노드로 덮이고, 실패 정리 <code>unpairDevice(시리얼)</code>는 활성 기기 매핑까지 지웠다.</div>
+<div><b>빼면</b>ID 락을 빼면 삭제의 늦은 unpair가 방금 등록한 새 노드 매핑을 지운다(M4, 시험 <code>SlowUnpairOfDeletedSerialDoesNotRemoveNewNode</code>).</div>
+</div>
+<h3>② Matter: 매핑 기록 시점 이동 (before/after)</h3>
+<pre><code><span class="del">// before: commission 안에서 시리얼을 읽자마자
+mSerialToNodeId[serial] = nodeId; saveDeviceRegistration(serial, nodeId);</span><span class="add">// after: commission은 {serial, "", nodeId}만 돌려주고
+void finalizeCommission(outcome, accepted) {
+    if (accepted) { mSerialToNodeId[serial] = nodeId; saveDeviceRegistration(...); return; }
+    runChipTool({"pairing", "unpair", 새 nodeId});      // 기존 매핑은 그대로
+}</span></code></pre>
+<h3>③ 작업 스레드 한 바퀴 (<code>CommissioningService::workerLoop</code>)</h3>
+<pre><code>workAvailable_.wait(lock, [this]{ return stopping_ || pending_.has_value(); });
+work = std::move(*pending_); pending_.reset();          // 비밀값을 서비스에 오래 두지 않음
+jobs_[work.jobId].status.state = JobState::Running;
+// --- 락 밖 ---
+result = commissionOnce(devices_, driver, ..., cancelRequested_);
+work.request = CommissionRequest{};                       // 다 쓴 요청 지움
+// --- 락 안 ---
+finishLocked(work.jobId, result);                        // SUCCEEDED / FAILED(code)</code></pre>
+<div class="three">
+<div><b>무엇을</b>요청 스레드(HTTP)는 접수만, 오래 걸리는 일은 작업 스레드가 한다.</div>
+<div><b>왜</b>동기 E3는 최대 190초 동안 HTTP 스레드·앱 연결을 붙잡았다. 종료 때도 핸들러가 끝날 때까지 기다려야 했다.</div>
+<div><b>빼면</b>락 안에서 commissionOnce를 부르면 수십 초 동안 E8 조회가 모두 멈춘다(락 안에서는 메모리만).</div>
+</div>
+<h3>④ jobId: 시작 시각 36진 + 순번</h3>
+<pre><code>"c-" + base36(서비스 시작 시각 epoch초) + "-" + 순번   // 예: c-tk3q5s-1</code></pre>
+<p>날짜+순번(<code>c-20261117-0001</code>)이면 서버를 다시 켜면 순번이 1부터라, 옛 jobId를 폴링하던 앱이 <em>다른 작업</em>의 결과를 볼 수 있다. 시작 시각이 들어가면 재시작 뒤 겹치지 않는다.</p>
+</section>
+
+<section>
+<h2>4. 용어 풀이</h2>
+<table>
+<tr><th>용어</th><th>뜻</th></tr>
+<tr><td>비동기 작업 패턴</td><td>요청은 바로 "접수됨(202)+작업 ID"로 답하고, 결과는 따로 조회하게 하는 방식.</td></tr>
+<tr><td>작업 표(job table)</td><td>작업 ID → 상태(대기·실행·성공·실패). 여기서는 메모리에만, 끝난 작업은 1시간 보관.</td></tr>
+<tr><td>확정 훅(hook)</td><td>앞 단계 결과가 정해진 뒤 불러 주는 함수. 드라이버가 "확정이면 기록, 거절이면 정리"를 고른다.</td></tr>
+<tr><td>ID별 락</td><td>기기 ID마다 따로 둔 뮤텍스. 같은 기기 작업만 줄 서고 다른 기기는 막지 않는다.</td></tr>
+<tr><td><code>local_addr</code></td><td>서버 쪽 소켓 주소 = 앱이 접속한 서버 IP. 기기에게 "여기로 접속해"라고 알려 줄 주소로 쓴다.</td></tr>
+</table>
+</section>
+
+<section>
+<h2>5. 이해도 질문</h2>
+<ol>
+<li><code>finalizeCommission</code>을 ID 락 <em>밖</em>(등록이 끝난 뒤)에서 부르면 어떤 순서에서 문제가 생기나?</li>
+<li>작업 표에 요청 전체를 넣어 두면 편할 텐데 왜 넣지 않나? 넣으면 무엇이 위험한가?</li>
+<li>같은 플러그를 "삭제 → 90일 안에 재등록"하면 E8의 <code>restored</code>는? 91일 뒤라면?</li>
+</ol>
+<details><summary>정답 보기</summary>
+<ol>
+<li>등록(메모리 추가)과 훅 사이에 같은 ID의 삭제가 끼면: 삭제가 매핑 없음으로 unpair를 건너뛰고 숨김 처리 → 그 뒤 훅이 숨긴 기기의 매핑을 기록해, 숨겨진 기기의 노드가 남는다.</li>
+<li>Wi-Fi 비밀번호·설정 코드가 1시간 동안 메모리에 남고, 조회 응답·로그·덤프로 샐 수 있다(S-08). 작업 상태에는 결과만 있으면 된다.</li>
+<li>90일 안: <code>true</code>(통계·이력 이어받음). 91일 뒤(정리 작업 전이라 행이 남아 있어도): 기록을 지우고 새 기기, <code>false</code>.</li>
+</ol>
+</details>
+</section>
+
+<section>
+<h2>6. 응용 실습</h2>
+<p>원본을 망가뜨리지 않게 <strong>새 브랜치</strong>나 <code>learning/exercise-commissioning/</code> 사본에서 한다.</p>
+<h3>실습 1: 작업 취소 API 흉내 — <code>CommissioningService::cancelJob(jobId)</code></h3>
+<ul>
+<li>목표: 대기(PENDING) 중인 작업만 취소해 <code>FAILED/CANCELLED</code>로 바꾸고, 실행 중이면 <code>CommissionBusy</code>를 돌려준다.</li>
+<li>고칠 파일: <code>include/CommissioningService.hpp</code>, <code>src/CommissioningService.cpp</code>, 시험 <code>tests/integration/CommissioningServiceTest.cpp</code>.</li>
+<li>완료 기준: <code>start()</code> 전에 submit → cancelJob → getJob이 Cancelled, 드라이버 호출 0회. TSan 경고 0.</li>
+</ul>
+<details><summary>힌트</summary><p><code>stop()</code>이 대기 작업을 취소하는 부분(<code>pending_</code>과 <code>finishLocked</code>)을 그대로 따라 하되, <code>pending_-&gt;jobId == jobId</code>일 때만. 모두 <code>mutex_</code> 안에서 메모리만 다룬다.</p></details>
+<details><summary>정답</summary>
+<pre><code>Status CommissioningService::cancelJob(const std::string&amp; jobId) {
+    std::lock_guard&lt;std::mutex&gt; lock(mutex_);
+    if (pending_ &amp;&amp; pending_-&gt;jobId == jobId) {
+        finishLocked(jobId, Result&lt;RegisterOutcome&gt;::failure(ErrorCode::Cancelled, "cancelled by user"));
+        pending_.reset();
+        return Status::success();
+    }
+    const auto it = jobs_.find(jobId);
+    if (it == jobs_.end()) return Status::failure(ErrorCode::JobNotFound, "job not found");
+    if (it-&gt;second.status.state == JobState::Running) return Status::failure(ErrorCode::CommissionBusy, "running");
+    return Status::success();  // 이미 끝남: 아무것도 안 함
+}</code></pre></details>
+<h3>실습 2: 빈칸 — <code>submit</code>의 Busy 판정</h3>
+<p><code>submit</code>에서 "진행 중 작업이 있으면 Busy" 반복문을 지우고 직접 다시 써 본다. 시험 <code>SecondSubmitWhileInProgressIsBusyAndAllowedAfterFinish</code>가 통과하면 완료.</p>
+<details><summary>힌트</summary><p>끝난 작업(SUCCEEDED·FAILED)은 표에 남아 있어도 Busy가 아니다. 상태가 Pending 또는 Running인 것만 센다.</p></details>
+</section>
+</main>
+</body>
+</html>
