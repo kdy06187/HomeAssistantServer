@@ -40,3 +40,27 @@ TEST(TcpCommissionCandidateTest, NothingConnectedMeansNoCandidate) {
 }
 
 }  // namespace
+
+namespace {
+
+using TcpCommissionCandidate::findReconnectedActive;
+
+// 공장 초기화한 등록 스위치: 시작 때 없던 활성 ID가 새로 붙음
+TEST(TcpCommissionCandidateTest, FindsRegisteredDeviceThatConnectedAfterStart) {
+    EXPECT_EQ(findReconnectedActive({"TCP_000000000001"}, {"TCP_000000000001", "TCP_000000000009"},
+                                    {"TCP_000000000009"}),
+              "TCP_000000000009");
+}
+
+TEST(TcpCommissionCandidateTest, ReconnectedActiveIgnoresAlreadyConnectedAndUnregisteredIds) {
+    EXPECT_FALSE(findReconnectedActive({"TCP_000000000009"}, {"TCP_000000000009"}, {"TCP_000000000009"}));
+    EXPECT_FALSE(findReconnectedActive({}, {"TCP_000000000002"}, {}));
+    EXPECT_FALSE(findReconnectedActive({}, {"ARD_1"}, {"ARD_1"}));
+}
+
+TEST(TcpCommissionCandidateTest, ReconnectedActivePicksSmallestIdWhenSeveral) {
+    EXPECT_EQ(findReconnectedActive({}, {"TCP_00000000000B", "TCP_00000000000A"}, {"TCP_00000000000A", "TCP_00000000000B"}),
+              "TCP_00000000000A");
+}
+
+}  // namespace

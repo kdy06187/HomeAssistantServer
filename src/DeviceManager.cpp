@@ -206,12 +206,10 @@ bool DeviceManager::startCommissioning(ProtocolType type, std::string name, std:
         , const std::string& ssid, const std::string& password, const std::vector<DriverType>& driverTypes){
     std::cout << "[DeviceManager] 커미셔닝 시작: " << getProtocolString(type) << ", " << name << std::endl;
     ProtocolDriver* driver = nullptr;
-    std::unordered_set<std::string> idsSnapshot;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         auto driverIt = drivers_.find(type);
         if (driverIt != drivers_.end()) driver = driverIt->second;
-        for (const auto& pair : devices_) idsSnapshot.insert(pair.first);
     }
     if (!driver) {
         std::cerr << "[DeviceManager] 에러 : " << getProtocolString(type) << " 드라이버를 찾을 수 없습니다 " << std::endl;
@@ -221,30 +219,85 @@ bool DeviceManager::startCommissioning(ProtocolType type, std::string name, std:
         std::cerr << "[DeviceManager] 종료 중이라 커미셔닝을 시작하지 않습니다" << std::endl;
         return false;
     }
-
     // 커미셔닝은 수십 초 걸리므로 락 밖에서 하고, 드라이버에는 활성 ID 사본만 넘긴다
-    const auto outcome = driver->commission(CommissionRequest{name, payload, ssid, password}, idsSnapshot, isShuttingDown_);
-    bool isCommissioned = outcome.ok();
-    // 드라이버가 끝난 직후 종료가 시작됐으면 등록하지 않는다(종료 중 DB에 새 기기를 쓰지 않음)
-    const bool shutdownBeforeRegister = isCommissioned && isShuttingDown_;
-    if (shutdownBeforeRegister) {
-        std::cerr << "[DeviceManager] 종료 중이라 커미셔닝 결과를 등록하지 않습니다 : " << outcome.value->deviceId << std::endl;
-    }
-    if (isCommissioned && !outcome.value->deviceId.empty() &&
-        (shutdownBeforeRegister || !addDevice(outcome.value->deviceId, name, type, driverTypes, outcome.value->ip))) {
-        // 기기는 페어링됐지만 서버 등록은 실패·취소: 드라이버 쪽 등록(Matter 매핑·등록 파일, TCP 연결)도 정리해
-        // "실패 = 아무것도 남지 않음"이 되게 한다. 락 밖에서 부른다
-        isCommissioned = false;
-        try {
-            driver->unpairDevice(outcome.value->deviceId);
-        } catch (const std::exception& e) {
-            std::cerr << "[DeviceManager] 등록 실패 정리 중 예외 : " << outcome.value->deviceId << " (" << e.what() << ")" << std::endl;
-        }
-    }
-    if (shutdownBeforeRegister) isCommissioned = false;
+    const auto outcome = driver->commission(CommissionRequest{name, payload, ssid, password}, activeDeviceIds(), isShuttingDown_);
+    bool isCommissioned = false;
+    if (outcome.ok()) isCommissioned = registerCommissioned(type, *outcome.value, name, driverTypes).ok();
     std::cout << "[DeviceManager] " << getProtocolString(type) << " 커미셔닝 결과: "
               << (isCommissioned ? "성공" : "실패") << std::endl;
     return isCommissioned;
+}
+
+bool DeviceManager::isWithinRestorePeriod(const std::string& deletedAtUtc, std::chrono::system_clock::time_point now) {
+    const auto deletedAt = UtcTime::fromDbText(deletedAtUtc);
+    if (!deletedAt) return true;
+    return now < *deletedAt + std::chrono::hours(24 * kRetentionDays);
+}
+
+Result<RegisterOutcome> DeviceManager::registerCommissioned(ProtocolType type, const CommissionOutcome& outcome,
+                                                            const std::string& name, const std::vector<DriverType>& driverTypes) {
+    ProtocolDriver* driver = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto driverIt = drivers_.find(type);
+        if (driverIt != drivers_.end()) driver = driverIt->second;
+    }
+    const std::string& id = outcome.deviceId;
+    const std::string safeId = RequestValidation::sanitizeForLog(id);
+    if (id.empty()) {
+        std::cerr << "[DeviceManager] 커미셔닝 결과에 기기 ID가 없어 등록하지 않습니다" << std::endl;
+        finalizeQuietly(driver, outcome, false);
+        return Result<RegisterOutcome>::failure(ErrorCode::CommissionFailed, "empty device id");
+    }
+
+    // 같은 ID의 삭제(늦은 unpair 포함)가 끝난 뒤에 판정·저장·확정 훅까지 한 번에 한다
+    const auto idLock = registrationLockFor(id);
+    std::lock_guard<std::mutex> registrationLock(*idLock);
+    const auto decline = [&](ErrorCode code, const char* reason) {
+        std::cerr << "[DeviceManager] 커미셔닝 결과를 등록하지 않음(" << reason << ") : " << safeId << std::endl;
+        finalizeQuietly(driver, outcome, false);
+        return Result<RegisterOutcome>::failure(code, reason);
+    };
+
+    // 드라이버가 끝난 직후 종료가 시작됐으면 등록하지 않는다(종료 중 DB에 새 기기를 쓰지 않음)
+    if (isShuttingDown_) return decline(ErrorCode::Cancelled, "종료 중");
+    const auto found = db_.findDevice(id);
+    if (!found.ok()) return decline(ErrorCode::Internal, "기기 조회 실패");
+
+    RegisterOutcome registered{id, false};
+    switch (found.value->kind) {
+    case DeviceRecordState::Kind::Active:
+        return decline(ErrorCode::AlreadyRegistered, "이미 등록된 기기");
+    case DeviceRecordState::Kind::Hidden:
+        if (isWithinRestorePeriod(found.value->deletedAtUtc, clock_.utcNow())) {
+            registered.restored = true;  // insertDevice가 deleted_at을 지우고 통계·이력·ip를 이어 쓴다
+        } else {
+            // 정리 작업 전이라 남아 있는 지난 기록: 새 기기로 시작한다
+            const Status purged = db_.purgeDeviceRecords(id);
+            if (!purged.ok() && purged.error.code != ErrorCode::DeviceNotFound) {
+                return decline(ErrorCode::Internal, "지난 기록 삭제 실패");
+            }
+        }
+        break;
+    case DeviceRecordState::Kind::None:
+        break;
+    }
+    if (!addDevice(id, name, type, driverTypes, outcome.ip)) return decline(ErrorCode::Internal, "DB 저장 실패");
+    finalizeQuietly(driver, outcome, true);
+    std::cout << "[DeviceManager] 커미셔닝 등록 완료 : " << safeId << (registered.restored ? " (기록 복구)" : "") << std::endl;
+    return Result<RegisterOutcome>::success(registered);
+}
+
+void DeviceManager::finalizeQuietly(ProtocolDriver* driver, const CommissionOutcome& outcome, bool accepted) {
+    if (!driver) return;
+    try {
+        driver->finalizeCommission(outcome, accepted);
+    } catch (const std::exception& e) {
+        std::cerr << "[DeviceManager] 등록 확정 훅 예외 : " << RequestValidation::sanitizeForLog(outcome.deviceId)
+                  << " (" << RequestValidation::sanitizeForLog(e.what()) << ")" << std::endl;
+    } catch (...) {
+        std::cerr << "[DeviceManager] 등록 확정 훅 알 수 없는 예외 : " << RequestValidation::sanitizeForLog(outcome.deviceId) << std::endl;
+    }
 }
 void DeviceManager::onTcpConnected(const std::string& deviceId, const std::string& ip){
     bool writeDatabase = true;
@@ -266,6 +319,9 @@ void DeviceManager::onTcpConnected(const std::string& deviceId, const std::strin
 // 숨김을 먼저 저장해, 해제가 실패하거나 예외를 던져도 재시작 뒤 기기가 되살아나지 않게 한다.
 Result<DeleteOutcome> DeviceManager::removeDevice(const std::string& id){
     const std::string safeId = RequestValidation::sanitizeForLog(id);
+    // unpair까지 끝나야 같은 ID 등록이 시작된다(늦은 unpair가 새로 등록한 노드를 지우지 않게)
+    const auto idLock = registrationLockFor(id);
+    std::lock_guard<std::mutex> registrationLock(*idLock);
     Device removedDevice;
     ProtocolDriver* protocolDriver = nullptr;
     {
@@ -495,6 +551,13 @@ Result<PurgeResult> DeviceManager::runRetentionCleanup() {
 std::shared_ptr<std::mutex> DeviceManager::energyLockFor(const std::string& deviceId) {
     std::lock_guard<std::mutex> lock(energyLocksMutex_);
     auto& slot = energyLocks_[deviceId];
+    if (!slot) slot = std::make_shared<std::mutex>();
+    return slot;
+}
+
+std::shared_ptr<std::mutex> DeviceManager::registrationLockFor(const std::string& deviceId) {
+    std::lock_guard<std::mutex> lock(registrationLocksMutex_);
+    auto& slot = registrationLocks_[deviceId];
     if (!slot) slot = std::make_shared<std::mutex>();
     return slot;
 }

@@ -94,6 +94,12 @@ Result<CommissionOutcome> TCPDriver::commission(const CommissionRequest& request
         }
     }
 
+    // 새 기기는 없고 등록된 기기가 새로 붙었다: 그 기기를 초기화해 다시 등록하려던 경우로 본다(연결은 그대로 둔다)
+    const auto reconnected = TcpCommissionCandidate::findReconnectedActive(existing_ids, server_.connectedIds(), activeDeviceIds);
+    if (reconnected) {
+        std::cerr << "[TCPDriver] 새 기기 없음, 이미 등록된 기기가 다시 접속함 : " << *reconnected << std::endl;
+        return Result<CommissionOutcome>::failure(ErrorCode::AlreadyRegistered, "등록된 기기 재접속");
+    }
     std::cerr << "❌ [TCPDriver] 타임아웃: 기기가 와이파이에 접속하지 못했거나 서버에 연결하지 못했습니다." << std::endl;
     return Result<CommissionOutcome>::failure(ErrorCode::CommissionTimeout, "기기 접속 타임아웃");
 }
@@ -193,6 +199,11 @@ void TCPDriver::stopServer(){
     const bool wasRunning = server_.boundPort() != 0;
     server_.stop();
     if (wasRunning) std::cout << "[TCPDriver] TCP 서버 종료" << std::endl;
+}
+
+void TCPDriver::finalizeCommission(const CommissionOutcome& outcome, bool accepted) {
+    // 서버가 등록하지 않은 기기는 RESET으로 BLE 설정 모드로 돌려보내고 연결을 닫는다
+    if (!accepted) unpairDevice(outcome.deviceId);
 }
 
 bool TCPDriver::unpairDevice(const std::string& deviceId){

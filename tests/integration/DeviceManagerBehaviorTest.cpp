@@ -89,7 +89,8 @@ TEST_F(DeviceManagerBehaviorTest, ShutdownRightAfterDriverSuccessDoesNotRegister
 
     EXPECT_TRUE(manager.getAllDevices().empty());
     EXPECT_TRUE(database.loadActiveDevices().empty());
-    EXPECT_EQ(tcpFake.unpairedIds, std::vector<std::string>{"FAKE_1"});
+    // 드라이버에는 "등록 안 함"을 알려 그쪽이 만든 것만 정리하게 한다(TCP는 RESET)
+    EXPECT_EQ(tcpFake.finalizedOutcomes, (std::vector<std::pair<std::string, bool>>{{"FAKE_1", false}}));
 }
 
 // P8: 종료가 시작된 뒤에는 드라이버를 부르지 않는다

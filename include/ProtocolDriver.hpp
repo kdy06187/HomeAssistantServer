@@ -16,11 +16,13 @@ struct CommissionOutcome {
     std::string deviceId;
     // 등록 시점의 접속 IP(TCP만, 모르면 빈 문자열). 등록 때 함께 저장한다
     std::string ip;
+    // Matter만: 이번에 페어링한 노드 번호(0 = 없음). 등록 확정 훅이 매핑을 쓰거나 이 노드만 정리하는 데 쓴다
+    uint64_t nodeId = 0;
 
     // ip를 생략한 CommissionOutcome{"ID"}(Matter·기존 호출)가 그대로 되도록 생성자를 둔다
     CommissionOutcome() = default;
-    CommissionOutcome(std::string id, std::string connectionIp = "")
-        : deviceId(std::move(id)), ip(std::move(connectionIp)) {}
+    CommissionOutcome(std::string id, std::string connectionIp = "", uint64_t pairedNodeId = 0)
+        : deviceId(std::move(id)), ip(std::move(connectionIp)), nodeId(pairedNodeId) {}
 };
 
 struct EnergyReading {
@@ -38,6 +40,10 @@ public:
     virtual Result<CommissionOutcome> commission(const CommissionRequest& request,
                                                  const std::unordered_set<std::string>& activeDeviceIds,
                                                  const std::atomic<bool>& cancelRequested) = 0;
+    // commission 성공 뒤 서버 등록 결과를 알린다(DeviceManager가 그 기기 ID 등록 락 안·상태 락 밖에서 부른다).
+    // accepted=true: 드라이버 쪽 등록을 확정한다(Matter 매핑·등록 파일). false: 이번 commission이 만든 것만 정리한다
+    // (Matter는 새 노드만 unpair, 같은 시리얼의 기존 매핑은 그대로). 기존 등록을 commission 안에서 덮어쓰지 않으려고 나눴다
+    virtual void finalizeCommission(const CommissionOutcome& /*outcome*/, bool /*accepted*/) {}
     virtual bool unpairDevice(const std::string& deviceId) = 0;
     virtual std::string readDeviceState(const std::string& deviceId, bool isManualRequest) = 0;
 

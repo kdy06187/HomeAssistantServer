@@ -319,8 +319,9 @@ Result<CommissionOutcome> MatterController::commissionDevice(uint64_t nodeId, co
                       << "가 남을 수 있음(다시 등록하려면 기기 초기화)" << std::endl;
             return Result<CommissionOutcome>::failure(ErrorCode::Cancelled, "시리얼 읽기 취소");
         }
-        std::cout << "[MatterController] 커미셔닝 성공. 기기 정보를 내부 스토리지에 저장" << std::endl;
-        outcome = Result<CommissionOutcome>::success(CommissionOutcome{*serialNumber});
+        // 매핑·등록 파일은 서버 등록이 확정된 뒤 finalizeCommission에서 쓴다
+        std::cout << "[MatterController] 커미셔닝 성공 (NodeId=" << nodeId << "), 서버 등록 대기" << std::endl;
+        outcome = Result<CommissionOutcome>::success(CommissionOutcome{*serialNumber, "", nodeId});
     } else {
         // 4바이트 미만 비밀값은 가리지 않으므로(위 pairingSecrets) 그런 값이 있으면 출력을 아예 남기지 않는다
         if (hasShortSecret(wifiPassword, manualPincode, pinText)) {
@@ -413,18 +414,27 @@ Result<CommissionOutcome> MatterController::commission(const CommissionRequest& 
 std::optional<std::string> MatterController::onDevicePairingComplete(uint64_t nodeId, const std::string& deviceName,
                                                                      const std::atomic<bool>& cancelRequested) {
     std::cout << "[MatterController] 기기 페어링 완료: NodeId=" << nodeId << ", DeviceName=" << deviceName << std::endl;
-    const auto serial = getDeviceSerialNumber(nodeId, cancelRequested);
-    if (!serial) return std::nullopt;  // 매핑·등록 파일은 건드리지 않는다
-    const std::string& serialNumber = *serial;
-    {
-        std::lock_guard<std::mutex> stateLock(stateMutex_);
-        mSerialToNodeId[serialNumber] = nodeId; // 시리얼 넘버와 NodeId 매핑 저장
+    return getDeviceSerialNumber(nodeId, cancelRequested);
+}
+void MatterController::finalizeCommission(const CommissionOutcome& outcome, bool accepted) {
+    if (outcome.nodeId == 0) return;
+    const std::string nodeIdText = std::to_string(outcome.nodeId);
+    if (accepted) {
+        {
+            std::lock_guard<std::mutex> stateLock(stateMutex_);
+            mSerialToNodeId[outcome.deviceId] = outcome.nodeId;
+        }
+        if (!saveDeviceRegistration(outcome.deviceId, outcome.nodeId)) {
+            std::cerr << "[MatterController] 등록 파일 저장 실패: 재시작하면 이 기기의 노드 매핑이 사라집니다 (" << outcome.deviceId << ")" << std::endl;
+        }
+        return;
     }
-    
-    if (!saveDeviceRegistration(serialNumber, nodeId)) {
-        std::cerr << "[MatterController] 등록 파일 저장 실패: 재시작하면 이 기기의 노드 매핑이 사라집니다 (" << serialNumber << ")" << std::endl;
+    // 서버가 등록하지 않았다: 이번에 만든 노드만 fabric에서 뺀다. 같은 시리얼의 기존 매핑(활성 기기)은 건드리지 않는다
+    std::cout << "[MatterController] 등록되지 않은 새 노드(" << nodeIdText << ") 페어링 해제 중..." << std::endl;
+    const ChipToolOutcome result = runChipTool({"pairing", "unpair", nodeIdText}, kSlowCommandTimeout, {}, true);
+    if (!result.ok) {
+        std::cerr << "[MatterController] 새 노드(" << nodeIdText << ") 해제 실패 — 기기 fabric에 남을 수 있음(다시 등록하려면 기기 초기화)" << std::endl;
     }
-    return serialNumber;
 }
 bool MatterController::unpairDevice(const std::string& deviceId){
     std::cout << "[MatterController] Matter 기기 페어링 해제 : NodeId = " << deviceId << std::endl;

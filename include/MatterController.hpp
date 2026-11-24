@@ -65,6 +65,8 @@ public:
     Result<CommissionOutcome> commission(const CommissionRequest& request,
                                          const std::unordered_set<std::string>& activeDeviceIds,
                                          const std::atomic<bool>& cancelRequested) override;
+    // accepted면 매핑·등록 파일 기록, 아니면 이번에 페어링한 노드만 unpair(기존 매핑 그대로)
+    void finalizeCommission(const CommissionOutcome& outcome, bool accepted) override;
     bool unpairDevice(const std::string& deviceId) override;
     std::string readDeviceState(const std::string& deviceId, bool isManualRequest) override;
     Result<EnergyReading> readEnergy(const std::string& deviceId) override;
@@ -118,7 +120,7 @@ private:
         uint64_t nodeId_;
     };
     uint64_t mLastIssuedNodeId = 0; // stateMutex_
-    // 시리얼을 읽어 매핑·등록 파일에 저장한다. 시리얼 읽기가 취소됐으면 아무것도 저장하지 않고 nullopt
+    // 시리얼을 읽는다(매핑·등록 파일은 쓰지 않음). 시리얼 읽기가 취소됐으면 nullopt
     std::optional<std::string> onDevicePairingComplete(uint64_t nodeId, const std::string& deviceName,
                                                        const std::atomic<bool>& cancelRequested);
     bool saveDeviceRegistration(const std::string& serialNumber,uint64_t nodeId);

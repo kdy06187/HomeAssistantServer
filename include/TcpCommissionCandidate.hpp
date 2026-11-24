@@ -14,4 +14,9 @@ std::optional<std::string> pickNewDevice(const std::vector<std::string>& before,
                                          const std::unordered_set<std::string>& activeIds,
                                          const std::optional<std::string>& pcAgentId);
 
+// 커미셔닝 시작 전 연결 목록(before)에 없던 활성(이미 등록된) TCP_ ID 중 사전순 첫 번째.
+// 새 후보 없이 대기가 끝났을 때 이것이 있으면 "등록된 기기를 초기화해 다시 등록하려 함"으로 본다
+std::optional<std::string> findReconnectedActive(const std::vector<std::string>& before, const std::vector<std::string>& now,
+                                                 const std::unordered_set<std::string>& activeIds);
+
 }  // namespace TcpCommissionCandidate

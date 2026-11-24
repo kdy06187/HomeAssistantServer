@@ -42,6 +42,12 @@ struct DeleteOutcome {
     bool unpaired = false; // 기기 쪽 연결 해제 성공 여부. false여도 숨김은 끝났다
 };
 
+// registerCommissioned 결과. restored는 복구 기간 안에 숨긴 같은 기기를 되살려 기록을 이어받았는지
+struct RegisterOutcome {
+    std::string deviceId;
+    bool restored = false;
+};
+
 class DeviceManager {
 public:
     // 이력 보관 기간이자 숨김 기기의 복구 가능 기간
@@ -70,6 +76,14 @@ public:
     std::vector<Device> getAllDevices();
     std::string getProtocolString(ProtocolType type);
     bool updateDeviceState(std::string id, std::string newState);
+    // 커미셔닝 결과를 서버에 등록하고 드라이버 확정 훅(finalizeCommission)까지 부른다. 같은 ID의 removeDevice와 차례로 실행된다.
+    // DB: 활성이면 AlreadyRegistered(덮어쓰지 않음), 복구 기간 안 숨김이면 복구(restored), 지났으면 기록 삭제 뒤 새 기기, 없으면 새 기기.
+    // 실패: 빈 ID CommissionFailed, 종료 중 Cancelled, DB 오류 Internal — 모두 드라이버에 accepted=false를 알린다
+    Result<RegisterOutcome> registerCommissioned(ProtocolType type, const CommissionOutcome& outcome,
+                                                 const std::string& name, const std::vector<DriverType>& driverTypes);
+    // 숨긴 시각부터 복구 기간(kRetentionDays) 안이면 true. 시각을 읽지 못하면 기록을 지우지 않도록 true
+    static bool isWithinRestorePeriod(const std::string& deletedAtUtc, std::chrono::system_clock::time_point now);
+    // 동기 E3용 임시 경로(13b-4에서 CommissioningService로 바꾸며 삭제): commission → registerCommissioned
     bool startCommissioning(ProtocolType type, std::string name, std::string payload, const std::string& ssid = "", const std::string& password = "",const std::vector<DriverType>& driverTypes ={});
     // 디바이스 제어 API - 디바이스 ID와 명령을 받아 해당 디바이스를 제어
     CommandResult executeCommand(std::string id, std::string command);
@@ -107,6 +121,9 @@ private:
     bool unpairQuietly(ProtocolDriver* protocolDriver, const std::string& id);
     Result<HistoryResult> aggregateHistory(const std::string& deviceId, const HistoryQuery& query, HistoryResult history);
     std::shared_ptr<std::mutex> energyLockFor(const std::string& deviceId);
+    std::shared_ptr<std::mutex> registrationLockFor(const std::string& deviceId);
+    // 예외는 로그만 남긴다(등록 결과를 바꾸지 않는다)
+    void finalizeQuietly(ProtocolDriver* driver, const CommissionOutcome& outcome, bool accepted);
 
     DatabaseManager& db_;
     DriverManager& deviceDrivers_;
@@ -124,4 +141,11 @@ private:
     // 쥔 채로 드라이버·mutex_·DB를 차례로 잡을 수 있다(순서: 전력 락 → 그 밖). mutex_를 쥔 채 이 락을 잡지 않는다.
     std::mutex energyLocksMutex_; // energyLocks_ 맵만 보호(메모리만)
     std::unordered_map<std::string, std::shared_ptr<std::mutex>> energyLocks_;
+
+    // 기기별 등록 락(자원 락): 같은 ID의 removeDevice 전체(맵 제거 → 숨김 → 예약 취소 → unpair)와
+    // registerCommissioned 전체(DB 판정 → 저장 → 메모리 → 확정 훅)를 차례로 실행한다. 늦게 끝난 unpair가
+    // 방금 등록한 새 노드를 지우는 일을 막는다. 가장 바깥 락이다: 쥔 채 mutex_·DB·드라이버를 차례로 잡을 수 있고,
+    // mutex_나 전력 락을 쥔 채 이 락을 잡지 않는다
+    std::mutex registrationLocksMutex_;  // registrationLocks_ 맵만 보호(메모리만)
+    std::unordered_map<std::string, std::shared_ptr<std::mutex>> registrationLocks_;
 };

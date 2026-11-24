@@ -243,8 +243,10 @@ TEST_F(MatterControllerTest, CommissionPairsReadsSerialAndSavesMapping) {
     EXPECT_NE(std::find(pairing.secretsToMask.begin(), pairing.secretsToMask.end(), std::to_string(kGoodPin)), pairing.secretsToMask.end());
     EXPECT_EQ(calls[1].timeout, MatterController::kSlowCommandTimeout);  // 시리얼 읽기
 
-    EXPECT_NE(readConfig().find("SN-NEW," + nodeId + "\n"), std::string::npos);
+    EXPECT_EQ(std::to_string(outcome.value->nodeId), nodeId);
     EXPECT_FALSE(controller->isPairing(std::stoull(nodeId)));
+    controller->finalizeCommission(*outcome.value, true);  // 서버 등록이 확정된 뒤 매핑을 쓴다
+    EXPECT_NE(readConfig().find("SN-NEW," + nodeId + "\n"), std::string::npos);
     EXPECT_TRUE(controller->sendCommand("SN-NEW", "ON"));
     EXPECT_EQ(runner.callsSnapshot().back().args[3], nodeId);
 }
@@ -644,9 +646,125 @@ TEST_F(MatterControllerTest, RegistrationWriteReplacesSameSerialAndLeavesNoTempF
     const auto outcome = controller->commission(CommissionRequest{"plug", kGoodCode, "ssid", "pw"}, {}, kNotCancelled);
     ASSERT_TRUE(outcome.ok());
     const std::string nodeId = runner.callsSnapshot()[0].args[3];
+    controller->finalizeCommission(*outcome.value, true);
 
     EXPECT_EQ(readConfig(), "SN-2,102\nSN-1," + nodeId + "\n");
     EXPECT_FALSE(fs::exists(configPath_ + ".tmp"));
+}
+
+// ---- 13b-2: 매핑·등록 파일은 서버 등록이 확정된 뒤에만 쓴다 ----
+
+namespace {
+ProcessResult pairAs(const std::vector<std::string>& sub, const std::string& serial) {
+    if (startsWith(sub, {"pairing", "ble-wifi"})) return FakeChipToolOutput::ok("Device commissioning completed with success");
+    if (startsWith(sub, {"basicinformation"})) return FakeChipToolOutput::ok("SerialNumber: " + serial);
+    return FakeChipToolOutput::ok("");
+}
+}  // namespace
+
+TEST_F(MatterControllerTest, CommissionReturnsNodeButWritesMappingOnlyWhenAccepted) {
+    runner.respond = [](const std::vector<std::string>& sub) { return pairAs(sub, "SN-NEW"); };
+    const auto outcome = controller->commission(CommissionRequest{"plug", kGoodCode, "ssid", "pw"}, {}, kNotCancelled);
+    ASSERT_TRUE(outcome.ok());
+    EXPECT_EQ(std::to_string(outcome.value->nodeId), runner.callsSnapshot()[0].args[3]);
+    EXPECT_EQ(controller->readEnergy("SN-NEW").error.code, ErrorCode::DeviceNotFound);  // 아직 매핑 없음
+    EXPECT_EQ(readConfig(), "SN-1,101\nSN-2,102\n");
+
+    controller->finalizeCommission(*outcome.value, true);
+
+    EXPECT_EQ(readConfig(), "SN-1,101\nSN-2,102\nSN-NEW," + std::to_string(outcome.value->nodeId) + "\n");
+    EXPECT_TRUE(controller->sendCommand("SN-NEW", "ON"));
+}
+
+// 활성 시리얼을 다시 페어링했을 때 거절하면 새 노드만 unpair하고 기존 매핑(101)은 그대로다
+TEST_F(MatterControllerTest, DeclinedCommissionUnpairsOnlyNewNodeAndKeepsExistingMapping) {
+    runner.respond = [](const std::vector<std::string>& sub) { return pairAs(sub, "SN-1"); };
+    const auto outcome = controller->commission(CommissionRequest{"plug", kGoodCode, "ssid", "pw"}, {}, kNotCancelled);
+    ASSERT_TRUE(outcome.ok());
+    const std::string newNode = std::to_string(outcome.value->nodeId);
+
+    controller->finalizeCommission(*outcome.value, false);
+
+    int unpairCount = 0;
+    for (const auto& sub : subcommands()) {
+        if (!startsWith(sub, {"pairing", "unpair"})) continue;
+        ++unpairCount;
+        EXPECT_EQ(sub[2], newNode);
+    }
+    EXPECT_EQ(unpairCount, 1);
+    EXPECT_EQ(readConfig(), "SN-1,101\nSN-2,102\n");
+    EXPECT_TRUE(controller->sendCommand("SN-1", "ON"));
+    EXPECT_EQ(subcommands().back()[2], "101");
+}
+
+TEST_F(MatterControllerTest, FinalizeWithoutNodeDoesNothing) {
+    controller->finalizeCommission(CommissionOutcome{"SN-1"}, false);
+    controller->finalizeCommission(CommissionOutcome{"SN-X"}, true);
+    EXPECT_TRUE(runner.callsSnapshot().empty());
+    EXPECT_EQ(readConfig(), "SN-1,101\nSN-2,102\n");
+}
+
+class MatterRegistrationFlowTest : public MatterControllerTest {
+protected:
+    void SetUp() override {
+        MatterControllerTest::SetUp();
+        ASSERT_TRUE(database.init(":memory:"));
+        manager.registerDriver(ProtocolType::MATTER, controller.get());
+        ASSERT_TRUE(manager.addDevice("SN-1", "plug", ProtocolType::MATTER, {}));
+    }
+    Result<RegisterOutcome> commissionAndRegister() {
+        const auto outcome = controller->commission(CommissionRequest{"plug", kGoodCode, "ssid", "pw"}, {}, kNotCancelled);
+        if (!outcome.ok()) return Result<RegisterOutcome>::failure(outcome.error.code, outcome.error.message);
+        lastNode = outcome.value->nodeId;
+        return manager.registerCommissioned(ProtocolType::MATTER, *outcome.value, "plug", {});
+    }
+    DatabaseManager database;
+    DriverManager deviceDrivers;
+    FakeClock clock;
+    DelayedCommandScheduler scheduler{clock};
+    DeviceManager manager{database, deviceDrivers, scheduler, clock};
+    uint64_t lastNode = 0;
+};
+
+// 활성 기기(같은 시리얼) 재페어링: ALREADY_REGISTERED, 매핑·파일·DB 그대로, 새 노드만 unpair
+TEST_F(MatterRegistrationFlowTest, RepairingActiveSerialIsAlreadyRegisteredAndKeepsMapping) {
+    runner.respond = [](const std::vector<std::string>& sub) { return pairAs(sub, "SN-1"); };
+
+    const auto registered = commissionAndRegister();
+
+    EXPECT_EQ(registered.error.code, ErrorCode::AlreadyRegistered);
+    EXPECT_EQ(readConfig(), "SN-1,101\nSN-2,102\n");
+    EXPECT_EQ(subcommands().back(), (std::vector<std::string>{"pairing", "unpair", std::to_string(lastNode),
+                                                              "--storage-directory", storagePath_}));
+}
+
+// M4·R6: 삭제의 unpair(101)가 늦게 끝나도 재등록한 새 노드 매핑이 살아 있다
+TEST_F(MatterRegistrationFlowTest, SlowUnpairOfDeletedSerialDoesNotRemoveNewNode) {
+    DeadlockWatchdog watchdog(10s);
+    std::promise<void> unpairStarted;
+    std::promise<void> releasePromise;
+    std::shared_future<void> releaseUnpair = releasePromise.get_future().share();
+    std::atomic<bool> startedOnce{false};
+    runner.respond = [&](const std::vector<std::string>& sub) {
+        if (startsWith(sub, {"pairing", "unpair", "101"})) {
+            if (!startedOnce.exchange(true)) unpairStarted.set_value();
+            releaseUnpair.wait();
+        }
+        return pairAs(sub, "SN-1");
+    };
+    std::thread remover([&] { EXPECT_TRUE(manager.removeDevice("SN-1").ok()); });
+    unpairStarted.get_future().wait();
+    auto registered = std::async(std::launch::async, [&] { return commissionAndRegister(); });
+    EXPECT_EQ(registered.wait_for(100ms), std::future_status::timeout) << "unpair 전에 등록이 끝나면 안 된다";
+    releasePromise.set_value();
+    remover.join();
+    const auto result = registered.get();
+
+    ASSERT_TRUE(result.ok());
+    EXPECT_TRUE(result.value->restored);
+    EXPECT_EQ(readConfig(), "SN-2,102\nSN-1," + std::to_string(lastNode) + "\n");
+    EXPECT_TRUE(controller->sendCommand("SN-1", "ON"));
+    EXPECT_EQ(subcommands().back()[2], std::to_string(lastNode));
 }
 
 // ---- E9 + R7: DB 저장에 실패하면 Matter 쪽 등록(매핑·파일)까지 정리한다 ----

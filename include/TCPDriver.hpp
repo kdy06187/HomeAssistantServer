@@ -23,6 +23,7 @@ public:
     Result<CommissionOutcome> commission(const CommissionRequest& request,
                                          const std::unordered_set<std::string>& activeDeviceIds,
                                          const std::atomic<bool>& cancelRequested) override;
+    void finalizeCommission(const CommissionOutcome& outcome, bool accepted) override;
     bool unpairDevice(const std::string& deviceId) override;
     std::string readDeviceState(const std::string& deviceId, bool isManualRequest) override;
     // IMessageSender 구현(TcpMessageSender에 위임)

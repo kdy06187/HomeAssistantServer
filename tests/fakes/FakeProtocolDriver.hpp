@@ -1,7 +1,9 @@
 #pragma once
 #include "IMessageSender.hpp"
 #include "ProtocolDriver.hpp"
+#include <chrono>
 #include <functional>
+#include <thread>
 #include <mutex>
 #include <stdexcept>
 #include <string>
@@ -41,7 +43,11 @@ public:
     std::vector<std::string> pcAgentMessages;                        // sendToPcAgent: jsonLine
     std::vector<std::string> energyReadIds;
     std::function<void()> onCommission;
+    std::vector<std::pair<std::string, bool>> finalizedOutcomes;     // finalizeCommission: (deviceId, accepted)
+    std::function<void(const CommissionOutcome&, bool)> onFinalize;  // 기록 락 밖에서 호출된다
+    bool throwOnFinalize = false;
     bool ignoreCancel = false;  // 드라이버가 끝난 "직후" 종료가 시작되는 경우를 흉내 낸다
+    bool waitForCancel = false; // 취소 플래그가 설 때까지(최대 5초) 기다린다: 진행 중 작업의 종료 시험용
     std::vector<bool> readStateManualFlags;                          // readDeviceState의 isManualRequest
 
     bool sendCommand(const std::string& deviceId, const std::string& command) override {
@@ -61,8 +67,17 @@ public:
         }
         // 진행 중 취소를 시험할 때 쓴다(예: 이 안에서 beginShutdown). 끝난 뒤 플래그가 서 있으면 실제 드라이버처럼 취소
         if (onCommission) onCommission();
+        for (int i = 0; waitForCancel && !cancelRequested && i < 500; ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
         if (cancelRequested && !ignoreCancel) return Result<CommissionOutcome>::failure(ErrorCode::Cancelled, "fake cancelled");
         return commissionResult;
+    }
+    void finalizeCommission(const CommissionOutcome& outcome, bool accepted) override {
+        if (onFinalize) onFinalize(outcome, accepted);
+        if (throwOnFinalize) throw std::runtime_error("fake finalizeCommission failure");
+        std::lock_guard<std::mutex> lock(recordMutex);
+        finalizedOutcomes.emplace_back(outcome.deviceId, accepted);
     }
     bool unpairDevice(const std::string& deviceId) override {
         if (onUnpair) onUnpair();

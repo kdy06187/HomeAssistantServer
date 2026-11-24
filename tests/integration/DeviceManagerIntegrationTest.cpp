@@ -80,10 +80,12 @@ TEST_F(DeviceManagerIntegrationTest, CommissioningFailureRegistersNothing) {
     EXPECT_TRUE(database.loadActiveDevices().empty());
 }
 
-TEST_F(DeviceManagerIntegrationTest, CommissioningWithEmptyDeviceIdRegistersNothingButSucceeds) {
+// 빈 ID는 등록할 수 없으므로 실패이고, 드라이버에 정리를 알린다
+TEST_F(DeviceManagerIntegrationTest, CommissioningWithEmptyDeviceIdRegistersNothingAndFails) {
     matterFake.commissionResult = Result<CommissionOutcome>::success(CommissionOutcome{});
 
-    EXPECT_TRUE(manager.startCommissioning(ProtocolType::MATTER, "plug", ""));
+    EXPECT_FALSE(manager.startCommissioning(ProtocolType::MATTER, "plug", ""));
+    EXPECT_EQ(matterFake.finalizedOutcomes, (std::vector<std::pair<std::string, bool>>{{"", false}}));
 
     EXPECT_TRUE(manager.getAllDevices().empty());
 }
