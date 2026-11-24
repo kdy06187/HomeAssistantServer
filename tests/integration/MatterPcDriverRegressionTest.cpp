@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "DatabaseManager.hpp"
 #include "DeviceManager.hpp"
+#include "support/CommissionTestHelper.hpp"
 #include "DriverManager.hpp"
 #include "MatterController.hpp"
 #include "PCDriver.hpp"
@@ -86,7 +87,7 @@ TEST_F(MatterPcDriverRegressionTest, MatterDeviceCommissionedWithPcDriverKeepsPc
         if (!sub.empty() && sub[0] == "basicinformation") return FakeChipToolOutput::ok("SerialNumber: SN-NEW");
         return FakeChipToolOutput::ok("");
     };
-    ASSERT_TRUE(manager.startCommissioning(ProtocolType::MATTER, "plug", "code", "ssid", "pw", {DriverType::PC_DRIVER}));
+    ASSERT_TRUE(commissionVia(manager, matter.get(), ProtocolType::MATTER, "plug", "code", "ssid", "pw", {DriverType::PC_DRIVER}));
 
     Device registered;
     ASSERT_TRUE(manager.getDevice("SN-NEW", registered));

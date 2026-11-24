@@ -51,6 +51,12 @@ namespace RequestValidation {
     // 점으로 구분한 IPv4 문자열(예 192.168.0.5)인지
     bool isValidIpv4Address(const std::string& text);
 
+    // 사설(10/8·172.16/12·192.168/16)·링크 로컬(169.254/16) IPv4인지. 루프백·공인·0.0.0.0 등은 false
+    bool isLanIpv4Address(const std::string& text);
+
+    // 등록 작업 ID 경로 형식 [a-z0-9-]{1,32}
+    bool isValidJobId(const std::string& jobId);
+
     // HAC_HTTP_BIND·HAC_TCP_BIND 같은 바인딩 주소 환경 변수 값을 해석한다.
     // 없거나 빈 문자열이면 기본 0.0.0.0, IPv4 형식이 아니면 InvalidRequest
     Result<std::string> parseBindAddress(const char* environmentValue);

@@ -2,6 +2,7 @@
 #include "DatabaseManager.hpp"
 #include "DeviceManager.hpp"
 #include "DriverManager.hpp"
+#include "CommissioningService.hpp"
 #include "HTTPServer.hpp"
 #include "fakes/FakeClock.hpp"
 #include "fakes/FakeProtocolDriver.hpp"
@@ -67,19 +68,20 @@ protected:
     FakeClock clock;
     DelayedCommandScheduler scheduler{clock};
     DeviceManager manager{database, deviceDrivers, scheduler, clock};
+    CommissioningService commissioning{manager, {}, clock};
     FakeProtocolDriver tcpFake;
     int port = 0;
 };
 
 TEST_F(HttpServerLifecycleTest, StopWithoutStartAndDestructorWithoutStartAreSafe) {
-    HTTPServer server(manager, kToken, port);
+    HTTPServer server(manager, commissioning, kToken, port);
     server.stop();
     server.stop();
     EXPECT_FALSE(server.waitUntilReady(10ms));
 }
 
 TEST_F(HttpServerLifecycleTest, SecondStartWhileRunningReturnsFalse) {
-    HTTPServer server(manager, kToken, port);
+    HTTPServer server(manager, commissioning, kToken, port);
     ASSERT_TRUE(server.start());
     EXPECT_FALSE(server.start());
     ASSERT_TRUE(server.waitUntilReady(3s));
@@ -88,7 +90,7 @@ TEST_F(HttpServerLifecycleTest, SecondStartWhileRunningReturnsFalse) {
 }
 
 TEST_F(HttpServerLifecycleTest, StopTwiceIsSafe) {
-    HTTPServer server(manager, kToken, port);
+    HTTPServer server(manager, commissioning, kToken, port);
     ASSERT_TRUE(server.start());
     ASSERT_TRUE(server.waitUntilReady(3s));
     server.stop();
@@ -97,14 +99,14 @@ TEST_F(HttpServerLifecycleTest, StopTwiceIsSafe) {
 
 TEST_F(HttpServerLifecycleTest, StopRightAfterStartRepeatedlyNeverHangs) {
     for (int i = 0; i < 30; ++i) {
-        HTTPServer server(manager, kToken, port);
+        HTTPServer server(manager, commissioning, kToken, port);
         ASSERT_TRUE(server.start()) << i;
         server.stop();  // listen에 들어가기 전이어도 끝나야 한다
     }
 }
 
 TEST_F(HttpServerLifecycleTest, SameObjectCanStartStopStartAgainAndServes) {
-    HTTPServer server(manager, kToken, port);
+    HTTPServer server(manager, commissioning, kToken, port);
     for (int round = 0; round < 3; ++round) {
         ASSERT_TRUE(server.start()) << round;
         ASSERT_TRUE(server.waitUntilReady(3s)) << round;
@@ -114,7 +116,7 @@ TEST_F(HttpServerLifecycleTest, SameObjectCanStartStopStartAgainAndServes) {
 }
 
 TEST_F(HttpServerLifecycleTest, ConcurrentStartsLetExactlyOneWin) {
-    HTTPServer server(manager, kToken, port);
+    HTTPServer server(manager, commissioning, kToken, port);
     std::atomic<int> winners{0};
     std::vector<std::thread> threads;
     for (int i = 0; i < 8; ++i) {
@@ -127,7 +129,7 @@ TEST_F(HttpServerLifecycleTest, ConcurrentStartsLetExactlyOneWin) {
 }
 
 TEST_F(HttpServerLifecycleTest, ConcurrentStartAndStopCallsEndInACleanState) {
-    HTTPServer server(manager, kToken, port);
+    HTTPServer server(manager, commissioning, kToken, port);
     std::atomic<bool> go{false};
     std::thread starter([&] {
         while (!go) std::this_thread::yield();
@@ -147,7 +149,7 @@ TEST_F(HttpServerLifecycleTest, ConcurrentStartAndStopCallsEndInACleanState) {
 }
 
 TEST_F(HttpServerLifecycleTest, ConcurrentStartStopAndWaitUntilReadyAreRaceFree) {
-    HTTPServer server(manager, kToken, port);
+    HTTPServer server(manager, commissioning, kToken, port);
     std::atomic<bool> go{false};
     std::atomic<bool> done{false};
     std::vector<std::thread> threads;
@@ -177,13 +179,13 @@ TEST_F(HttpServerLifecycleTest, ConcurrentStartStopAndWaitUntilReadyAreRaceFree)
 }
 
 TEST_F(HttpServerLifecycleTest, NullAuthenticatorIsRejectedAtConstruction) {
-    EXPECT_THROW(HTTPServer(manager, std::shared_ptr<const Authenticator>(), port, "127.0.0.1", clock),
+    EXPECT_THROW(HTTPServer(manager, commissioning, std::shared_ptr<const Authenticator>(), port, "127.0.0.1", clock),
                  std::invalid_argument);
 }
 
 TEST_F(HttpServerLifecycleTest, PortOutOfRangeFailsToStart) {
     for (int bad : {0, -1, 65536, 100000}) {
-        HTTPServer server(manager, kToken, bad);
+        HTTPServer server(manager, commissioning, kToken, bad);
         testing::internal::CaptureStderr();
         EXPECT_FALSE(server.start()) << bad;
         testing::internal::GetCapturedStderr();
@@ -194,7 +196,7 @@ TEST_F(HttpServerLifecycleTest, PortOutOfRangeFailsToStart) {
 TEST_F(HttpServerLifecycleTest, StartLogIsPrintedOnlyAfterBindingSucceeds) {
     PortHolder holder(port);
     ASSERT_TRUE(holder.held());
-    HTTPServer server(manager, kToken, port);
+    HTTPServer server(manager, commissioning, kToken, port);
     testing::internal::CaptureStdout();
     testing::internal::CaptureStderr();
     EXPECT_FALSE(server.start());
@@ -207,7 +209,7 @@ TEST_F(HttpServerLifecycleTest, BindFailureLogsAddressPortAndErrnoThenRestartSuc
     PortHolder holder(port);
     ASSERT_TRUE(holder.held());
 
-    HTTPServer server(manager, kToken, port);
+    HTTPServer server(manager, commissioning, kToken, port);
     testing::internal::CaptureStderr();
     EXPECT_FALSE(server.start());
     EXPECT_FALSE(server.waitUntilReady(10ms));
@@ -223,7 +225,7 @@ TEST_F(HttpServerLifecycleTest, BindFailureLogsAddressPortAndErrnoThenRestartSuc
 }
 
 TEST_F(HttpServerLifecycleTest, BindsOnlyToTheGivenAddress) {
-    HTTPServer server(manager, kToken, port, "127.0.0.1");
+    HTTPServer server(manager, commissioning, kToken, port, "127.0.0.1");
     testing::internal::CaptureStdout();
     ASSERT_TRUE(server.start());
     ASSERT_TRUE(server.waitUntilReady(3s));

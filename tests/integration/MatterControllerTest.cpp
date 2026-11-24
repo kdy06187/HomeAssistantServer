@@ -2,6 +2,7 @@
 #include <sqlite3.h>
 #include "DatabaseManager.hpp"
 #include "DeviceManager.hpp"
+#include "support/CommissionTestHelper.hpp"
 #include "DriverManager.hpp"
 #include "MatterController.hpp"
 #include "fakes/FakeChipToolRunner.hpp"
@@ -791,7 +792,7 @@ TEST_F(MatterControllerTest, DatabaseFailureAfterPairingCleansUpMatterRegistrati
         return FakeChipToolOutput::ok("");
     };
 
-    EXPECT_FALSE(manager.startCommissioning(ProtocolType::MATTER, "plug", kGoodCode, "ssid", "pw"));
+    EXPECT_FALSE(commissionVia(manager, controller.get(), ProtocolType::MATTER, "plug", kGoodCode, "ssid", "pw"));
 
     EXPECT_TRUE(manager.getAllDevices().empty());
     EXPECT_EQ(controller->readEnergy("SN-NEW").error.code, ErrorCode::DeviceNotFound);  // 매핑 없음
@@ -843,7 +844,7 @@ TEST_F(CommissionRollbackTest, DatabaseFailureUndoesRegistrationAndReportsFailur
     rejectDeviceInserts();
     tcpFake.commissionResult = Result<CommissionOutcome>::success(CommissionOutcome{"NEW_1"});
 
-    EXPECT_FALSE(manager.startCommissioning(ProtocolType::TCP_DIY, "lamp", ""));
+    EXPECT_FALSE(commissionVia(manager, &tcpFake, ProtocolType::TCP_DIY, "lamp", ""));
 
     EXPECT_TRUE(manager.getAllDevices().empty());
     EXPECT_TRUE(database.loadActiveDevices().empty());

@@ -1,7 +1,9 @@
 #include <gtest/gtest.h>
+#include <atomic>
 #include <chrono>
 #include <thread>
 #include "DeviceManager.hpp"
+#include "support/CommissionTestHelper.hpp"
 #include "DatabaseManager.hpp"
 #include "support/HistoryTestHelper.hpp"
 #include "DriverManager.hpp"
@@ -41,13 +43,13 @@ TEST_F(DeviceManagerBehaviorTest, CommissioningWithoutRegisteredDriverReturnsFal
     DelayedCommandScheduler bareScheduler{clock};
     DeviceManager bare(db2, drivers2, bareScheduler, clock);
 
-    EXPECT_FALSE(bare.startCommissioning(ProtocolType::MATTER, "plug", ""));
+    EXPECT_FALSE(commissionVia(bare, nullptr, ProtocolType::MATTER, "plug", ""));
 }
 
 TEST_F(DeviceManagerBehaviorTest, MatterRecoveryKeepsDriverReportedIdAndName) {
     matterFake.commissionResult = Result<CommissionOutcome>::success(CommissionOutcome{"1700000000"});
 
-    ASSERT_TRUE(manager.startCommissioning(ProtocolType::MATTER, "plug", "pin"));
+    ASSERT_TRUE(commissionVia(manager, &matterFake, ProtocolType::MATTER, "plug", "pin"));
 
     Device device;
     ASSERT_TRUE(manager.getDevice("1700000000", device));
@@ -58,22 +60,23 @@ TEST_F(DeviceManagerBehaviorTest, MatterRecoveryKeepsDriverReportedIdAndName) {
 TEST_F(DeviceManagerBehaviorTest, FailedCommissioningDoesNotLeakDriverTypesToLaterSameNamedDevice) {
     deviceDrivers.registerDriver(DriverType::PC_DRIVER, [this]() { return std::make_shared<PCDriver>(&tcpFake); });
     tcpFake.commissionResult = Result<CommissionOutcome>::failure(ErrorCode::CommissionFailed, "fail");
-    manager.startCommissioning(ProtocolType::TCP_DIY, "desk", "", "", "", {DriverType::PC_DRIVER});
+    commissionVia(manager, &tcpFake, ProtocolType::TCP_DIY, "desk", "", "", "", {DriverType::PC_DRIVER});
     tcpFake.commissionResult = Result<CommissionOutcome>::success(CommissionOutcome{"FAKE_1"});
 
-    manager.startCommissioning(ProtocolType::TCP_DIY, "desk", "");
+    commissionVia(manager, &tcpFake, ProtocolType::TCP_DIY, "desk", "");
 
     Device device;
     ASSERT_TRUE(manager.getDevice("FAKE_1", device));
     EXPECT_TRUE(device.driver_types.empty());
 }
 
-// 커미셔닝 도중 종료가 시작되면 드라이버가 취소 플래그를 보고 끝내고, 아무것도 등록되지 않는다
+// 커미셔닝 도중 취소(서버 종료)되면 드라이버가 취소 플래그를 보고 끝내고, 아무것도 등록되지 않는다
 TEST_F(DeviceManagerBehaviorTest, ShutdownDuringCommissioningCancelsWithoutRegistering) {
     tcpFake.commissionResult = Result<CommissionOutcome>::success(CommissionOutcome{"FAKE_1"});
-    tcpFake.onCommission = [this] { manager.beginShutdown(); };
+    std::atomic<bool> cancel{false};
+    tcpFake.onCommission = [&] { cancel = true; };
 
-    EXPECT_FALSE(manager.startCommissioning(ProtocolType::TCP_DIY, "lamp", ""));
+    EXPECT_FALSE(commissionVia(manager, &tcpFake, ProtocolType::TCP_DIY, "lamp", "", "", "", {}, &cancel));
 
     EXPECT_TRUE(manager.getAllDevices().empty());
     EXPECT_TRUE(database.loadActiveDevices().empty());
@@ -85,7 +88,7 @@ TEST_F(DeviceManagerBehaviorTest, ShutdownRightAfterDriverSuccessDoesNotRegister
     tcpFake.ignoreCancel = true;
     tcpFake.onCommission = [this] { manager.beginShutdown(); };
 
-    EXPECT_FALSE(manager.startCommissioning(ProtocolType::TCP_DIY, "lamp", ""));
+    EXPECT_FALSE(commissionVia(manager, &tcpFake, ProtocolType::TCP_DIY, "lamp", ""));
 
     EXPECT_TRUE(manager.getAllDevices().empty());
     EXPECT_TRUE(database.loadActiveDevices().empty());
@@ -93,10 +96,10 @@ TEST_F(DeviceManagerBehaviorTest, ShutdownRightAfterDriverSuccessDoesNotRegister
     EXPECT_EQ(tcpFake.finalizedOutcomes, (std::vector<std::pair<std::string, bool>>{{"FAKE_1", false}}));
 }
 
-// P8: 종료가 시작된 뒤에는 드라이버를 부르지 않는다
+// P8: 취소된 뒤에는 드라이버를 부르지 않는다
 TEST_F(DeviceManagerBehaviorTest, CommissioningAfterShutdownDoesNotCallDriver) {
-    manager.beginShutdown();
-    EXPECT_FALSE(manager.startCommissioning(ProtocolType::MATTER, "plug", "pin"));
+    const std::atomic<bool> cancel{true};
+    EXPECT_FALSE(commissionVia(manager, &matterFake, ProtocolType::MATTER, "plug", "pin", "", "", {}, &cancel));
     EXPECT_TRUE(matterFake.commissionRequests.empty());
 }
 
@@ -104,7 +107,7 @@ TEST_F(DeviceManagerBehaviorTest, CommissioningAfterShutdownDoesNotCallDriver) {
 TEST_F(DeviceManagerBehaviorTest, ConcurrentShutdownAndCommissioningIsRaceFree) {
     tcpFake.commissionResult = Result<CommissionOutcome>::success(CommissionOutcome{"FAKE_1"});
     std::thread commissioner([this] {
-        for (int i = 0; i < 50; ++i) manager.startCommissioning(ProtocolType::TCP_DIY, "lamp", "");
+        for (int i = 0; i < 50; ++i) commissionVia(manager, &tcpFake, ProtocolType::TCP_DIY, "lamp", "");
     });
     std::thread stopper([this] {
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
@@ -112,7 +115,7 @@ TEST_F(DeviceManagerBehaviorTest, ConcurrentShutdownAndCommissioningIsRaceFree) 
     });
     commissioner.join();
     stopper.join();
-    EXPECT_FALSE(manager.startCommissioning(ProtocolType::TCP_DIY, "lamp", ""));
+    EXPECT_FALSE(commissionVia(manager, &tcpFake, ProtocolType::TCP_DIY, "lamp", ""));  // 종료 뒤 등록은 Cancelled
 }
 
 TEST_F(DeviceManagerBehaviorTest, EnergyForUnregisteredIdFailsWithoutReadingDriver) {
@@ -126,7 +129,7 @@ TEST_F(DeviceManagerBehaviorTest, EnergyForUnregisteredIdFailsWithoutReadingDriv
 // TCP 기기는 프로토콜을 보고 곧바로 거부한다. 어느 드라이버에도 묻지 않는다
 TEST_F(DeviceManagerBehaviorTest, EnergyForTcpDeviceIsUnsupportedWithoutAskingAnyDriver) {
     tcpFake.commissionResult = Result<CommissionOutcome>::success(CommissionOutcome{"ARD_1"});
-    manager.startCommissioning(ProtocolType::TCP_DIY, "lamp", "");
+    commissionVia(manager, &tcpFake, ProtocolType::TCP_DIY, "lamp", "");
     tcpFake.energyResult = Result<EnergyReading>::failure(ErrorCode::UnsupportedOperation, "unsupported");
     matterFake.energyResult = Result<EnergyReading>::success(EnergyReading{42, 7});
 
@@ -154,9 +157,9 @@ TEST_F(DeviceManagerBehaviorTest, EnergyWithoutProtocolDriverFailsAsInternal) {
 
 TEST_F(DeviceManagerBehaviorTest, HealthCheckRecordsEnergyOnlyForOnlineMatterDevices) {
     matterFake.commissionResult = Result<CommissionOutcome>::success(CommissionOutcome{"M_1"});
-    manager.startCommissioning(ProtocolType::MATTER, "plug", "");
+    commissionVia(manager, &matterFake, ProtocolType::MATTER, "plug", "");
     tcpFake.commissionResult = Result<CommissionOutcome>::success(CommissionOutcome{"T_1"});
-    manager.startCommissioning(ProtocolType::TCP_DIY, "lamp", "");
+    commissionVia(manager, &tcpFake, ProtocolType::TCP_DIY, "lamp", "");
     matterFake.energyResult = Result<EnergyReading>::success(EnergyReading{5, 300});
 
     manager.runHealthCheck(); // 둘 다 ON
@@ -173,7 +176,7 @@ TEST_F(DeviceManagerBehaviorTest, HealthCheckRecordsEnergyOnlyForOnlineMatterDev
 
 // 예전에는 UNKNOWN이면 DB를 OFF(0)로 덮었다. 이제 "모름"은 저장된 상태를 바꾸지 않는다
 TEST_F(DeviceManagerBehaviorTest, HealthCheckUnknownStateKeepsDatabaseState) {
-    manager.startCommissioning(ProtocolType::TCP_DIY, "lamp", "");
+    commissionVia(manager, &tcpFake, ProtocolType::TCP_DIY, "lamp", "");
     manager.executeCommand("FAKE_1", "ON");
     ASSERT_EQ(dbState("FAKE_1"), "ON");
     tcpFake.stateToReturn = "UNKNOWN";
@@ -185,9 +188,9 @@ TEST_F(DeviceManagerBehaviorTest, HealthCheckUnknownStateKeepsDatabaseState) {
 
 TEST_F(DeviceManagerBehaviorTest, HealthCheckExceptionOnOneDeviceDoesNotSkipTheOthers) {
     matterFake.commissionResult = Result<CommissionOutcome>::success(CommissionOutcome{"M_1"});
-    manager.startCommissioning(ProtocolType::MATTER, "plug", "");
+    commissionVia(manager, &matterFake, ProtocolType::MATTER, "plug", "");
     tcpFake.commissionResult = Result<CommissionOutcome>::success(CommissionOutcome{"T_1"});
-    manager.startCommissioning(ProtocolType::TCP_DIY, "lamp", "");
+    commissionVia(manager, &tcpFake, ProtocolType::TCP_DIY, "lamp", "");
     manager.executeCommand("T_1", "ON");
     matterFake.throwOnReadState = true;
     tcpFake.stateToReturn = "OFFLINE";
@@ -202,7 +205,7 @@ TEST_F(DeviceManagerBehaviorTest, HealthCheckWithNoDevicesDoesNothing) {
 }
 
 TEST_F(DeviceManagerBehaviorTest, ActiveDeviceIdsReflectsRegistrationAndRemoval) {
-    manager.startCommissioning(ProtocolType::TCP_DIY, "lamp", "");
+    commissionVia(manager, &tcpFake, ProtocolType::TCP_DIY, "lamp", "");
     EXPECT_EQ(manager.activeDeviceIds().count("FAKE_1"), 1u);
 
     manager.removeDevice("FAKE_1");

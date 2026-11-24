@@ -51,7 +51,9 @@ Result<CommissionOutcome> TCPDriver::commission(const CommissionRequest& request
                                                 const std::atomic<bool>& cancelRequested){
     if (cancelRequested) return Result<CommissionOutcome>::failure(ErrorCode::Cancelled, "등록 전 취소");
     const std::string& name = request.name;
-    std::string server_ip = request.payload.empty() ? "192.168.219.109" : request.payload;
+    // 빈 payload는 HTTP가 앱이 접속한 서버 주소로 채워 넘긴다. 여기까지 비어 오면 기기에 보낼 주소가 없다
+    if (request.payload.empty()) return Result<CommissionOutcome>::failure(ErrorCode::CommissionFailed, "서버 주소 없음");
+    const std::string& server_ip = request.payload;
     int server_port = 8080;
 
     // 정리·스냅샷은 Wi-Fi 설정을 보내기 전에 한다. 보낸 뒤에 찍으면 빨리 붙은 새 기기가 "원래 있던 연결"로 들어가

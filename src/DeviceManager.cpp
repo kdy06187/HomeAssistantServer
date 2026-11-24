@@ -202,32 +202,6 @@ CommandResult DeviceManager::executeHardware(const std::string& id, const std::s
     updateDeviceState(id, "OFFLINE");
     return CommandResult{CommandOutcome::Failed, Error{ErrorCode::DeviceUnreachable, "device did not respond"}, "OFFLINE", 0};
 }
-bool DeviceManager::startCommissioning(ProtocolType type, std::string name, std::string payload
-        , const std::string& ssid, const std::string& password, const std::vector<DriverType>& driverTypes){
-    std::cout << "[DeviceManager] 커미셔닝 시작: " << getProtocolString(type) << ", " << name << std::endl;
-    ProtocolDriver* driver = nullptr;
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        auto driverIt = drivers_.find(type);
-        if (driverIt != drivers_.end()) driver = driverIt->second;
-    }
-    if (!driver) {
-        std::cerr << "[DeviceManager] 에러 : " << getProtocolString(type) << " 드라이버를 찾을 수 없습니다 " << std::endl;
-        return false;
-    }
-    if (isShuttingDown_) {
-        std::cerr << "[DeviceManager] 종료 중이라 커미셔닝을 시작하지 않습니다" << std::endl;
-        return false;
-    }
-    // 커미셔닝은 수십 초 걸리므로 락 밖에서 하고, 드라이버에는 활성 ID 사본만 넘긴다
-    const auto outcome = driver->commission(CommissionRequest{name, payload, ssid, password}, activeDeviceIds(), isShuttingDown_);
-    bool isCommissioned = false;
-    if (outcome.ok()) isCommissioned = registerCommissioned(type, *outcome.value, name, driverTypes).ok();
-    std::cout << "[DeviceManager] " << getProtocolString(type) << " 커미셔닝 결과: "
-              << (isCommissioned ? "성공" : "실패") << std::endl;
-    return isCommissioned;
-}
-
 bool DeviceManager::isWithinRestorePeriod(const std::string& deletedAtUtc, std::chrono::system_clock::time_point now) {
     const auto deletedAt = UtcTime::fromDbText(deletedAtUtc);
     if (!deletedAt) return true;

@@ -2,6 +2,7 @@
 #include "DatabaseManager.hpp"
 #include "DeviceManager.hpp"
 #include "DriverManager.hpp"
+#include "CommissioningService.hpp"
 #include "HTTPServer.hpp"
 #include "fakes/FakeClock.hpp"
 #include "fakes/FakeProtocolDriver.hpp"
@@ -40,12 +41,13 @@ protected:
     FakeClock clock;
     DelayedCommandScheduler scheduler{clock};
     DeviceManager manager{database, deviceDrivers, scheduler, clock};
+    CommissioningService commissioning{manager, {}, clock};
     FakeProtocolDriver tcpFake;
     int port = 0;
 };
 
 TEST_F(HttpServerAuthTest, EmptyServerTokenRejectsEvenAnEmptyBearer) {
-    HTTPServer server(manager, std::string(), port);
+    HTTPServer server(manager, commissioning, std::string(), port);
     ASSERT_TRUE(server.start());
     ASSERT_TRUE(server.waitUntilReady(3s));
     EXPECT_EQ(statusLineFor(makeGetRequest("/api/devices", "")), "HTTP/1.1 401 Unauthorized");
@@ -59,7 +61,7 @@ public:
 };
 
 TEST_F(HttpServerAuthTest, InjectedAuthenticatorDecidesAccess) {
-    HTTPServer server(manager, std::make_shared<AllowNothing>(), port, "127.0.0.1", clock);
+    HTTPServer server(manager, commissioning, std::make_shared<AllowNothing>(), port, "127.0.0.1", clock);
     ASSERT_TRUE(server.start());
     ASSERT_TRUE(server.waitUntilReady(3s));
     EXPECT_EQ(statusLineFor(makeGetRequest("/api/devices", kToken)), "HTTP/1.1 401 Unauthorized");
@@ -67,7 +69,7 @@ TEST_F(HttpServerAuthTest, InjectedAuthenticatorDecidesAccess) {
 }
 
 TEST_F(HttpServerAuthTest, FailureLogHasClientMethodPathButNeverTheTokenAndSanitizesInput) {
-    HTTPServer server(manager, kToken, port);
+    HTTPServer server(manager, commissioning, kToken, port);
     ASSERT_TRUE(server.start());
     ASSERT_TRUE(server.waitUntilReady(3s));
 
@@ -88,7 +90,7 @@ TEST_F(HttpServerAuthTest, FailureLogHasClientMethodPathButNeverTheTokenAndSanit
 }
 
 TEST_F(HttpServerAuthTest, ForwardedForHeaderIsIgnoredInFailureLog) {
-    HTTPServer server(manager, kToken, port);
+    HTTPServer server(manager, commissioning, kToken, port);
     ASSERT_TRUE(server.start());
     ASSERT_TRUE(server.waitUntilReady(3s));
 
@@ -104,7 +106,7 @@ TEST_F(HttpServerAuthTest, ForwardedForHeaderIsIgnoredInFailureLog) {
 }
 
 TEST_F(HttpServerAuthTest, WarnsExactlyOnceAfterMoreThanTenFailuresInAMinute) {
-    HTTPServer server(manager, std::make_shared<BearerTokenAuthenticator>(kToken), port, "127.0.0.1", clock);
+    HTTPServer server(manager, commissioning, std::make_shared<BearerTokenAuthenticator>(kToken), port, "127.0.0.1", clock);
     ASSERT_TRUE(server.start());
     ASSERT_TRUE(server.waitUntilReady(3s));
 

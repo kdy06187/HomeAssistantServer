@@ -5,6 +5,7 @@
 #include <string>
 #include "DatabaseManager.hpp"
 #include "DeviceManager.hpp"
+#include "support/CommissionTestHelper.hpp"
 #include "DriverManager.hpp"
 #include "UtcTime.hpp"
 #include "fakes/FakeClock.hpp"
@@ -86,7 +87,7 @@ TEST_F(DeviceRetentionFlowTest, HiddenDeviceIsNotFoundEverywhereThenReRegistrati
 
     clock.advance(hours(24));
     matterFake.commissionResult = Result<CommissionOutcome>::success(CommissionOutcome{"PLUG"});
-    ASSERT_TRUE(manager.startCommissioning(ProtocolType::MATTER, "plug again", ""));
+    ASSERT_TRUE(commissionVia(manager, &matterFake, ProtocolType::MATTER, "plug again", ""));
 
     matterFake.energyResult = Result<EnergyReading>::success(EnergyReading{1000, 5300});
     const auto energy = manager.readEnergy("PLUG");

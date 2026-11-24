@@ -12,16 +12,19 @@
 #include "Command.hpp"
 #include "Result.hpp"
 class DeviceManager;
+class CommissioningService;
+struct JobStatus;
 namespace httplib { class Server; struct Request; struct Response; }
 
 class HTTPServer{
 public:
-    HTTPServer(DeviceManager& deviceManager, std::string apiToken, int port = 8000,
+    // commissioning: E3·E8이 쓰는 등록 작업 서비스. 서버보다 오래 살아야 한다(main에서 먼저 선언)
+    HTTPServer(DeviceManager& deviceManager, CommissioningService& commissioning, std::string apiToken, int port = 8000,
                std::string bindAddress = "0.0.0.0");
     // 인증 방식과 시계를 주입한다(테스트용). clock은 서버보다 오래 살아야 한다.
     // authenticator가 null이면 std::invalid_argument(인증 없는 서버를 만들지 않는다)
-    HTTPServer(DeviceManager& deviceManager, std::shared_ptr<const Authenticator> authenticator, int port,
-               std::string bindAddress, const Clock& clock);
+    HTTPServer(DeviceManager& deviceManager, CommissioningService& commissioning,
+               std::shared_ptr<const Authenticator> authenticator, int port, std::string bindAddress, const Clock& clock);
     ~HTTPServer();
 
     // 락: start는 생명주기 락을 쥔 채 실행 상태 락을 잡는다(생명주기 → 실행 상태).
@@ -36,6 +39,7 @@ public:
 
 private:
 DeviceManager& mDeviceManager;
+    CommissioningService& mCommissioning;
     std::shared_ptr<const Authenticator> mAuthenticator;
     AuthFailureMonitor mAuthFailureMonitor;
     int mPort;
@@ -66,7 +70,9 @@ DeviceManager& mDeviceManager;
 
     ApiResponse handleGetDevices();
     ApiResponse handleControlDevice(const std::string& requestBody);
-    ApiResponse handleCommissionDevice(const std::string& requestBody);
+    // localAddress: 앱이 접속한 서버 주소(TCP_DIY의 빈 payload를 이 값으로 바꾼다)
+    ApiResponse handleCommissionDevice(const std::string& requestBody, const std::string& localAddress);
+    ApiResponse handleGetCommissionJob(const httplib::Request& request);
     ApiResponse handleDeleteDevice(const std::string& requestBody);
     ApiResponse handleGetDeviceState(const httplib::Request& request);
     ApiResponse handleGetDeviceEnergy(const httplib::Request& request);

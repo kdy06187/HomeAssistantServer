@@ -2,6 +2,7 @@
 #include "DatabaseManager.hpp"
 #include "DeviceManager.hpp"
 #include "DriverManager.hpp"
+#include "CommissioningService.hpp"
 #include "HTTPServer.hpp"
 #include "fakes/FakeClock.hpp"
 #include "fakes/FakeProtocolDriver.hpp"
@@ -25,7 +26,7 @@ protected:
         manager.registerDriver(ProtocolType::TCP_DIY, &tcpFake);
         manager.addDevice("DEV_1", "시험 기기", ProtocolType::TCP_DIY, {});
         port = findFreePort();
-        server = std::make_unique<HTTPServer>(manager, kToken, port);
+        server = std::make_unique<HTTPServer>(manager, commissioning, kToken, port);
         ASSERT_TRUE(server->start());
         ASSERT_TRUE(server->waitUntilReady(3s));
     }
@@ -36,6 +37,7 @@ protected:
     FakeClock clock;
     DelayedCommandScheduler scheduler{clock};
     DeviceManager manager{database, deviceDrivers, scheduler, clock};
+    CommissioningService commissioning{manager, {}, clock};
     FakeProtocolDriver tcpFake;
     std::unique_ptr<HTTPServer> server;
     int port = 0;

@@ -6,6 +6,7 @@
 #include "support/HistoryTestHelper.hpp"
 #include "DeviceManager.hpp"
 #include "DriverManager.hpp"
+#include "CommissioningService.hpp"
 #include "HTTPServer.hpp"
 #include "fakes/FakeClock.hpp"
 #include "fakes/FakeProtocolDriver.hpp"
@@ -15,6 +16,10 @@
 #include "httplib.h"
 #include "json.hpp"
 #include <arpa/inet.h>
+#include <ifaddrs.h>
+#include <atomic>
+#include <thread>
+#include "RequestValidation.hpp"
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -47,8 +52,9 @@ protected:
         ASSERT_TRUE(database.init(":memory:"));
         manager.registerDriver(ProtocolType::TCP_DIY, &tcpFake);
         manager.registerDriver(ProtocolType::MATTER, &matterFake);
+        commissioning.start();
         port = findFreePort();
-        server = std::make_unique<HTTPServer>(manager, kToken, port);
+        server = std::make_unique<HTTPServer>(manager, commissioning, kToken, port);
         ASSERT_TRUE(server->start());
         ASSERT_TRUE(server->waitUntilReady(std::chrono::seconds(3)));
     }
@@ -88,6 +94,8 @@ protected:
     DeviceManager manager{database, deviceDrivers, scheduler, clock};
     FakeProtocolDriver tcpFake;
     FakeProtocolDriver matterFake;
+    // 가짜 드라이버보다 뒤에 선언해 먼저 소멸(작업 스레드 join)한다
+    CommissioningService commissioning{manager, {{ProtocolType::TCP_DIY, &tcpFake}, {ProtocolType::MATTER, &matterFake}}, clock};
     std::unique_ptr<HTTPServer> server;
     int port = 0;
 };
@@ -148,6 +156,7 @@ const std::vector<RouteCase> kApiRoutes = {
     {"GET", "/api/devices"},
     {"POST", "/api/control"},
     {"POST", "/api/commission"},
+    {"GET", "/api/commission/c-x-1"},
     {"POST", "/api/devices/delete"},
     {"GET", "/api/devices/X/state"},
     {"GET", "/api/devices/X/energy"},
@@ -249,9 +258,10 @@ TEST_F(HttpServerTest, Http10RequestWithoutTokenGets401) {
 TEST_F(HttpServerTest, StopTwiceAndStopBeforeStartAreSafe) {
     DelayedCommandScheduler otherScheduler{clock};
     DeviceManager other(database, deviceDrivers, otherScheduler, clock);
-    HTTPServer neverStarted(other, kToken, findFreePort());
+    CommissioningService otherCommissioning{other, {}, clock};
+    HTTPServer neverStarted(other, otherCommissioning, kToken, findFreePort());
     neverStarted.stop();
-    HTTPServer started(other, kToken, findFreePort());
+    HTTPServer started(other, otherCommissioning, kToken, findFreePort());
     ASSERT_TRUE(started.start());
     started.stop();  // listen 진입 전/후 어느 쪽이든 끝나야 한다
     started.stop();
@@ -259,7 +269,7 @@ TEST_F(HttpServerTest, StopTwiceAndStopBeforeStartAreSafe) {
 
 TEST_F(HttpServerTest, StopImmediatelyAfterStartReturnsQuickly) {
     for (int i = 0; i < 20; ++i) {
-        HTTPServer quick(manager, kToken, findFreePort());
+        HTTPServer quick(manager, commissioning, kToken, findFreePort());
         ASSERT_TRUE(quick.start());
         const auto begin = std::chrono::steady_clock::now();
         quick.stop();
@@ -407,9 +417,10 @@ TEST_F(HttpServerTest, E2UnreachableDeviceReturns502) {
 TEST_F(HttpServerTest, E2MissingProtocolDriverReturns500) {
     DelayedCommandScheduler bareManagerScheduler{clock};
     DeviceManager bareManager(database, deviceDrivers, bareManagerScheduler, clock);
+    CommissioningService bareManagerCommissioning{bareManager, {}, clock};
     bareManager.addDevice("BARE_1", "bare", ProtocolType::TCP_DIY, {});
     const int barePort = findFreePort();
-    HTTPServer bareServer(bareManager, kToken, barePort);
+    HTTPServer bareServer(bareManager, bareManagerCommissioning, kToken, barePort);
     ASSERT_TRUE(bareServer.start());
     ASSERT_TRUE(bareServer.waitUntilReady(std::chrono::seconds(3)));
 
@@ -439,6 +450,7 @@ TEST(HttpServerDelayedCommandTest, E2DelayedCommandReturns202WithPendingCommand)
     FakeClock clock;
     DelayedCommandScheduler scheduler{clock};
     DeviceManager manager{database, deviceDrivers, scheduler, clock};
+    CommissioningService commissioning{manager, {}, clock};
     FakeProtocolDriver tcpFake;
     ASSERT_TRUE(database.init(":memory:"));
     manager.registerDriver(ProtocolType::TCP_DIY, &tcpFake);
@@ -448,7 +460,7 @@ TEST(HttpServerDelayedCommandTest, E2DelayedCommandReturns202WithPendingCommand)
     manager.addDevice("FAKE_1", "pc", ProtocolType::TCP_DIY, {DriverType::PC_DRIVER});
     manager.updateDeviceState("FAKE_1", "ON");
     const int serverPort = findFreePort();
-    HTTPServer server(manager, kToken, serverPort);
+    HTTPServer server(manager, commissioning, kToken, serverPort);
     ASSERT_TRUE(server.start());
     ASSERT_TRUE(server.waitUntilReady(std::chrono::seconds(3)));
 
@@ -469,6 +481,7 @@ TEST(HttpServerDelayedCommandTest, E2SameCommandWhilePendingReturns202WithRemain
     FakeClock clock;
     DelayedCommandScheduler scheduler{clock};
     DeviceManager manager{database, deviceDrivers, scheduler, clock};
+    CommissioningService commissioning{manager, {}, clock};
     FakeProtocolDriver tcpFake;
     ASSERT_TRUE(database.init(":memory:"));
     manager.registerDriver(ProtocolType::TCP_DIY, &tcpFake);
@@ -478,7 +491,7 @@ TEST(HttpServerDelayedCommandTest, E2SameCommandWhilePendingReturns202WithRemain
     manager.addDevice("FAKE_1", "pc", ProtocolType::TCP_DIY, {DriverType::PC_DRIVER});
     manager.updateDeviceState("FAKE_1", "ON");
     const int serverPort = findFreePort();
-    HTTPServer server(manager, kToken, serverPort);
+    HTTPServer server(manager, commissioning, kToken, serverPort);
     ASSERT_TRUE(server.start());
     ASSERT_TRUE(server.waitUntilReady(std::chrono::seconds(3)));
 
@@ -505,6 +518,7 @@ TEST(HttpServerDelayedCommandTest, E2DuringShutdownReturns502NotCancelled200) {
     FakeClock clock;
     DelayedCommandScheduler scheduler{clock};
     DeviceManager manager{database, deviceDrivers, scheduler, clock};
+    CommissioningService commissioning{manager, {}, clock};
     FakeProtocolDriver tcpFake;
     ASSERT_TRUE(database.init(":memory:"));
     manager.registerDriver(ProtocolType::TCP_DIY, &tcpFake);
@@ -516,7 +530,7 @@ TEST(HttpServerDelayedCommandTest, E2DuringShutdownReturns502NotCancelled200) {
     manager.beginShutdown();
     scheduler.stopAndCancelAll();
     const int serverPort = findFreePort();
-    HTTPServer server(manager, kToken, serverPort);
+    HTTPServer server(manager, commissioning, kToken, serverPort);
     ASSERT_TRUE(server.start());
     ASSERT_TRUE(server.waitUntilReady(std::chrono::seconds(3)));
 
@@ -548,16 +562,54 @@ TEST_F(HttpServerTest, E2InvalidRequestsReturn400Envelope) {
 
 // ---- E3 ----
 
-// 성공·등록 실패 본문은 v1.0 그대로(13번에서 비동기로 바뀜). 입력 검증 오류만 새 오류 봉투
-TEST_F(HttpServerTest, E3CommissionSuccess) {
+// 이 기기의 사설 IPv4 하나(없으면 빈 문자열). 빈 payload가 "접속한 서버 주소"로 바뀌는지 볼 때 쓴다
+std::string firstLanAddressOfThisHost() {
+    ifaddrs* list = nullptr;
+    if (getifaddrs(&list) != 0) return "";
+    std::string found;
+    for (ifaddrs* item = list; item && found.empty(); item = item->ifa_next) {
+        if (!item->ifa_addr || item->ifa_addr->sa_family != AF_INET) continue;
+        char text[INET_ADDRSTRLEN] = {};
+        inet_ntop(AF_INET, &reinterpret_cast<sockaddr_in*>(item->ifa_addr)->sin_addr, text, sizeof(text));
+        if (RequestValidation::isLanIpv4Address(text)) found = text;
+    }
+    freeifaddrs(list);
+    return found;
+}
+
+// E8이 끝난 상태(SUCCEEDED·FAILED)가 될 때까지(최대 5초) 조회한다
+json waitJobFinished(int port, const std::string& jobId) {
+    httplib::Client client("127.0.0.1", port);
+    json last;
+    for (int i = 0; i < 500; ++i) {
+        auto response = client.Get("/api/commission/" + jobId, httplib::Headers{{"Authorization", "Bearer " + kToken}});
+        if (!response || response->status != 200) return json();
+        last = json::parse(response->body);
+        if (last["state"] == "SUCCEEDED" || last["state"] == "FAILED") return last;
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    return last;
+}
+
+// 접수는 바로 202 + jobId, 결과는 E8
+TEST_F(HttpServerTest, E3AcceptsWith202AndE8ReportsSuccess) {
+    tcpFake.commissionResult = Result<CommissionOutcome>::success(CommissionOutcome{"TCP_A1B2C3D4E5F6"});
     auto response = post("/api/commission",
         R"({"protocolType":"TCP_DIY","deviceName":"lamp","payload":"10.0.0.1","ssid":"s","password":"p"})");
     ASSERT_TRUE(response);
-    EXPECT_EQ(response->status, 200);
-    EXPECT_EQ(json::parse(response->body), json::parse(R"({"result":"success","message":"기기 등록 성공!"})"));
+    EXPECT_EQ(response->status, 202);
+    const json accepted = json::parse(response->body);
+    EXPECT_EQ(accepted["state"], "PENDING");
+    const std::string jobId = accepted["jobId"];
+    EXPECT_TRUE(RequestValidation::isValidJobId(jobId)) << jobId;
+
+    const json finished = waitJobFinished(port, jobId);
+    EXPECT_EQ(finished, json::parse(R"({"jobId":")" + jobId +
+                                    R"(","state":"SUCCEEDED","deviceId":"TCP_A1B2C3D4E5F6","restored":false,"error":null})"));
     ASSERT_EQ(tcpFake.commissionRequests.size(), 1u);
     EXPECT_EQ(tcpFake.commissionRequests[0].name, "lamp");
     EXPECT_EQ(tcpFake.commissionRequests[0].ssid, "s");
+    EXPECT_EQ(tcpFake.commissionRequests[0].payload, "10.0.0.1");  // 명시한 IP는 그대로
 }
 
 // MATTER 설정 코드 형식(11자리·21자리·MT:)과 driverTypes가 등록까지 전달된다
@@ -569,7 +621,8 @@ TEST_F(HttpServerTest, E3MatterPayloadFormatsSucceedAndDriverTypesAreForwarded) 
         auto response = post("/api/commission", R"({"protocolType":"MATTER","deviceName":"plug","payload":")" + payload +
                                                     R"(","driverTypes":[1]})");
         ASSERT_TRUE(response) << payload;
-        EXPECT_EQ(response->status, 200) << payload;
+        ASSERT_EQ(response->status, 202) << payload;
+        EXPECT_EQ(waitJobFinished(port, json::parse(response->body)["jobId"])["state"], "SUCCEEDED") << payload;
         EXPECT_EQ(matterFake.commissionRequests.back().payload, payload);
         Device device;
         ASSERT_TRUE(manager.getDevice("PLUG_" + std::to_string(index), device));
@@ -577,12 +630,84 @@ TEST_F(HttpServerTest, E3MatterPayloadFormatsSucceedAndDriverTypesAreForwarded) 
     }
 }
 
-TEST_F(HttpServerTest, E3CommissionFailureReturns400WithLegacyBody) {
-    tcpFake.commissionResult = Result<CommissionOutcome>::failure(ErrorCode::CommissionFailed, "fail");
-    auto response = post("/api/commission", R"({"protocolType":"TCP_DIY","deviceName":"lamp","payload":""})");
+TEST_F(HttpServerTest, E8ReportsFailureWithFixedMessageAndRestored) {
+    tcpFake.commissionResult = Result<CommissionOutcome>::failure(ErrorCode::CommissionTimeout, "timeout");
+    auto failed = post("/api/commission", R"({"protocolType":"TCP_DIY","deviceName":"lamp","payload":"10.0.0.1"})");
+    ASSERT_TRUE(failed);
+    const json failedJob = waitJobFinished(port, json::parse(failed->body)["jobId"]);
+    EXPECT_EQ(failedJob["state"], "FAILED");
+    EXPECT_EQ(failedJob["deviceId"], nullptr);
+    EXPECT_EQ(failedJob["error"], json::parse(R"({"code":"COMMISSION_TIMEOUT","message":"기기 등록 시간이 초과되었습니다."})"));
+
+    addDevice(ProtocolType::TCP_DIY, "TCP_000000000001", "lamp");
+    ASSERT_TRUE(manager.removeDevice("TCP_000000000001").ok());
+    tcpFake.commissionResult = Result<CommissionOutcome>::success(CommissionOutcome{"TCP_000000000001"});
+    auto restored = post("/api/commission", R"({"protocolType":"TCP_DIY","deviceName":"lamp","payload":"10.0.0.1"})");
+    ASSERT_TRUE(restored);
+    const json restoredJob = waitJobFinished(port, json::parse(restored->body)["jobId"]);
+    EXPECT_EQ(restoredJob["state"], "SUCCEEDED");
+    EXPECT_EQ(restoredJob["restored"], true);
+
+    auto already = post("/api/commission", R"({"protocolType":"TCP_DIY","deviceName":"lamp","payload":"10.0.0.1"})");
+    ASSERT_TRUE(already);
+    EXPECT_EQ(waitJobFinished(port, json::parse(already->body)["jobId"])["error"]["code"], "ALREADY_REGISTERED");
+}
+
+TEST_F(HttpServerTest, E8UnknownOrMalformedJobIdIs404JobNotFound) {
+    httplib::Client client("127.0.0.1", port);
+    const json expected = json::parse(R"({"error":{"code":"JOB_NOT_FOUND","message":"없는 등록 작업입니다."}})");
+    for (const std::string& jobId : {std::string("c-unknown-1"), std::string("UPPER"), std::string(33, 'a'), std::string("a_b")}) {
+        auto response = client.Get("/api/commission/" + jobId, authHeaders());
+        ASSERT_TRUE(response) << jobId;
+        EXPECT_EQ(response->status, 404) << jobId;
+        EXPECT_EQ(json::parse(response->body), expected) << jobId;
+    }
+}
+
+TEST_F(HttpServerTest, E3WhileAnotherJobRunsIs409Busy) {
+    std::atomic<bool> release{false};
+    tcpFake.onCommission = [&] {
+        while (!release) std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    };
+    auto first = post("/api/commission", R"({"protocolType":"TCP_DIY","deviceName":"lamp","payload":"10.0.0.1"})");
+    ASSERT_TRUE(first);
+    EXPECT_EQ(first->status, 202);
+    auto second = post("/api/commission", R"({"protocolType":"MATTER","deviceName":"plug","payload":"11111111111"})");
+    ASSERT_TRUE(second);
+    EXPECT_EQ(second->status, 409);
+    EXPECT_EQ(json::parse(second->body)["error"]["code"], "COMMISSION_BUSY");
+    release = true;
+    waitJobFinished(port, json::parse(first->body)["jobId"]);
+}
+
+// 종료(취소 요청) 뒤 접수는 E2와 같이 502
+TEST_F(HttpServerTest, E3AfterCancelRequestIs502) {
+    commissioning.requestCancel();
+    auto response = post("/api/commission", R"({"protocolType":"TCP_DIY","deviceName":"lamp","payload":"10.0.0.1"})");
     ASSERT_TRUE(response);
-    EXPECT_EQ(response->status, 400);
-    EXPECT_EQ(json::parse(response->body), json::parse(R"({"result":"error","message":"기기 등록 실패!"})"));
+    EXPECT_EQ(response->status, 502);
+    EXPECT_EQ(json::parse(response->body)["error"]["code"], "DEVICE_UNREACHABLE");
+    EXPECT_TRUE(tcpFake.commissionRequests.empty());
+}
+
+// 빈 payload: 루프백으로 접속하면 기기가 닿을 주소가 아니라 400, LAN 주소로 접속하면 그 주소를 기기에 보낸다
+TEST_F(HttpServerTest, E3EmptyTcpPayloadUsesAddressTheAppConnectedTo) {
+    auto loopback = post("/api/commission", R"({"protocolType":"TCP_DIY","deviceName":"lamp","payload":""})");
+    ASSERT_TRUE(loopback);
+    EXPECT_EQ(loopback->status, 400);
+    EXPECT_EQ(json::parse(loopback->body), json::parse(kInvalidRequestBody));
+    EXPECT_TRUE(tcpFake.commissionRequests.empty());
+
+    const std::string lanAddress = firstLanAddressOfThisHost();
+    if (lanAddress.empty()) GTEST_SKIP() << "이 기기에 사설 IPv4가 없어 LAN 경로는 건너뜀";
+    httplib::Client client(lanAddress, port);
+    auto response = client.Post("/api/commission", authHeaders(), R"({"protocolType":"TCP_DIY","deviceName":"lamp","payload":""})",
+                                "application/json");
+    ASSERT_TRUE(response);
+    ASSERT_EQ(response->status, 202);
+    waitJobFinished(port, json::parse(response->body)["jobId"]);
+    ASSERT_EQ(tcpFake.commissionRequests.size(), 1u);
+    EXPECT_EQ(tcpFake.commissionRequests[0].payload, lanAddress);
 }
 
 TEST_F(HttpServerTest, E3ValidationErrorsReturn400EnvelopeWithoutCommissioning) {

@@ -1,5 +1,6 @@
 #include "HTTPServer.hpp"
 #include "ApiAuth.hpp"
+#include "CommissioningService.hpp"
 #include "DeviceManager.hpp"
 #include "httplib.h"
 #include "EnergyAggregation.hpp"
@@ -186,14 +187,15 @@ struct HTTPServer::RunState {
     std::atomic<bool> hasFinished{false};
 };
 
-HTTPServer::HTTPServer(DeviceManager& deviceManager, std::string apiToken, int port, std::string bindAddress)
-    : HTTPServer(deviceManager, std::make_shared<BearerTokenAuthenticator>(std::move(apiToken)), port,
+HTTPServer::HTTPServer(DeviceManager& deviceManager, CommissioningService& commissioning, std::string apiToken, int port,
+                       std::string bindAddress)
+    : HTTPServer(deviceManager, commissioning, std::make_shared<BearerTokenAuthenticator>(std::move(apiToken)), port,
                  std::move(bindAddress), systemClock()) {
 }
 
-HTTPServer::HTTPServer(DeviceManager& deviceManager, std::shared_ptr<const Authenticator> authenticator, int port,
-                       std::string bindAddress, const Clock& clock)
-    : mDeviceManager(deviceManager), mAuthenticator(requireAuthenticator(std::move(authenticator))), mAuthFailureMonitor(clock),
+HTTPServer::HTTPServer(DeviceManager& deviceManager, CommissioningService& commissioning,
+                       std::shared_ptr<const Authenticator> authenticator, int port, std::string bindAddress, const Clock& clock)
+    : mDeviceManager(deviceManager), mCommissioning(commissioning), mAuthenticator(requireAuthenticator(std::move(authenticator))), mAuthFailureMonitor(clock),
       mPort(port), mBindAddress(std::move(bindAddress)) {
 }
 
@@ -280,7 +282,10 @@ void HTTPServer::registerRoutes(httplib::Server& server){
         return handleControlDevice(req.body);
     });
     addRoute(server, HttpMethod::Post, "/api/commission", [this](const httplib::Request& req) {
-        return handleCommissionDevice(req.body);
+        return handleCommissionDevice(req.body, req.local_addr);
+    });
+    addRoute(server, HttpMethod::Get, R"(/api/commission/([^/]+))", [this](const httplib::Request& req) {
+        return handleGetCommissionJob(req);
     });
     addRoute(server, HttpMethod::Post, "/api/devices/delete", [this](const httplib::Request& req) {
         return handleDeleteDevice(req.body);
@@ -385,8 +390,8 @@ ApiResponse HTTPServer::handleControlDevice(const std::string& requestBody){
     return controlResponseFor(result, *deviceId, *command);
 }
 
-// 성공·실패 본문은 v1.0 그대로다(비동기 전환은 13번). 입력 검증 오류만 새 오류 봉투를 쓴다
-ApiResponse HTTPServer::handleCommissionDevice(const std::string& requestBody){
+// 접수만 하고 바로 202로 답한다. 결과는 E8로 조회한다
+ApiResponse HTTPServer::handleCommissionDevice(const std::string& requestBody, const std::string& localAddress){
     // Body에 Wi-Fi 비밀번호와 페어링 코드가 있으므로 내용을 출력하지 않는다.
     std::cout << "[HTTPServer] 기기 등록(POST) 요청 수신" << std::endl;
     const auto body = parseJsonObject(requestBody);
@@ -397,11 +402,43 @@ ApiResponse HTTPServer::handleCommissionDevice(const std::string& requestBody){
         std::cerr << "[HTTPServer] 등록 요청 검증 실패: " << input.error.message << std::endl;
         return ApiResponse::error(input.error.code);
     }
-    const CommissionInput& request = *input.value;
-    const bool isSuccess = mDeviceManager.startCommissioning(request.protocolType, request.deviceName, request.payload,
-                                                             request.ssid, request.password, request.driverTypes);
-    if (isSuccess) return ApiResponse::ok(json{{"result", "success"}, {"message", "기기 등록 성공!"}});
-    return ApiResponse::ok(json{{"result", "error"}, {"message", "기기 등록 실패!"}}, 400);
+    CommissionInput request = *input.value;
+    // TCP_DIY 빈 payload = 앱이 접속한 서버 주소. 기기가 닿을 수 없는 주소(루프백 등)면 접수하지 않는다
+    if (request.protocolType == ProtocolType::TCP_DIY && request.payload.empty()) {
+        if (!RequestValidation::isLanIpv4Address(localAddress)) {
+            std::cerr << "[HTTPServer] 등록 거부: 접속 주소가 LAN IPv4가 아님 (" << RequestValidation::sanitizeForLog(localAddress)
+                      << "), payload에 서버 IP 필요" << std::endl;
+            return ApiResponse::error(ErrorCode::InvalidRequest);
+        }
+        request.payload = localAddress;
+        std::cout << "[HTTPServer] TCP 등록 서버 주소 = 접속 주소 " << localAddress << std::endl;
+    }
+    const auto jobId = mCommissioning.submit(request.protocolType,
+                                             CommissionRequest{request.deviceName, request.payload, request.ssid, request.password},
+                                             request.driverTypes);
+    if (!jobId.ok()) return ApiResponse::error(deviceCallErrorCode(jobId.error.code));
+    return ApiResponse::ok(json{{"jobId", *jobId.value}, {"state", "PENDING"}}, 202);
+}
+
+ApiResponse HTTPServer::handleGetCommissionJob(const httplib::Request& request) {
+    const std::string& jobId = request.matches[1];
+    if (!RequestValidation::isValidJobId(jobId)) return ApiResponse::error(ErrorCode::JobNotFound);
+    const auto job = mCommissioning.getJob(jobId);
+    if (!job.ok()) return ApiResponse::error(job.error.code);
+    const JobStatus& status = *job.value;
+    json response;
+    response["jobId"] = status.jobId;
+    switch (status.state) {
+        case JobState::Pending:   response["state"] = "PENDING"; break;
+        case JobState::Running:   response["state"] = "RUNNING"; break;
+        case JobState::Succeeded: response["state"] = "SUCCEEDED"; break;
+        case JobState::Failed:    response["state"] = "FAILED"; break;
+    }
+    response["deviceId"] = status.state == JobState::Succeeded ? json(status.deviceId) : json(nullptr);
+    response["restored"] = status.restored;
+    // 실패 코드는 고정 문구와 함께 본문 안에(ErrorMapping의 200 항목). 그 밖은 null
+    response["error"] = status.state == JobState::Failed ? ErrorMapping::buildErrorJson(status.errorCode)["error"] : json(nullptr);
+    return ApiResponse::ok(std::move(response));
 }
 
 ApiResponse HTTPServer::handleDeleteDevice(const std::string& requestBody) {

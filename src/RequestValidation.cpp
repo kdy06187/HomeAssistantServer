@@ -186,6 +186,22 @@ bool RequestValidation::isValidIpv4Address(const std::string& text) {
     return inet_pton(AF_INET, text.c_str(), &address) == 1;
 }
 
+bool RequestValidation::isLanIpv4Address(const std::string& text) {
+    if (text.find('\0') != std::string::npos) return false;
+    in_addr address{};
+    if (inet_pton(AF_INET, text.c_str(), &address) != 1) return false;
+    const uint32_t host = ntohl(address.s_addr);
+    return (host >> 24) == 10 || (host >> 20) == ((172u << 4) | 1u) || (host >> 16) == ((192u << 8) | 168u) ||
+           (host >> 16) == ((169u << 8) | 254u);
+}
+
+bool RequestValidation::isValidJobId(const std::string& jobId) {
+    if (jobId.empty() || jobId.size() > 32) return false;
+    return std::all_of(jobId.begin(), jobId.end(), [](char c) {
+        return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-';
+    });
+}
+
 Result<std::string> RequestValidation::parseBindAddress(const char* environmentValue) {
     if (environmentValue == nullptr || environmentValue[0] == '\0') {
         return Result<std::string>::success("0.0.0.0");

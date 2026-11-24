@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include "DeviceManager.hpp"
+#include "support/CommissionTestHelper.hpp"
 #include "DatabaseManager.hpp"
 #include "support/HistoryTestHelper.hpp"
 #include "DriverManager.hpp"
@@ -43,7 +44,7 @@ TEST_F(DeviceManagerIntegrationTest, CommissioningSuccessRegistersDeviceWithDriv
         return std::make_shared<PCDriver>(&tcpFake);
     });
 
-    const bool result = manager.startCommissioning(ProtocolType::TCP_DIY, "desk", "10.0.0.1", "ssid", "pw",
+    const bool result = commissionVia(manager, &tcpFake, ProtocolType::TCP_DIY, "desk", "10.0.0.1", "ssid", "pw",
                                                    {DriverType::PC_DRIVER});
 
     EXPECT_TRUE(result);
@@ -61,10 +62,10 @@ TEST_F(DeviceManagerIntegrationTest, CommissioningSuccessRegistersDeviceWithDriv
 }
 
 TEST_F(DeviceManagerIntegrationTest, CommissioningPassesActiveIdsSnapshotToDriver) {
-    manager.startCommissioning(ProtocolType::TCP_DIY, "first", "");
+    commissionVia(manager, &tcpFake, ProtocolType::TCP_DIY, "first", "");
     tcpFake.commissionResult = Result<CommissionOutcome>::success(CommissionOutcome{"FAKE_2"});
 
-    manager.startCommissioning(ProtocolType::TCP_DIY, "second", "");
+    commissionVia(manager, &tcpFake, ProtocolType::TCP_DIY, "second", "");
 
     ASSERT_EQ(tcpFake.commissionActiveIds.size(), 2u);
     EXPECT_TRUE(tcpFake.commissionActiveIds[0].empty());
@@ -74,7 +75,7 @@ TEST_F(DeviceManagerIntegrationTest, CommissioningPassesActiveIdsSnapshotToDrive
 TEST_F(DeviceManagerIntegrationTest, CommissioningFailureRegistersNothing) {
     tcpFake.commissionResult = Result<CommissionOutcome>::failure(ErrorCode::CommissionFailed, "fail");
 
-    EXPECT_FALSE(manager.startCommissioning(ProtocolType::TCP_DIY, "desk", ""));
+    EXPECT_FALSE(commissionVia(manager, &tcpFake, ProtocolType::TCP_DIY, "desk", ""));
 
     EXPECT_TRUE(manager.getAllDevices().empty());
     EXPECT_TRUE(database.loadActiveDevices().empty());
@@ -84,14 +85,14 @@ TEST_F(DeviceManagerIntegrationTest, CommissioningFailureRegistersNothing) {
 TEST_F(DeviceManagerIntegrationTest, CommissioningWithEmptyDeviceIdRegistersNothingAndFails) {
     matterFake.commissionResult = Result<CommissionOutcome>::success(CommissionOutcome{});
 
-    EXPECT_FALSE(manager.startCommissioning(ProtocolType::MATTER, "plug", ""));
+    EXPECT_FALSE(commissionVia(manager, &matterFake, ProtocolType::MATTER, "plug", ""));
     EXPECT_EQ(matterFake.finalizedOutcomes, (std::vector<std::pair<std::string, bool>>{{"", false}}));
 
     EXPECT_TRUE(manager.getAllDevices().empty());
 }
 
 TEST_F(DeviceManagerIntegrationTest, ControlSuccessSetsStateOn) {
-    manager.startCommissioning(ProtocolType::TCP_DIY, "lamp", "");
+    commissionVia(manager, &tcpFake, ProtocolType::TCP_DIY, "lamp", "");
 
     EXPECT_EQ(manager.executeCommand("FAKE_1", "ON").outcome, CommandOutcome::Succeeded);
 
@@ -104,7 +105,7 @@ TEST_F(DeviceManagerIntegrationTest, ControlSuccessSetsStateOn) {
 }
 
 TEST_F(DeviceManagerIntegrationTest, ControlFailureReturnsUnreachableAndMarksOffline) {
-    manager.startCommissioning(ProtocolType::TCP_DIY, "lamp", "");
+    commissionVia(manager, &tcpFake, ProtocolType::TCP_DIY, "lamp", "");
     tcpFake.sendCommandResult = false;
 
     const CommandResult result = manager.executeCommand("FAKE_1", "ON");
@@ -136,7 +137,7 @@ TEST(DeviceManagerPcDriverTest, OffOnRunningPcSendsShutdownMessageAndDefersHardw
     deviceDrivers.registerDriver(DriverType::PC_DRIVER, [&tcpFake]() {
         return std::make_shared<PCDriver>(&tcpFake);
     });
-    manager.startCommissioning(ProtocolType::TCP_DIY, "pc", "", "", "", {DriverType::PC_DRIVER});
+    commissionVia(manager, &tcpFake, ProtocolType::TCP_DIY, "pc", "", "", "", {DriverType::PC_DRIVER});
     manager.updateDeviceState("FAKE_1", "ON");
 
     const CommandResult result = manager.executeCommand("FAKE_1", "OFF");
@@ -151,7 +152,7 @@ TEST(DeviceManagerPcDriverTest, OffOnRunningPcSendsShutdownMessageAndDefersHardw
 }
 
 TEST_F(DeviceManagerIntegrationTest, GetDeviceStateReadsDriverAndUpdatesState) {
-    manager.startCommissioning(ProtocolType::TCP_DIY, "lamp", "");
+    commissionVia(manager, &tcpFake, ProtocolType::TCP_DIY, "lamp", "");
     tcpFake.stateToReturn = "OFF";
 
     EXPECT_EQ(manager.getDeviceState("FAKE_1"), "OFF");
@@ -159,7 +160,7 @@ TEST_F(DeviceManagerIntegrationTest, GetDeviceStateReadsDriverAndUpdatesState) {
 }
 
 TEST_F(DeviceManagerIntegrationTest, RemoveDeviceUnpairsAndDeletesFromListAndDatabase) {
-    manager.startCommissioning(ProtocolType::TCP_DIY, "lamp", "");
+    commissionVia(manager, &tcpFake, ProtocolType::TCP_DIY, "lamp", "");
 
     EXPECT_TRUE(manager.removeDevice("FAKE_1").ok());
 
@@ -170,7 +171,7 @@ TEST_F(DeviceManagerIntegrationTest, RemoveDeviceUnpairsAndDeletesFromListAndDat
 }
 
 TEST_F(DeviceManagerIntegrationTest, HealthCheckMarksOfflineDeviceInDatabase) {
-    manager.startCommissioning(ProtocolType::TCP_DIY, "lamp", "");
+    commissionVia(manager, &tcpFake, ProtocolType::TCP_DIY, "lamp", "");
     manager.executeCommand("FAKE_1", "ON");
     ASSERT_EQ(findInDatabase("FAKE_1").state, "ON");
     tcpFake.stateToReturn = "OFFLINE";
@@ -181,7 +182,7 @@ TEST_F(DeviceManagerIntegrationTest, HealthCheckMarksOfflineDeviceInDatabase) {
 }
 
 TEST_F(DeviceManagerIntegrationTest, HealthCheckSurvivesDriverExceptionsAndKeepsWorking) {
-    manager.startCommissioning(ProtocolType::MATTER, "plug", "");
+    commissionVia(manager, &matterFake, ProtocolType::MATTER, "plug", "");
     matterFake.throwOnReadEnergy = true;
 
     EXPECT_NO_THROW(manager.runHealthCheck());
@@ -200,7 +201,7 @@ TEST_F(DeviceManagerIntegrationTest, HealthCheckSurvivesDriverExceptionsAndKeeps
 }
 
 TEST_F(DeviceManagerIntegrationTest, EnergySuccessAccumulatesInDatabase) {
-    manager.startCommissioning(ProtocolType::MATTER, "plug", "");
+    commissionVia(manager, &matterFake, ProtocolType::MATTER, "plug", "");
 
     matterFake.energyResult = Result<EnergyReading>::success(EnergyReading{1500, 100});
     auto first = manager.readEnergy("FAKE_1");
@@ -215,7 +216,7 @@ TEST_F(DeviceManagerIntegrationTest, EnergySuccessAccumulatesInDatabase) {
 }
 
 TEST_F(DeviceManagerIntegrationTest, EnergyFailureReturnsFalseAndKeepsStats) {
-    manager.startCommissioning(ProtocolType::MATTER, "plug", "");
+    commissionVia(manager, &matterFake, ProtocolType::MATTER, "plug", "");
     matterFake.energyResult = Result<EnergyReading>::failure(ErrorCode::Internal, "bad");
 
     EXPECT_FALSE(manager.readEnergy("FAKE_1").ok());
@@ -269,7 +270,7 @@ TEST_F(DeviceManagerIntegrationTest, ReRegistrationWithoutIpKeepsStoredIp) {
 
 TEST_F(DeviceManagerIntegrationTest, CommissioningStoresConnectionIp) {
     tcpFake.commissionResult = Result<CommissionOutcome>::success(CommissionOutcome{"TCP_A1B2C3D4E5F6", "192.168.0.60"});
-    ASSERT_TRUE(manager.startCommissioning(ProtocolType::TCP_DIY, "lamp", ""));
+    ASSERT_TRUE(commissionVia(manager, &tcpFake, ProtocolType::TCP_DIY, "lamp", ""));
     EXPECT_EQ(findInDatabase("TCP_A1B2C3D4E5F6").ip, "192.168.0.60");
     Device inMemory;
     ASSERT_TRUE(manager.getDevice("TCP_A1B2C3D4E5F6", inMemory));

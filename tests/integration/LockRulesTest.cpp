@@ -2,6 +2,7 @@
 #include "DatabaseManager.hpp"
 #include "DeviceManager.hpp"
 #include "DriverManager.hpp"
+#include "CommissioningService.hpp"
 #include "HTTPServer.hpp"
 #include "PCDriver.hpp"
 #include "fakes/FakeClock.hpp"
@@ -71,6 +72,7 @@ protected:
     FakeClock clock;
     DelayedCommandScheduler scheduler{clock};
     DeviceManager manager{database, deviceDrivers, scheduler, clock};
+    CommissioningService commissioning{manager, {}, clock};
     FakeProtocolDriver matterFake;
     FakeProtocolDriver tcpFake;
 };
@@ -359,6 +361,7 @@ TEST_F(LockRulesTest, CommandResultStateIsCurrentStateWhenBlocked) {
 TEST_F(LockRulesTest, CommandResultStateIsCurrentStateWhenProtocolDriverMissing) {
     DelayedCommandScheduler bareManagerScheduler{clock};
     DeviceManager bareManager(database, deviceDrivers, bareManagerScheduler, clock);
+    CommissioningService bareManagerCommissioning{bareManager, {}, clock};
     bareManager.addDevice("BARE", "bare", ProtocolType::TCP_DIY, {});
 
     const auto result = bareManager.executeCommand("BARE", "ON");
@@ -373,6 +376,7 @@ TEST(LockRulesDelayedTest, CommandResultStateIsCurrentStateWhenDelayed) {
     FakeClock clock;
     DelayedCommandScheduler scheduler{clock};
     DeviceManager manager{database, deviceDrivers, scheduler, clock};
+    CommissioningService commissioning{manager, {}, clock};
     FakeProtocolDriver tcpFake;
     ASSERT_TRUE(database.init(":memory:"));
     manager.registerDriver(ProtocolType::TCP_DIY, &tcpFake);
@@ -396,7 +400,7 @@ TEST_F(LockRulesTest, UnhandledExceptionInHandlerReturns500WithFixedBody) {
     tcpFake.throwOnSendCommand = true;
     const std::string token = "test-token-0123456789abcdef";
     const int port = findFreePort();
-    HTTPServer server(manager, token, port);
+    HTTPServer server(manager, commissioning, token, port);
     ASSERT_TRUE(server.start());
     ASSERT_TRUE(server.waitUntilReady(std::chrono::seconds(3)));
 

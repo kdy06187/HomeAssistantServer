@@ -7,6 +7,7 @@
 #include "MacResolver.hpp"
 #include "MatterController.hpp"
 #include "ProcessChipToolRunner.hpp"
+#include "CommissioningService.hpp"
 #include "HTTPServer.hpp"
 #include "RequestValidation.hpp"
 #include "DriverManager.hpp"
@@ -96,7 +97,7 @@ int main() {
     }
     std::cout << "✅ 데이터베이스 로드 완료!" << std::endl;
     // 1. 조립. 선언의 역순으로 소멸하므로 "쓰는 쪽"을 나중에 선언한다:
-    //    httpServer → periodicTasks → 스케줄러 가드 → TCP 정지 가드 → manager → scheduler → 드라이버·러너 → clock → database 순으로 소멸
+    //    httpServer → commissioning(취소·join) → periodicTasks → 스케줄러 가드 → TCP 정지 가드 → manager → scheduler → 드라이버·러너 → clock → database 순으로 소멸
     DriverManager deviceDrivers;
     SystemClock clock;
     ProcNetArpResolver macResolver;  // 접속 IP → MAC(기기 ID)
@@ -137,7 +138,10 @@ int main() {
         return 1;
     }
 
-    HTTPServer httpServer(manager, *apiToken, 8000, *httpBindAddress.value);
+    // 커미셔닝 작업 스레드가 드라이버·manager를 쓰므로 그 뒤에, 이 서비스를 쓰는 httpServer보다 앞에 선언한다.
+    // 소멸자가 stop(취소 + join)을 부르므로 조기 return·예외에도 작업 스레드가 남지 않는다
+    CommissioningService commissioning(manager, {{ProtocolType::TCP_DIY, &tcpDriver}, {ProtocolType::MATTER, &matterController}}, clock);
+    HTTPServer httpServer(manager, commissioning, *apiToken, 8000, *httpBindAddress.value);
     // start()가 바인딩까지 마치므로 실패하면 바로 알 수 있다. 수락 스레드가 listen에 들어갈 때까지 한 번 더 확인한다
     if (!httpServer.start() || !httpServer.waitUntilReady(std::chrono::seconds(5))) {
         std::cerr << "❌ HTTP 포트 8000을 열 수 없습니다(원인은 위 [HTTPServer] 로그). 서버를 종료합니다." << std::endl;
@@ -146,6 +150,7 @@ int main() {
     // 시작이 모두 성공한 뒤에 만기 작업·주기 점검 스레드를 켠다
     scheduler.start();
     periodicTasks.start();
+    commissioning.start();
 
     //  관리 대상 기기 임시 등록
     // manager.addDevice("Arduino_1", "거실 전등", ProtocolType::TCP_DIY);
@@ -166,10 +171,12 @@ int main() {
     // 0단계: 진행 중인 chip-tool을 끊고, 대기 중인 지연 명령을 취소한다.
     // 이 단계가 HTTP 정지보다 먼저여야 종료 중에 45초가 만기되어 PC 전원이 꺼지는 일이 없다
     manager.beginShutdown();
+    commissioning.requestCancel();  // TCP 접속 대기·BLE 스캔이 1초 안에 멈추도록 HTTP 정지보다 먼저 알린다
     chipToolRunner.cancelAll();
     scheduler.stopAndCancelAll();
     periodicTasks.stop();
     httpServer.stop();
+    commissioning.stop();  // 진행 중 작업이 Cancelled로 끝날 때까지 join
     matterController.shutdown();
     tcpDriver.stopServer();
     database.close();

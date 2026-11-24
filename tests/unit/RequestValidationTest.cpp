@@ -343,3 +343,24 @@ TEST(ParseHistoryQuery, OnlyFromOrOnlyToIsFineInRawMode) {
 }
 
 }  // namespace
+
+TEST(RequestValidationTest, LanIpv4AcceptsPrivateAndLinkLocalOnly) {
+    for (const char* ok : {"10.0.0.1", "172.16.0.1", "172.31.255.254", "192.168.219.109", "169.254.1.2"}) {
+        EXPECT_TRUE(RequestValidation::isLanIpv4Address(ok)) << ok;
+    }
+    for (const char* bad : {"127.0.0.1", "0.0.0.0", "8.8.8.8", "172.15.0.1", "172.32.0.1", "192.169.0.1", "",
+                            "::1", "::ffff:192.168.0.1", "192.168.0"}) {
+        EXPECT_FALSE(RequestValidation::isLanIpv4Address(bad)) << bad;
+    }
+    EXPECT_FALSE(RequestValidation::isLanIpv4Address(std::string("192.168.0.1\0x", 13)));
+}
+
+TEST(RequestValidationTest, JobIdFormatIsLowercaseDigitsAndHyphenUpTo32) {
+    EXPECT_TRUE(RequestValidation::isValidJobId("c-tk3q5s-1"));
+    EXPECT_TRUE(RequestValidation::isValidJobId(std::string(32, 'a')));
+    EXPECT_FALSE(RequestValidation::isValidJobId(""));
+    EXPECT_FALSE(RequestValidation::isValidJobId(std::string(33, 'a')));
+    EXPECT_FALSE(RequestValidation::isValidJobId("C-1"));
+    EXPECT_FALSE(RequestValidation::isValidJobId("c_1"));
+    EXPECT_FALSE(RequestValidation::isValidJobId("c/1"));
+}

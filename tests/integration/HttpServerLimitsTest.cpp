@@ -2,6 +2,7 @@
 #include "DatabaseManager.hpp"
 #include "DeviceManager.hpp"
 #include "DriverManager.hpp"
+#include "CommissioningService.hpp"
 #include "HTTPServer.hpp"
 #include "fakes/FakeClock.hpp"
 #include "fakes/FakeProtocolDriver.hpp"
@@ -23,7 +24,7 @@ protected:
     }
 
     std::unique_ptr<HTTPServer> makeServer(int onPort) {
-        return std::make_unique<HTTPServer>(manager, kToken, onPort);
+        return std::make_unique<HTTPServer>(manager, commissioning, kToken, onPort);
     }
     std::unique_ptr<HTTPServer> startServer(int onPort) {
         auto server = makeServer(onPort);
@@ -36,6 +37,7 @@ protected:
     FakeClock clock;
     DelayedCommandScheduler scheduler{clock};
     DeviceManager manager{database, deviceDrivers, scheduler, clock};
+    CommissioningService commissioning{manager, {}, clock};
     FakeProtocolDriver tcpFake;
     int port = 0;
 };

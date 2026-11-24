@@ -4,6 +4,7 @@
 #include "support/HistoryTestHelper.hpp"
 #include "DeviceManager.hpp"
 #include "DriverManager.hpp"
+#include "CommissioningService.hpp"
 #include "HTTPServer.hpp"
 #include "fakes/FakeClock.hpp"
 #include "fakes/FakeProtocolDriver.hpp"
@@ -76,7 +77,7 @@ protected:
 
     void startServer() {
         port = findFreePort();
-        server = std::make_unique<HTTPServer>(manager, kToken, port);
+        server = std::make_unique<HTTPServer>(manager, commissioning, kToken, port);
         ASSERT_TRUE(server->start());
         ASSERT_TRUE(server->waitUntilReady(std::chrono::seconds(3)));
     }
@@ -96,6 +97,7 @@ protected:
     FakeClock clock;
     DelayedCommandScheduler scheduler{clock};
     DeviceManager manager{database, deviceDrivers, scheduler, clock};
+    CommissioningService commissioning{manager, {}, clock};
     FakeProtocolDriver matterFake;
     FakeProtocolDriver tcpFake;
     std::unique_ptr<HTTPServer> server;

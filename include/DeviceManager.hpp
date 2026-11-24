@@ -83,8 +83,6 @@ public:
                                                  const std::string& name, const std::vector<DriverType>& driverTypes);
     // 숨긴 시각부터 복구 기간(kRetentionDays) 안이면 true. 시각을 읽지 못하면 기록을 지우지 않도록 true
     static bool isWithinRestorePeriod(const std::string& deletedAtUtc, std::chrono::system_clock::time_point now);
-    // 동기 E3용 임시 경로(13b-4에서 CommissioningService로 바꾸며 삭제): commission → registerCommissioned
-    bool startCommissioning(ProtocolType type, std::string name, std::string payload, const std::string& ssid = "", const std::string& password = "",const std::vector<DriverType>& driverTypes ={});
     // 디바이스 제어 API - 디바이스 ID와 명령을 받아 해당 디바이스를 제어
     CommandResult executeCommand(std::string id, std::string command);
     // 숨김 삭제. 없는(이미 숨긴) 기기는 DeviceNotFound, 숨김 저장 실패는 Internal(기기는 그대로 남는다)
