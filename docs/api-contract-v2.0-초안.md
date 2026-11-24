@@ -117,7 +117,8 @@
 |---|---|---|
 | 접수 | **202** | `{"jobId": "c-tk3q5s-1", "state": "PENDING"}` |
 | 다른 등록 실행 중 | 409 | `COMMISSION_BUSY` |
-| 필드 오류·입력 제한 위반 | 400 | `INVALID_REQUEST` |
+| 서버 종료 중 | 502 | `DEVICE_UNREACHABLE` (E2와 같음) |
+| 필드 오류·입력 제한 위반 | 400 | `INVALID_REQUEST` (TCP_DIY `payload`가 `""`인데 앱이 접속한 서버 주소가 사설·링크 로컬 IPv4가 아닐 때 포함) |
 
 - 응답은 즉시(v1.0의 120초 대기 불필요). 결과는 E8. `jobId`는 불투명 문자열.
 - 앱·서버 모두 요청 본문을 로그에 남기지 않는다. 서버는 작업 상태에 요청을 보관하지 않는다.
@@ -281,3 +282,4 @@ MAJOR 아님: E7 `from/to/period/limit` 추가(MINOR, APP-REQ) / E7 순서 설�
 | | 2026-11-22 | E7 `from`·`to` 연도 2000~2100, 밖이면 400 `INVALID_REQUEST`(서버 12a-7 구현) | REQ-12 | ✅ 12a-7 | ⬜ |
 | | 2026-11-23 | §1 8080 "DIY 기기·PC 에이전트용", §6 10행 "자동 이전 없음 — 재등록", §6 `{deviceId}` 형식 문구(K5·K6·K10). E1 `ip`·`TCP_<MAC12>`는 초안 그대로 서버 구현 | REQ-05, REQ-13 | ✅ 12b | ⬜ |
 | | 2026-11-24 | E3 SSID·비밀번호 공백·따옴표 허용, TCP_DIY `""` = 앱이 접속한 서버 주소 / E8 jobId 예시, 제한 시간 TCP 약 30초·MATTER 190초·앱 210초, `ALREADY_REGISTERED`(초기화·재페어링)·`COMMISSION_FAILED`(서버 저장 실패) 설명(K1·K2·K3·K7·K15~K17) | REQ-10, REQ-13 | ✅ 13b | ⬜ |
+| | 2026-11-24 | E3 종료 중 502 `DEVICE_UNREACHABLE`, TCP_DIY 빈 `payload`인데 접속 주소가 LAN IPv4가 아니면 400(K18·K19, 결정 59) | REQ-10 | ✅ 13b | ⬜ |

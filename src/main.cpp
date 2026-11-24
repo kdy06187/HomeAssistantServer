@@ -8,6 +8,7 @@
 #include "MatterController.hpp"
 #include "ProcessChipToolRunner.hpp"
 #include "CommissioningService.hpp"
+#include <unordered_map>
 #include "HTTPServer.hpp"
 #include "RequestValidation.hpp"
 #include "DriverManager.hpp"
@@ -117,8 +118,10 @@ int main() {
         manager.onTcpConnected(info.deviceId, info.ip);
     });
 
-    // 2. DeviceManager에 드라이버 등록
-    manager.registerDriver(ProtocolType::TCP_DIY, &tcpDriver);
+    // 2. 드라이버 등록. DeviceManager와 CommissioningService가 같은 맵을 쓰게 한 곳에서 정한다
+    // (한쪽에만 등록하면 커미셔닝 확정 훅이 조용히 빠진다)
+    const std::unordered_map<ProtocolType, ProtocolDriver*> protocolDrivers{
+        {ProtocolType::TCP_DIY, &tcpDriver}, {ProtocolType::MATTER, &matterController}};
     if (matterController.Initialize()) {
         std::cout << "[Main] MatterController 초기화 및 스레드 구동 성공!" << std::endl;
     } else {
@@ -128,7 +131,7 @@ int main() {
     deviceDrivers.registerDriver(DriverType::PC_DRIVER, [&tcpDriver]() {
         return std::make_shared<PCDriver>(&tcpDriver);
     });
-    manager.registerDriver(ProtocolType::MATTER, &matterController);
+    for (const auto& [type, driver] : protocolDrivers) manager.registerDriver(type, driver);
     manager.initFromDatabase();
 
     // 3. 포트 8080으로 TCP 서버 시작. 기기를 메모리에 올린 뒤에 열어야 접속 알림의 ip가 로드 값에 덮이지 않는다
@@ -140,7 +143,7 @@ int main() {
 
     // 커미셔닝 작업 스레드가 드라이버·manager를 쓰므로 그 뒤에, 이 서비스를 쓰는 httpServer보다 앞에 선언한다.
     // 소멸자가 stop(취소 + join)을 부르므로 조기 return·예외에도 작업 스레드가 남지 않는다
-    CommissioningService commissioning(manager, {{ProtocolType::TCP_DIY, &tcpDriver}, {ProtocolType::MATTER, &matterController}}, clock);
+    CommissioningService commissioning(manager, protocolDrivers, clock);
     HTTPServer httpServer(manager, commissioning, *apiToken, 8000, *httpBindAddress.value);
     // start()가 바인딩까지 마치므로 실패하면 바로 알 수 있다. 수락 스레드가 listen에 들어갈 때까지 한 번 더 확인한다
     if (!httpServer.start() || !httpServer.waitUntilReady(std::chrono::seconds(5))) {

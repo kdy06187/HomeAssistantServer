@@ -239,3 +239,81 @@ TEST_F(RegisterCommissionedTest, ConcurrentRemoveAndRegisterOfSameIdStayConsiste
     const auto kind = database.findDevice("SN-1").value->kind;
     EXPECT_EQ(inMemory, kind == DeviceRecordState::Kind::Active);
 }
+
+// Q4: 확정 훅(Matter 매핑 기록)은 메모리 공개 전에 끝난다. 훅이 도는 동안 새 기기는 아직 보이지 않는다
+TEST_F(RegisterCommissionedTest, DriverIsConfirmedBeforeDeviceBecomesVisible) {
+    bool visibleDuringFinalize = true;
+    bool savedDuringFinalize = false;
+    matterFake.onFinalize = [&](const CommissionOutcome& outcome, bool accepted) {
+        if (!accepted) return;
+        visibleDuringFinalize = manager.activeDeviceIds().count(outcome.deviceId) > 0;
+        savedDuringFinalize = database.findDevice(outcome.deviceId).value->kind == DeviceRecordState::Kind::Active;
+    };
+
+    ASSERT_TRUE(registerPlug("SN-NEW").ok());
+
+    EXPECT_FALSE(visibleDuringFinalize);
+    EXPECT_TRUE(savedDuringFinalize);  // DB 저장 → 확정 훅 → 공개
+    EXPECT_EQ(manager.activeDeviceIds().count("SN-NEW"), 1u);
+}
+
+// Q5·Q12: 같은 ID 삭제를 기다리는 동안 작업이 취소되면, 락을 얻은 뒤 등록하지 않고 드라이버에 정리를 알린다
+TEST_F(RegisterCommissionedTest, CancelWhileWaitingForIdLockDeclinesInsideLock) {
+    ASSERT_TRUE(manager.addDevice("SN-1", "plug", ProtocolType::MATTER, {}));
+    Gate unpairStarted;
+    Gate releaseUnpair;
+    matterFake.onUnpair = [&] {
+        unpairStarted.open();
+        releaseUnpair.wait();
+    };
+    std::thread remover([&] { manager.removeDevice("SN-1"); });
+    unpairStarted.wait();
+    std::atomic<bool> cancel{false};
+    Result<RegisterOutcome> registered;
+    std::thread registrar([&] {
+        registered = manager.registerCommissioned(ProtocolType::MATTER, CommissionOutcome{"SN-1"}, "plug", {}, cancel);
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    cancel = true;
+    releaseUnpair.open();
+    remover.join();
+    registrar.join();
+
+    EXPECT_EQ(registered.error.code, ErrorCode::Cancelled);
+    EXPECT_TRUE(manager.activeDeviceIds().empty());
+    EXPECT_EQ(database.findDevice("SN-1").value->kind, DeviceRecordState::Kind::Hidden);
+    EXPECT_EQ(finalized(), (std::vector<std::pair<std::string, bool>>{{"SN-1", false}}));
+}
+
+// Q8: 보관 기간 정리와 복구 등록이 겹쳐도 교착·경합 없이 끝나고, restored면 이력이 남아 있다(TSan)
+TEST_F(RegisterCommissionedTest, RetentionCleanupAndRestoreDoNotInterleave) {
+    for (int round = 0; round < 20; ++round) {
+        const std::string id = "SN-" + std::to_string(round);
+        hide(id, kNow - kRestorePeriod + seconds(1));
+        std::thread cleaner([&] { manager.runRetentionCleanup(); });
+        const auto registered = registerPlug(id);
+        cleaner.join();
+        ASSERT_TRUE(registered.ok());
+        if (registered.value->restored) {
+            EXPECT_EQ(latestLogs(database, id).value->size(), 1u) << id;
+        }
+    }
+}
+
+// Q7: 없는 ID 삭제는 등록 락을 거치지 않고 바로 DeviceNotFound(같은 ID 등록이 락을 쥐고 있어도 기다리지 않음)
+TEST_F(RegisterCommissionedTest, RemovingUnknownIdDoesNotWaitForRegistrationLock) {
+    Gate finalizeEntered;
+    Gate releaseFinalize;
+    matterFake.onFinalize = [&](const CommissionOutcome&, bool) {
+        finalizeEntered.open();
+        releaseFinalize.wait();
+    };
+    std::thread registrar([&] { registerPlug("SN-NEW"); });
+    finalizeEntered.wait();  // SN-NEW 등록 락을 쥔 채 확정 훅 안, 메모리에는 아직 없음
+
+    EXPECT_EQ(manager.removeDevice("SN-NEW").error.code, ErrorCode::DeviceNotFound);
+
+    releaseFinalize.open();
+    registrar.join();
+    EXPECT_EQ(manager.activeDeviceIds().count("SN-NEW"), 1u);
+}

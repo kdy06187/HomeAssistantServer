@@ -48,6 +48,15 @@ void DeviceManager::initFromDatabase(){
 // 기기 추가
 bool DeviceManager::addDevice(std::string id, std::string name, ProtocolType protocol_type,
                               const std::vector<DriverType>& driverTypes, const std::string& ip){
+    auto saved = saveDevice(id, name, protocol_type, driverTypes, ip);
+    if (!saved) return false;
+    publishDevice(std::move(*saved));
+    std::cout << "[DeviceManager] 기기 추가 완료: " << name << "(" << id << ")" << std::endl;
+    return true;
+}
+
+std::optional<Device> DeviceManager::saveDevice(const std::string& id, const std::string& name, ProtocolType protocol_type,
+                                                const std::vector<DriverType>& driverTypes, const std::string& ip) {
     Device newDevice(id, name, protocol_type);
     newDevice.state = "UNKNOWN";
     newDevice.ip = ip;
@@ -57,16 +66,17 @@ bool DeviceManager::addDevice(std::string id, std::string name, ProtocolType pro
     // 다른 스레드가 "곧 사라질 기기"를 보는 틈도 없다. DB 호출은 맵 락 밖에서(L-2)
     if (!db_.insertDevice(newDevice)) {
         std::cerr << "[DeviceManager] 에러 : 기기 DB 저장 실패, 등록하지 않습니다 (" << id << ")" << std::endl;
-        return false;
+        return std::nullopt;
     }
     // ip 없이 재등록하면 DB는 저장된 ip를 지킨다(COALESCE). 메모리도 그 값으로 맞춰 E1과 DB가 어긋나지 않게 한다
     if (newDevice.ip.empty() && protocol_type == ProtocolType::TCP_DIY) newDevice.ip = db_.loadDeviceIp(id);
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        devices_[id] = std::move(newDevice);
-    }
-    std::cout << "[DeviceManager] 기기 추가 완료: " << name << "(" << id << ")" << std::endl;
-    return true;
+    return newDevice;
+}
+
+void DeviceManager::publishDevice(Device device) {
+    const std::string id = device.id;
+    std::lock_guard<std::mutex> lock(mutex_);
+    devices_[id] = std::move(device);
 }
 
 //기기 정보 조회
@@ -210,6 +220,13 @@ bool DeviceManager::isWithinRestorePeriod(const std::string& deletedAtUtc, std::
 
 Result<RegisterOutcome> DeviceManager::registerCommissioned(ProtocolType type, const CommissionOutcome& outcome,
                                                             const std::string& name, const std::vector<DriverType>& driverTypes) {
+    static const std::atomic<bool> kNotCancelled{false};
+    return registerCommissioned(type, outcome, name, driverTypes, kNotCancelled);
+}
+
+Result<RegisterOutcome> DeviceManager::registerCommissioned(ProtocolType type, const CommissionOutcome& outcome,
+                                                            const std::string& name, const std::vector<DriverType>& driverTypes,
+                                                            const std::atomic<bool>& cancelRequested) {
     ProtocolDriver* driver = nullptr;
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -224,7 +241,7 @@ Result<RegisterOutcome> DeviceManager::registerCommissioned(ProtocolType type, c
         return Result<RegisterOutcome>::failure(ErrorCode::CommissionFailed, "empty device id");
     }
 
-    // 같은 ID의 삭제(늦은 unpair 포함)가 끝난 뒤에 판정·저장·확정 훅까지 한 번에 한다
+    // 같은 ID의 삭제(늦은 unpair 포함)가 끝난 뒤에 판정·저장·확정 훅·공개까지 한 번에 한다
     const auto idLock = registrationLockFor(id);
     std::lock_guard<std::mutex> registrationLock(*idLock);
     const auto decline = [&](ErrorCode code, const char* reason) {
@@ -233,31 +250,39 @@ Result<RegisterOutcome> DeviceManager::registerCommissioned(ProtocolType type, c
         return Result<RegisterOutcome>::failure(code, reason);
     };
 
-    // 드라이버가 끝난 직후 종료가 시작됐으면 등록하지 않는다(종료 중 DB에 새 기기를 쓰지 않음)
-    if (isShuttingDown_) return decline(ErrorCode::Cancelled, "종료 중");
-    const auto found = db_.findDevice(id);
-    if (!found.ok()) return decline(ErrorCode::Internal, "기기 조회 실패");
+    // 락을 기다리는 사이 서버 종료·작업 취소가 들어왔으면 여기서 한 번에 거절한다(종료 중 DB에 새 기기를 쓰지 않음)
+    if (isShuttingDown_ || cancelRequested) return decline(ErrorCode::Cancelled, "종료·취소");
 
     RegisterOutcome registered{id, false};
-    switch (found.value->kind) {
-    case DeviceRecordState::Kind::Active:
-        return decline(ErrorCode::AlreadyRegistered, "이미 등록된 기기");
-    case DeviceRecordState::Kind::Hidden:
-        if (isWithinRestorePeriod(found.value->deletedAtUtc, clock_.utcNow())) {
-            registered.restored = true;  // insertDevice가 deleted_at을 지우고 통계·이력·ip를 이어 쓴다
-        } else {
-            // 정리 작업 전이라 남아 있는 지난 기록: 새 기기로 시작한다
-            const Status purged = db_.purgeDeviceRecords(id);
-            if (!purged.ok() && purged.error.code != ErrorCode::DeviceNotFound) {
-                return decline(ErrorCode::Internal, "지난 기록 삭제 실패");
+    std::optional<Device> saved;
+    {
+        // 복구 판정(findDevice)과 저장 사이에 정리 작업이 그 행을 지우면 "이력 없는 restored"가 된다. 정리와 겹치지 않게 한다
+        std::lock_guard<std::mutex> retentionLock(retentionMutex_);
+        const auto found = db_.findDevice(id);
+        if (!found.ok()) return decline(ErrorCode::Internal, "기기 조회 실패");
+        switch (found.value->kind) {
+        case DeviceRecordState::Kind::Active:
+            return decline(ErrorCode::AlreadyRegistered, "이미 등록된 기기");
+        case DeviceRecordState::Kind::Hidden:
+            if (isWithinRestorePeriod(found.value->deletedAtUtc, clock_.utcNow())) {
+                registered.restored = true;  // insertDevice가 deleted_at을 지우고 통계·이력·ip를 이어 쓴다
+            } else {
+                // 정리 작업 전이라 남아 있는 지난 기록: 새 기기로 시작한다
+                const Status purged = db_.purgeDeviceRecords(id);
+                if (!purged.ok() && purged.error.code != ErrorCode::DeviceNotFound) {
+                    return decline(ErrorCode::Internal, "지난 기록 삭제 실패");
+                }
             }
+            break;
+        case DeviceRecordState::Kind::None:
+            break;
         }
-        break;
-    case DeviceRecordState::Kind::None:
-        break;
+        saved = saveDevice(id, name, type, driverTypes, outcome.ip);
     }
-    if (!addDevice(id, name, type, driverTypes, outcome.ip)) return decline(ErrorCode::Internal, "DB 저장 실패");
+    if (!saved) return decline(ErrorCode::Internal, "DB 저장 실패");
+    // 드라이버 쪽 등록(Matter 매핑)을 확정한 뒤에 메모리에 공개한다. 공개 직후 들어온 제어·조회가 "매핑 없음"을 보지 않게
     finalizeQuietly(driver, outcome, true);
+    publishDevice(std::move(*saved));
     std::cout << "[DeviceManager] 커미셔닝 등록 완료 : " << safeId << (registered.restored ? " (기록 복구)" : "") << std::endl;
     return Result<RegisterOutcome>::success(registered);
 }
@@ -293,6 +318,11 @@ void DeviceManager::onTcpConnected(const std::string& deviceId, const std::strin
 // 숨김을 먼저 저장해, 해제가 실패하거나 예외를 던져도 재시작 뒤 기기가 되살아나지 않게 한다.
 Result<DeleteOutcome> DeviceManager::removeDevice(const std::string& id){
     const std::string safeId = RequestValidation::sanitizeForLog(id);
+    // 없는 ID로 ID 락 항목을 만들지 않는다(없는 ID 반복 삭제로 맵이 커지지 않게). 아래에서 락 안에서 다시 확인한다
+    if (!isRegistered(id)) {
+        std::cerr << "[DeviceManager] 에러 : 기기를 찾을 수 없습니다 (" << safeId << ")" << std::endl;
+        return Result<DeleteOutcome>::failure(ErrorCode::DeviceNotFound, "device not found");
+    }
     // unpair까지 끝나야 같은 ID 등록이 시작된다(늦은 unpair가 새로 등록한 노드를 지우지 않게)
     const auto idLock = registrationLockFor(id);
     std::lock_guard<std::mutex> registrationLock(*idLock);
@@ -510,7 +540,9 @@ Result<HistoryResult> DeviceManager::aggregateHistory(const std::string& deviceI
 Result<PurgeResult> DeviceManager::runRetentionCleanup() {
     if (isShuttingDown_) return Result<PurgeResult>::failure(ErrorCode::Cancelled, "server shutting down");
     const auto cutoff = clock_.utcNow() - std::chrono::hours(24 * kRetentionDays);
+    std::unique_lock<std::mutex> retentionLock(retentionMutex_);
     const auto result = db_.purgeExpired(UtcTime::toDbText(cutoff));
+    retentionLock.unlock();
     if (!result.ok()) {
         std::cerr << "[DeviceManager] 정리 실패: " << result.error.message << std::endl;
     } else if (result.value->skipped) {

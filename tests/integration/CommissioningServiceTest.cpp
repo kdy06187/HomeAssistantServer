@@ -14,6 +14,7 @@
 #include "UtcTime.hpp"
 #include "fakes/FakeClock.hpp"
 #include "fakes/FakeProtocolDriver.hpp"
+#include "support/LogCapture.hpp"
 
 using namespace std::chrono_literals;
 
@@ -315,4 +316,66 @@ TEST_F(CommissioningServiceTest, CommissionOncePassesActiveIdSnapshot) {
     Device device;
     ASSERT_TRUE(manager.getDevice("TCP_000000000002", device));
     EXPECT_EQ(device.ip, "192.168.0.9");
+}
+
+// 작업 표뿐 아니라 로그에도 요청 비밀값이 없다(성공·실패·비밀값이 든 예외 메시지 모두)
+TEST_F(CommissioningServiceTest, LogsNeverContainRequestSecrets) {
+    const std::string password = "pw-SECRET-123";
+    const std::string ssid = "MyHomeSSID";
+    const std::string code = "34970112332";
+    LogCapture capture;
+    capture.start();  // 작업 스레드를 띄우기 전에
+    service.start();
+
+    matterFake.commissionResult = Result<CommissionOutcome>::success(CommissionOutcome{"SN-NEW"});
+    auto ok = service.submit(ProtocolType::MATTER, CommissionRequest{"plug", code, ssid, password}, {});
+    waitFinished(*ok.value);
+    matterFake.commissionResult = Result<CommissionOutcome>::failure(ErrorCode::CommissionFailed, "x");
+    auto failed = service.submit(ProtocolType::MATTER, CommissionRequest{"plug", code, ssid, password}, {});
+    waitFinished(*failed.value);
+    matterFake.onCommission = [&] { throw std::runtime_error("bad " + password + " / " + ssid + " / " + code); };
+    auto thrown = service.submit(ProtocolType::MATTER, CommissionRequest{"plug", code, ssid, password}, {});
+    EXPECT_EQ(waitFinished(*thrown.value).errorCode, ErrorCode::CommissionFailed);
+
+    service.stop();  // 작업 스레드 join 뒤에 되돌린다
+    capture.stop();
+    const std::string logs = capture.text();
+    EXPECT_NE(logs.find("커미셔닝 중 예외"), std::string::npos);
+    EXPECT_EQ(logs.find(password), std::string::npos);
+    EXPECT_EQ(logs.find(ssid), std::string::npos);
+    EXPECT_EQ(logs.find(code), std::string::npos);
+}
+
+// 등록 단계로 넘어갈 때는 비밀값을 비운다(드라이버는 원래 값을 받음)
+TEST_F(CommissioningServiceTest, CommissionOnceClearsSecretsBeforeRegistration) {
+    matterFake.commissionResult = Result<CommissionOutcome>::success(CommissionOutcome{"SN-NEW"});
+    const std::atomic<bool> notCancelled{false};
+    const auto result = CommissioningService::commissionOnce(manager, &matterFake, ProtocolType::MATTER,
+                                                             CommissionRequest{"plug", "34970112332", "ssid", "pw"}, {}, notCancelled);
+    ASSERT_TRUE(result.ok());
+    EXPECT_EQ(matterFake.commissionRequests[0].password, "pw");
+    Device device;
+    ASSERT_TRUE(manager.getDevice("SN-NEW", device));
+    EXPECT_EQ(device.name, "plug");  // 이름은 남긴다
+}
+
+// Q6: 접수와 취소 요청이 겹쳐도 "취소가 끝난 뒤 접수된 작업"은 없다(TSan)
+TEST_F(CommissioningServiceTest, SubmitRacingRequestCancelNeverAcceptsAfterCancel) {
+    service.start();
+    std::atomic<bool> cancelDone{false};
+    std::atomic<int> acceptedAfterCancel{0};
+    std::thread submitter([&] {
+        for (int i = 0; i < 2000; ++i) {
+            const bool cancelWasDone = cancelDone;
+            const auto jobId = submitPlug();
+            if (jobId.ok() && cancelWasDone) ++acceptedAfterCancel;
+            if (!jobId.ok() && jobId.error.code == ErrorCode::Cancelled) break;
+        }
+    });
+    std::this_thread::sleep_for(1ms);
+    service.requestCancel();
+    cancelDone = true;
+    submitter.join();
+    EXPECT_EQ(acceptedAfterCancel.load(), 0);
+    EXPECT_EQ(submitPlug().error.code, ErrorCode::Cancelled);
 }

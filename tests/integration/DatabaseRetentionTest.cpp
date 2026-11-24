@@ -426,3 +426,34 @@ TEST_F(DatabaseRetentionTest, PurgeDeviceRecordsFailsWhenDatabaseIsClosed) {
     db.close();
     EXPECT_EQ(db.purgeDeviceRecords("A").error.code, ErrorCode::Internal);
 }
+
+// Q13: 기기 행 삭제가 중간에 실패하면 앞서 지운 통계·이력도 되돌린다(한 트랜잭션)
+TEST(DatabaseRetentionFileTest, PurgeDeviceRecordsRollsBackWhenDeviceDeleteFails) {
+    const std::string path = (std::filesystem::temp_directory_path() /
+                              ("hac_purge_rollback_" + std::to_string(::getpid()) + ".db")).string();
+    std::filesystem::remove(path);
+    DatabaseManager db;
+    ASSERT_TRUE(db.init(path));
+    Device device("OLD", "old", ProtocolType::MATTER);
+    ASSERT_TRUE(db.insertDevice(device));
+    int64_t total = 0;
+    ASSERT_TRUE(db.updateEnergyStat("OLD", 100, total));
+    ASSERT_TRUE(db.insertEnergyLog("OLD", 100, textAt(kNow - hours(1))));
+    ASSERT_TRUE(db.markDeleted("OLD", textAt(kCutoff - hours(1))).ok());
+    {
+        sqlite3* raw = nullptr;
+        ASSERT_EQ(sqlite3_open(path.c_str(), &raw), SQLITE_OK);
+        ASSERT_EQ(sqlite3_exec(raw, "CREATE TRIGGER keep_device BEFORE DELETE ON devices BEGIN SELECT RAISE(ABORT, 'no'); END;",
+                               nullptr, nullptr, nullptr), SQLITE_OK);
+        sqlite3_close_v2(raw);
+    }
+
+    EXPECT_EQ(db.purgeDeviceRecords("OLD").error.code, ErrorCode::Internal);
+
+    EXPECT_EQ(db.findDevice("OLD").value->kind, DeviceRecordState::Kind::Hidden);
+    EXPECT_EQ(latestLogs(db, "OLD", 10).value->size(), 1u);
+    ASSERT_TRUE(db.updateEnergyStat("OLD", 150, total));
+    EXPECT_EQ(total, 150);  // 통계가 남아 있으면 100 + 50
+    db.close();
+    std::filesystem::remove(path);
+}

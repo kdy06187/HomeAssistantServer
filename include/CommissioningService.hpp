@@ -53,10 +53,10 @@ public:
     // requestCancel + 작업 스레드 join. 여러 번 불러도 안전하다
     void stop();
 
-    // 작업 한 건: 활성 ID 사본 → commission(취소 플래그) → registerCommissioned(확정 훅 포함).
-    // 드라이버 예외는 CommissionFailed로 바꾼다. 작업 스레드가 쓰고, 시험은 동기로 직접 부른다
+    // 작업 한 건: 활성 ID 사본 → commission(취소 플래그) → 비밀값 비움 → registerCommissioned(취소 판정·확정 훅 포함).
+    // 드라이버 예외는 CommissionFailed로 바꾼다(로그는 요청 비밀값을 가림). 작업 스레드가 쓰고, 시험은 동기로 직접 부른다
     static Result<RegisterOutcome> commissionOnce(DeviceManager& devices, ProtocolDriver* driver, ProtocolType type,
-                                                  const CommissionRequest& request, const std::vector<DriverType>& driverTypes,
+                                                  CommissionRequest request, const std::vector<DriverType>& driverTypes,
                                                   const std::atomic<bool>& cancelRequested);
     // E8에 내보내는 오류 코드로 좁힌다(그 밖의 코드, 예: DB 저장 실패 Internal은 CommissionFailed)
     static ErrorCode toJobErrorCode(ErrorCode code);

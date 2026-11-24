@@ -13,6 +13,7 @@
 #include "ChipToolOutputParser.hpp"
 #include "PCDriver.hpp"
 #include "support/RawHttpClient.hpp"
+#include "support/LogCapture.hpp"
 #include "httplib.h"
 #include "json.hpp"
 #include <arpa/inet.h>
@@ -688,6 +689,83 @@ TEST_F(HttpServerTest, E3AfterCancelRequestIs502) {
     EXPECT_EQ(response->status, 502);
     EXPECT_EQ(json::parse(response->body)["error"]["code"], "DEVICE_UNREACHABLE");
     EXPECT_TRUE(tcpFake.commissionRequests.empty());
+}
+
+// Q13: 진행 중(RUNNING) E8 본문, 실패 코드 본문(COMMISSION_FAILED·CANCELLED), 1시간 뒤 404
+TEST_F(HttpServerTest, E8BodiesWhileRunningAndForFailuresAndAfterRetention) {
+    std::atomic<bool> entered{false};
+    std::atomic<bool> release{false};
+    tcpFake.onCommission = [&] {
+        entered = true;
+        while (!release) std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    };
+    tcpFake.commissionResult = Result<CommissionOutcome>::failure(ErrorCode::CommissionFailed, "ble");
+    auto accepted = post("/api/commission", R"({"protocolType":"TCP_DIY","deviceName":"lamp","payload":"10.0.0.1"})");
+    ASSERT_TRUE(accepted);
+    const std::string jobId = json::parse(accepted->body)["jobId"];
+    while (!entered) std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    httplib::Client client("127.0.0.1", port);
+    auto running = client.Get("/api/commission/" + jobId, authHeaders());
+    ASSERT_TRUE(running);
+    EXPECT_EQ(json::parse(running->body),
+              json::parse(R"({"jobId":")" + jobId + R"(","state":"RUNNING","deviceId":null,"restored":false,"error":null})"));
+    release = true;
+    EXPECT_EQ(waitJobFinished(port, jobId)["error"],
+              json::parse(R"({"code":"COMMISSION_FAILED","message":"기기 등록에 실패했습니다."})"));
+
+    tcpFake.onCommission = nullptr;
+    tcpFake.commissionResult = Result<CommissionOutcome>::failure(ErrorCode::Cancelled, "stop");
+    auto cancelled = post("/api/commission", R"({"protocolType":"TCP_DIY","deviceName":"lamp","payload":"10.0.0.1"})");
+    ASSERT_TRUE(cancelled);
+    const std::string cancelledId = json::parse(cancelled->body)["jobId"];
+    EXPECT_EQ(waitJobFinished(port, cancelledId)["error"],
+              json::parse(R"({"code":"CANCELLED","message":"서버 종료로 취소되었습니다."})"));
+
+    clock.advance(CommissioningService::kFinishedJobRetention);
+    auto expired = client.Get("/api/commission/" + cancelledId, authHeaders());
+    ASSERT_TRUE(expired);
+    EXPECT_EQ(expired->status, 404);
+    EXPECT_EQ(json::parse(expired->body)["error"]["code"], "JOB_NOT_FOUND");
+}
+
+// Q10: E3 202·400·409 어느 경우에도 요청 비밀값(비밀번호·SSID·설정 코드)이 로그에 없다
+class HttpServerLogTest : public HttpServerTest {
+protected:
+    void SetUp() override {
+        capture.start();  // 서버·작업 스레드를 띄우기 전에
+        HttpServerTest::SetUp();
+    }
+    void TearDown() override {
+        HttpServerTest::TearDown();
+        commissioning.stop();  // 출력하는 스레드를 모두 멈춘 뒤 되돌린다
+        capture.stop();
+    }
+    LogCapture capture;
+};
+
+TEST_F(HttpServerLogTest, E3ResponsesNeverLogRequestSecrets) {
+    const std::string body = R"({"protocolType":"MATTER","deviceName":"plug","payload":"34970112332","ssid":"MyHomeSSID","password":"pw-SECRET-123"})";
+    std::atomic<bool> release{false};
+    matterFake.onCommission = [&] {
+        while (!release) std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    };
+    auto accepted = post("/api/commission", body);
+    ASSERT_TRUE(accepted);
+    EXPECT_EQ(accepted->status, 202);
+    auto busy = post("/api/commission", body);
+    ASSERT_TRUE(busy);
+    EXPECT_EQ(busy->status, 409);
+    auto invalid = post("/api/commission", R"({"protocolType":"MATTER","deviceName":"plug","payload":"bad-pw-SECRET-123","password":"pw-SECRET-123"})");
+    ASSERT_TRUE(invalid);
+    EXPECT_EQ(invalid->status, 400);
+    release = true;
+    waitJobFinished(port, json::parse(accepted->body)["jobId"]);
+
+    const std::string logs = capture.text();
+    EXPECT_NE(logs.find("기기 등록(POST) 요청 수신"), std::string::npos);
+    for (const char* secret : {"pw-SECRET-123", "MyHomeSSID", "34970112332"}) {
+        EXPECT_EQ(logs.find(secret), std::string::npos) << secret;
+    }
 }
 
 // 빈 payload: 루프백으로 접속하면 기기가 닿을 주소가 아니라 400, LAN 주소로 접속하면 그 주소를 기기에 보낸다

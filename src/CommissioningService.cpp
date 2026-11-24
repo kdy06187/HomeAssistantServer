@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <iostream>
 #include <utility>
+#include "ProcessChipToolRunner.hpp"
 #include "RequestValidation.hpp"
 
 CommissioningService::CommissioningService(DeviceManager& devices,
@@ -32,8 +33,19 @@ ErrorCode CommissioningService::toJobErrorCode(ErrorCode code) {
     }
 }
 
+namespace {
+// 예외 메시지에 요청 값이 섞여 나올 수 있어 로그 전에 가린다(SSID는 짧으면 일반 단어와 겹치므로 4바이트 이상만)
+std::string maskRequestSecrets(const std::string& text, const CommissionRequest& request) {
+    std::vector<std::string> secrets;
+    if (!request.password.empty()) secrets.push_back(request.password);
+    if (!request.payload.empty()) secrets.push_back(request.payload);
+    if (request.ssid.size() >= 4) secrets.push_back(request.ssid);
+    return RequestValidation::sanitizeForLog(ProcessChipToolRunner::maskSecrets(text, secrets));
+}
+}  // namespace
+
 Result<RegisterOutcome> CommissioningService::commissionOnce(DeviceManager& devices, ProtocolDriver* driver, ProtocolType type,
-                                                             const CommissionRequest& request,
+                                                             CommissionRequest request,
                                                              const std::vector<DriverType>& driverTypes,
                                                              const std::atomic<bool>& cancelRequested) {
     if (!driver) return Result<RegisterOutcome>::failure(ErrorCode::Internal, "protocol driver not found");
@@ -45,23 +57,19 @@ Result<RegisterOutcome> CommissioningService::commissionOnce(DeviceManager& devi
         outcome = driver->commission(request, devices.activeDeviceIds(), cancelRequested);
     } catch (const std::exception& e) {
         // 작업 스레드에서 예외가 빠져나가면 std::terminate로 서버가 죽는다
-        std::cerr << "[CommissioningService] 커미셔닝 중 예외 : " << RequestValidation::sanitizeForLog(e.what()) << std::endl;
-        return Result<RegisterOutcome>::failure(ErrorCode::CommissionFailed, "driver exception");
+        std::cerr << "[CommissioningService] 커미셔닝 중 예외 : " << maskRequestSecrets(e.what(), request) << std::endl;
+        outcome = Result<CommissionOutcome>::failure(ErrorCode::CommissionFailed, "driver exception");
     } catch (...) {
         std::cerr << "[CommissioningService] 커미셔닝 중 알 수 없는 예외" << std::endl;
-        return Result<RegisterOutcome>::failure(ErrorCode::CommissionFailed, "driver exception");
+        outcome = Result<CommissionOutcome>::failure(ErrorCode::CommissionFailed, "driver exception");
     }
+    // 등록 단계(같은 ID 삭제를 최대 10초 기다릴 수 있음)까지 비밀값을 들고 가지 않는다. 이름만 남긴다
+    request.payload.clear();
+    request.ssid.clear();
+    request.password.clear();
     if (!outcome.ok()) return Result<RegisterOutcome>::failure(outcome.error.code, outcome.error.message);
-    // 드라이버가 성공한 직후 취소됐으면 등록하지 않는다. 드라이버가 이번에 만든 것만 정리한다
-    if (cancelRequested) {
-        try {
-            driver->finalizeCommission(*outcome.value, false);
-        } catch (...) {
-            std::cerr << "[CommissioningService] 취소 정리 중 예외" << std::endl;
-        }
-        return Result<RegisterOutcome>::failure(ErrorCode::Cancelled, "cancelled after driver");
-    }
-    return devices.registerCommissioned(type, *outcome.value, request.name, driverTypes);
+    // 드라이버 성공 직후 취소됐는지는 registerCommissioned가 ID 락 안에서 판정하고 드라이버 정리까지 한다
+    return devices.registerCommissioned(type, *outcome.value, request.name, driverTypes, cancelRequested);
 }
 
 Result<std::string> CommissioningService::submit(ProtocolType type, CommissionRequest request,
@@ -70,7 +78,8 @@ Result<std::string> CommissioningService::submit(ProtocolType type, CommissionRe
     std::string jobId;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (stopping_) return Result<std::string>::failure(ErrorCode::Cancelled, "shutting down");
+        // requestCancel도 이 락 안에서 플래그를 세우므로, 여기서 다시 보면 "취소 뒤 접수"가 생기지 않는다
+        if (stopping_ || cancelRequested_) return Result<std::string>::failure(ErrorCode::Cancelled, "shutting down");
         for (const auto& entry : jobs_) {
             const JobState state = entry.second.status.state;
             if (state == JobState::Pending || state == JobState::Running) {
@@ -109,7 +118,10 @@ void CommissioningService::start() {
     worker_ = std::thread([this] { workerLoop(); });
 }
 
-void CommissioningService::requestCancel() { cancelRequested_ = true; }
+void CommissioningService::requestCancel() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    cancelRequested_ = true;
+}
 
 void CommissioningService::stop() {
     requestCancel();
@@ -142,13 +154,9 @@ void CommissioningService::workerLoop() {
         const auto driverIt = drivers_.find(work.type);
         if (driverIt != drivers_.end()) driver = driverIt->second;
 
-        const auto result = commissionOnce(devices_, driver, work.type, work.request, work.driverTypes, cancelRequested_);
-        // 비밀값이 든 요청은 작업이 끝나면 바로 지운다(작업 표에는 처음부터 없다)
-        work.request = CommissionRequest{};
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            finishLocked(work.jobId, result);
-        }
+        // 요청(비밀값)은 commissionOnce로 넘겨 그 안에서 commission 직후 비운다(작업 표에는 처음부터 없다)
+        const auto result = commissionOnce(devices_, driver, work.type, std::move(work.request), work.driverTypes, cancelRequested_);
+        // 결과 로그를 먼저 남긴다: E8이 끝남을 본 뒤에는 이 작업이 더 쓰는 것이 없다
         if (result.ok()) {
             std::cout << "[CommissioningService] 등록 작업 성공 : " << work.jobId << " ("
                       << RequestValidation::sanitizeForLog(result.value->deviceId) << (result.value->restored ? ", 기록 복구" : "")
@@ -157,6 +165,8 @@ void CommissioningService::workerLoop() {
             std::cerr << "[CommissioningService] 등록 작업 실패 : " << work.jobId << " ("
                       << RequestValidation::sanitizeForLog(result.error.message) << ")" << std::endl;
         }
+        std::lock_guard<std::mutex> lock(mutex_);
+        finishLocked(work.jobId, result);
     }
 }
 

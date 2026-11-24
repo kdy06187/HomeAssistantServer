@@ -698,6 +698,21 @@ TEST_F(MatterControllerTest, DeclinedCommissionUnpairsOnlyNewNodeAndKeepsExistin
     EXPECT_EQ(subcommands().back()[2], "101");
 }
 
+// Q1: 페어링 시간 초과는 E8 COMMISSION_TIMEOUT으로 나가도록 CommissionTimeout
+TEST_F(MatterControllerTest, PairingTimeoutIsCommissionTimeout) {
+    runner.respond = [](const std::vector<std::string>& sub) {
+        if (startsWith(sub, {"pairing", "ble-wifi"})) return ProcessResult{128 + 15, "partial output", true, false, false};
+        return FakeChipToolOutput::ok("");
+    };
+    const auto outcome = controller->commission(CommissionRequest{"plug", kGoodCode, "ssid", "pw"}, {}, kNotCancelled);
+    ASSERT_FALSE(outcome.ok());
+    EXPECT_EQ(outcome.error.code, ErrorCode::CommissionTimeout);
+
+    runner.respond = [](const std::vector<std::string>&) { return ProcessResult{1, "error", false, false, false}; };
+    EXPECT_EQ(controller->commission(CommissionRequest{"plug", kGoodCode, "ssid", "pw"}, {}, kNotCancelled).error.code,
+              ErrorCode::CommissionFailed);  // 시간 초과가 아닌 실패는 그대로
+}
+
 TEST_F(MatterControllerTest, FinalizeWithoutNodeDoesNothing) {
     controller->finalizeCommission(CommissionOutcome{"SN-1"}, false);
     controller->finalizeCommission(CommissionOutcome{"SN-X"}, true);

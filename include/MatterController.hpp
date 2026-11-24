@@ -93,6 +93,7 @@ private:
     struct ChipToolOutcome {
         bool ok = false;
         bool cancelled = false;  // 서버 종료 등으로 취소됨: 실패지만 기기 탓이 아니다(오프라인 표시 안 함)
+        bool timedOut = false;   // 제한 시간이 지나 강제로 끝냄(페어링이면 E8 COMMISSION_TIMEOUT)
         std::string output;
     };
     // logDuration: 페어링·시리얼·unpair처럼 느린 명령만 걸린 시간을 남긴다(60초 헬스체크 조회는 남기지 않음)

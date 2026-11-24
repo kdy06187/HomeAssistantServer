@@ -95,6 +95,7 @@ MatterController::ChipToolOutcome MatterController::runChipTool(const std::vecto
 
     ChipToolOutcome outcome;
     outcome.cancelled = result.cancelled;
+    outcome.timedOut = result.timedOut;
     outcome.ok = !result.startFailed && !result.timedOut && !result.cancelled && result.exitCode == 0;
     if (result.startFailed) std::cerr << "[MatterController] chip-tool 실행 실패" << std::endl;
     else if (result.timedOut) std::cerr << "[MatterController] chip-tool 제한 시간 초과" << std::endl;
@@ -323,6 +324,9 @@ Result<CommissionOutcome> MatterController::commissionDevice(uint64_t nodeId, co
         std::cout << "[MatterController] 커미셔닝 성공 (NodeId=" << nodeId << "), 서버 등록 대기" << std::endl;
         outcome = Result<CommissionOutcome>::success(CommissionOutcome{*serialNumber, "", nodeId});
     } else {
+        if (pairing.timedOut) {
+            outcome = Result<CommissionOutcome>::failure(ErrorCode::CommissionTimeout, "chip-tool 페어링 시간 초과");
+        }
         // 4바이트 미만 비밀값은 가리지 않으므로(위 pairingSecrets) 그런 값이 있으면 출력을 아예 남기지 않는다
         if (hasShortSecret(wifiPassword, manualPincode, pinText)) {
             std::cerr << "[MatterController] 커미셔닝 실패 (타임아웃 또는 에러): 출력 생략: 짧은 비밀값" << std::endl;

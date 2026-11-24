@@ -73,7 +73,7 @@ svg .rl{stroke:#d04040;stroke-width:1.5;fill:none}
   <path class="l" d="M470 70 V120"/>
   <rect class="b" x="610" y="120" width="240" height="50" rx="6"/><text x="622" y="142">드라이버 commission</text><text x="622" y="160">BLE·페어링 (취소 플래그)</text>
   <path class="l" d="M570 145 H610"/>
-  <rect class="r" x="610" y="200" width="240" height="70" rx="6"/><text x="622" y="222">registerCommissioned [ID 락]</text><text x="622" y="242">findDevice → 저장 → 메모리</text><text x="622" y="262">→ finalizeCommission(true/false)</text>
+  <rect class="r" x="610" y="200" width="240" height="70" rx="6"/><text x="622" y="222">registerCommissioned [ID 락]</text><text x="622" y="242">취소? → findDevice → DB 저장</text><text x="622" y="262">→ finalize(true) → 메모리 공개</text>
   <path class="l" d="M730 170 V200"/>
   <rect class="w" x="370" y="215" width="200" height="50" rx="6"/><text x="382" y="237">작업 표</text><text x="382" y="255">SUCCEEDED / FAILED(code)</text>
   <path class="l" d="M610 240 H570"/>
@@ -88,14 +88,33 @@ svg .rl{stroke:#d04040;stroke-width:1.5;fill:none}
 <h3>① 등록 판정과 확정 훅 (<code>DeviceManager::registerCommissioned</code>)</h3>
 <pre><code>const auto idLock = registrationLockFor(id);          // 같은 ID의 삭제(unpair까지)가 끝날 때까지 기다림
 std::lock_guard&lt;std::mutex&gt; registrationLock(*idLock);
-if (isShuttingDown_) return decline(Cancelled, ...);
+if (isShuttingDown_ || cancelRequested) return decline(Cancelled, ...);  // 기다리는 사이 취소됐으면 여기서
 switch (db_.findDevice(id).value-&gt;kind) {
 case Active: return decline(AlreadyRegistered, ...);  // 덮어쓰지 않음
 case Hidden: 90일 안이면 restored = true, 지났으면 purgeDeviceRecords
 case None:   break;
 }
-if (!addDevice(...)) return decline(Internal, ...);    // DB 먼저 → 메모리
-finalizeQuietly(driver, outcome, true);                // 여기서야 Matter 매핑 기록</code></pre>
+saved = saveDevice(...);                               // ① DB 저장(메모리는 아직)
+if (!saved) return decline(Internal, ...);
+finalizeQuietly(driver, outcome, true);                // ② Matter 매핑 기록
+publishDevice(std::move(*saved));                      // ③ 그다음에 메모리에 공개</code></pre>
+<h3>①-보완 (13b-6, Gemini Q4·Q5): 순서와 취소 판정을 한 곳으로</h3>
+<svg viewBox="0 0 860 150" role="img" aria-label="보완 전에는 메모리 공개 뒤 확정 훅, 보완 뒤에는 DB 저장, 확정 훅, 메모리 공개 순서">
+  <text x="10" y="20">before</text>
+  <rect class="b" x="80" y="5" width="150" height="30" rx="6"/><text x="90" y="25">DB 저장</text>
+  <rect class="r" x="250" y="5" width="170" height="30" rx="6"/><text x="260" y="25">메모리 공개 (앱이 봄)</text>
+  <rect class="w" x="440" y="5" width="170" height="30" rx="6"/><text x="450" y="25">finalize(true) 매핑</text>
+  <text x="630" y="25">← 그 틈에 E2·E6이 "매핑 없음"</text>
+  <path class="l" d="M230 20 H250 M420 20 H440"/>
+  <text x="10" y="75">after</text>
+  <rect class="b" x="80" y="60" width="150" height="30" rx="6"/><text x="90" y="80">DB 저장</text>
+  <rect class="w" x="250" y="60" width="170" height="30" rx="6"/><text x="260" y="80">finalize(true) 매핑</text>
+  <rect class="b" x="440" y="60" width="170" height="30" rx="6"/><text x="450" y="80">메모리 공개</text>
+  <path class="l" d="M230 75 H250 M420 75 H440"/>
+  <text x="10" y="125">취소: 예전에는 드라이버 성공 직후 취소를 서비스가 ID 락 <tspan font-weight="bold">밖</tspan>에서 finalize(false)했다.</text>
+  <text x="10" y="143">지금은 취소 플래그를 registerCommissioned로 넘겨, ID 락을 얻은 뒤 한 곳에서 판정·정리한다.</text>
+</svg>
+<p>왜 공개를 맨 뒤로 했나: 공개한 순간부터 다른 스레드(E2 제어·E6 전력·헬스체크)가 그 기기를 쓴다. 확정 훅보다 먼저 공개하면 Matter는 매핑이 없어 실패하고, E2는 새 기기를 <code>OFFLINE</code>으로 기록했다. "남이 볼 수 있게 하는 일은 준비가 다 끝난 뒤 마지막에"는 동시성 코드의 기본 원칙이다(publish last).</p>
 <div class="three">
 <div><b>무엇을</b>커미셔닝 결과를 DB 상태로 판정하고, 결과를 드라이버에 "확정/거절"로 알린다.</div>
 <div><b>왜</b>예전에는 Matter가 commission 안에서 매핑을 먼저 썼다. 활성 기기를 다시 페어링하면 그 기기 매핑이 새 노드로 덮이고, 실패 정리 <code>unpairDevice(시리얼)</code>는 활성 기기 매핑까지 지웠다.</div>

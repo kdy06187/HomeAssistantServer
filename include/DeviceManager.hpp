@@ -79,6 +79,11 @@ public:
     // 커미셔닝 결과를 서버에 등록하고 드라이버 확정 훅(finalizeCommission)까지 부른다. 같은 ID의 removeDevice와 차례로 실행된다.
     // DB: 활성이면 AlreadyRegistered(덮어쓰지 않음), 복구 기간 안 숨김이면 복구(restored), 지났으면 기록 삭제 뒤 새 기기, 없으면 새 기기.
     // 실패: 빈 ID CommissionFailed, 종료 중 Cancelled, DB 오류 Internal — 모두 드라이버에 accepted=false를 알린다
+    // 순서(모두 ID 락 안): 종료·취소면 거절 → DB 판정·저장 → 확정 훅(true) → 메모리 공개.
+    // cancelRequested(작업 취소)가 서 있으면 Cancelled. 4인자 판은 취소 없음
+    Result<RegisterOutcome> registerCommissioned(ProtocolType type, const CommissionOutcome& outcome,
+                                                 const std::string& name, const std::vector<DriverType>& driverTypes,
+                                                 const std::atomic<bool>& cancelRequested);
     Result<RegisterOutcome> registerCommissioned(ProtocolType type, const CommissionOutcome& outcome,
                                                  const std::string& name, const std::vector<DriverType>& driverTypes);
     // 숨긴 시각부터 복구 기간(kRetentionDays) 안이면 true. 시각을 읽지 못하면 기록을 지우지 않도록 true
@@ -120,6 +125,10 @@ private:
     Result<HistoryResult> aggregateHistory(const std::string& deviceId, const HistoryQuery& query, HistoryResult history);
     std::shared_ptr<std::mutex> energyLockFor(const std::string& deviceId);
     std::shared_ptr<std::mutex> registrationLockFor(const std::string& deviceId);
+    // DB에만 저장하고 메모리에 넣을 기기를 돌려준다(실패 nullopt). publishDevice가 메모리에 넣는다
+    std::optional<Device> saveDevice(const std::string& id, const std::string& name, ProtocolType protocol_type,
+                                     const std::vector<DriverType>& driverTypes, const std::string& ip);
+    void publishDevice(Device device);
     // 예외는 로그만 남긴다(등록 결과를 바꾸지 않는다)
     void finalizeQuietly(ProtocolDriver* driver, const CommissionOutcome& outcome, bool accepted);
 
@@ -146,4 +155,6 @@ private:
     // mutex_나 전력 락을 쥔 채 이 락을 잡지 않는다
     std::mutex registrationLocksMutex_;  // registrationLocks_ 맵만 보호(메모리만)
     std::unordered_map<std::string, std::shared_ptr<std::mutex>> registrationLocks_;
+    // 등록의 "복구 판정 → 저장"과 보관 기간 정리(purgeExpired)를 겹치지 않게 한다. ID 락 다음, DB 앞(DB 호출만)
+    std::mutex retentionMutex_;
 };
