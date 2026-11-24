@@ -27,6 +27,13 @@ struct PurgeResult {
     int64_t deletedDevices = 0;  // 숨김 기간이 지나 완전 삭제된 기기
     int64_t deletedOrphans = 0;  // 기기 행이 없는 통계·이력 행 수
 };
+// findDevice 결과. 숨김이면 숨긴 시각(DB 형식)도 준다
+struct DeviceRecordState {
+    enum class Kind { None, Active, Hidden };
+    Kind kind = Kind::None;
+    std::string deletedAtUtc;  // Hidden일 때만
+};
+
 class DatabaseManager {
 public:
     DatabaseManager() : db_(nullptr) {}
@@ -47,6 +54,11 @@ public:
     std::string loadDeviceIp(const std::string& id);
     // 기기를 숨긴다(통계·이력은 유지). 없거나 이미 숨긴 기기는 DeviceNotFound, DB 오류는 Internal
     Status markDeleted(const std::string& id, const std::string& deletedAtUtc);
+    // 그 ID 행이 없음·활성·숨김 중 무엇인지. DB 오류는 failure(Internal)
+    Result<DeviceRecordState> findDevice(const std::string& id);
+    // 숨김 행 하나와 그 통계·이력을 한 트랜잭션으로 영구 삭제한다(복구 기간이 지난 기기를 새로 등록할 때).
+    // 활성·없는 행은 지우지 않고 DeviceNotFound, DB 오류는 Internal(아무것도 안 지움)
+    Status purgeDeviceRecords(const std::string& id);
     void close();
 
     bool initEnergyTable(); // 전력량 테이블 초기화
@@ -83,6 +95,7 @@ private:
     std::optional<int64_t> countLocked(const char* sql, const std::string* cutoffUtc);
     std::optional<int64_t> deleteLocked(const char* sql, const std::string* cutoffUtc);
     Result<PurgeResult> purgeLocked(const std::string& cutoffUtc, double maxDeleteRatio);
+    Status purgeDeviceRecordsLocked(const std::string& id);
 
     mutable std::mutex mutex_;
     sqlite3* db_;

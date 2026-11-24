@@ -357,3 +357,72 @@ TEST(DatabasePurgeRollbackTest, MidwayFailureRollsBackEverything) {
     db.close();
     fs::remove(path);
 }
+
+TEST_F(DatabaseRetentionTest, FindDeviceTellsNoneActiveAndHiddenWithTime) {
+    addDevice("A");
+    addDevice("B");
+    ASSERT_TRUE(db.markDeleted("B", textAt(kNow - hours(3))).ok());
+
+    const auto none = db.findDevice("NOPE");
+    const auto active = db.findDevice("A");
+    const auto hidden = db.findDevice("B");
+
+    ASSERT_TRUE(none.ok());
+    EXPECT_EQ(none.value->kind, DeviceRecordState::Kind::None);
+    ASSERT_TRUE(active.ok());
+    EXPECT_EQ(active.value->kind, DeviceRecordState::Kind::Active);
+    EXPECT_TRUE(active.value->deletedAtUtc.empty());
+    ASSERT_TRUE(hidden.ok());
+    EXPECT_EQ(hidden.value->kind, DeviceRecordState::Kind::Hidden);
+    EXPECT_EQ(hidden.value->deletedAtUtc, textAt(kNow - hours(3)));
+}
+
+TEST_F(DatabaseRetentionTest, FindDeviceFailsWhenDatabaseIsClosed) {
+    db.close();
+    const auto found = db.findDevice("A");
+    EXPECT_FALSE(found.ok());
+    EXPECT_EQ(found.error.code, ErrorCode::Internal);
+}
+
+// 숨김 행 하나의 기록만 지우고 다른 기기(숨김 포함)는 건드리지 않는다
+TEST_F(DatabaseRetentionTest, PurgeDeviceRecordsRemovesOnlyThatHiddenDevice) {
+    addDevice("OLD");
+    addDevice("OTHER_HIDDEN");
+    addDevice("LIVE");
+    int64_t total = 0;
+    for (const char* id : {"OLD", "OTHER_HIDDEN", "LIVE"}) {
+        ASSERT_TRUE(db.updateEnergyStat(id, 100, total));
+        addLog(id, 100, kNow - hours(1));
+    }
+    ASSERT_TRUE(db.markDeleted("OLD", textAt(kCutoff - hours(1))).ok());
+    ASSERT_TRUE(db.markDeleted("OTHER_HIDDEN", textAt(kCutoff - hours(1))).ok());
+
+    ASSERT_TRUE(db.purgeDeviceRecords("OLD").ok());
+
+    EXPECT_EQ(db.findDevice("OLD").value->kind, DeviceRecordState::Kind::None);
+    EXPECT_EQ(logCount("OLD"), 0u);
+    EXPECT_EQ(db.findDevice("OTHER_HIDDEN").value->kind, DeviceRecordState::Kind::Hidden);
+    EXPECT_EQ(logCount("OTHER_HIDDEN"), 1u);
+    EXPECT_EQ(logCount("LIVE"), 1u);
+    // OLD 통계가 지워졌으면 새로 등록한 기기는 0에서 시작한다
+    addDevice("OLD");
+    ASSERT_TRUE(db.updateEnergyStat("OLD", 7, total));
+    EXPECT_EQ(total, 7);
+    ASSERT_TRUE(db.updateEnergyStat("LIVE", 150, total));
+    EXPECT_EQ(total, 150);
+}
+
+TEST_F(DatabaseRetentionTest, PurgeDeviceRecordsRefusesActiveOrMissingDevice) {
+    addDevice("LIVE");
+    addLog("LIVE", 1, kNow - hours(1));
+
+    EXPECT_EQ(db.purgeDeviceRecords("LIVE").error.code, ErrorCode::DeviceNotFound);
+    EXPECT_EQ(db.purgeDeviceRecords("NOPE").error.code, ErrorCode::DeviceNotFound);
+    EXPECT_EQ(db.findDevice("LIVE").value->kind, DeviceRecordState::Kind::Active);
+    EXPECT_EQ(logCount("LIVE"), 1u);
+}
+
+TEST_F(DatabaseRetentionTest, PurgeDeviceRecordsFailsWhenDatabaseIsClosed) {
+    db.close();
+    EXPECT_EQ(db.purgeDeviceRecords("A").error.code, ErrorCode::Internal);
+}

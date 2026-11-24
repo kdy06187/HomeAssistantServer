@@ -754,3 +754,69 @@ Result<PurgeResult> DatabaseManager::purgeLocked(const std::string& cutoffUtc, d
     purged.deletedOrphans = *orphanStats + *orphanLogs;
     return Purge::success(purged);
 }
+
+Result<DeviceRecordState> DatabaseManager::findDevice(const std::string& id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!db_) return Result<DeviceRecordState>::failure(ErrorCode::Internal, "DB가 열려 있지 않음");
+    auto stmt = prepareStatement(db_, "SELECT deleted_at FROM devices WHERE device_id = ?;");
+    if (!stmt) {
+        std::cerr << "[DB 에러] 기기 조회 준비 실패: " << sqlite3_errmsg(db_) << "\n";
+        return Result<DeviceRecordState>::failure(ErrorCode::Internal, "기기 조회 준비 실패");
+    }
+    sqlite3_bind_text(stmt.get(), 1, id.c_str(), -1, SQLITE_TRANSIENT);
+    DeviceRecordState state;
+    const int step = sqlite3_step(stmt.get());
+    if (step == SQLITE_DONE) return Result<DeviceRecordState>::success(state);
+    if (step != SQLITE_ROW) {
+        std::cerr << "[DB 에러] 기기 조회 실패: " << sqlite3_errmsg(db_) << "\n";
+        return Result<DeviceRecordState>::failure(ErrorCode::Internal, "기기 조회 실패");
+    }
+    const unsigned char* deletedAt = sqlite3_column_text(stmt.get(), 0);
+    if (deletedAt) {
+        state.kind = DeviceRecordState::Kind::Hidden;
+        state.deletedAtUtc = reinterpret_cast<const char*>(deletedAt);
+    } else {
+        state.kind = DeviceRecordState::Kind::Active;
+    }
+    return Result<DeviceRecordState>::success(state);
+}
+
+Status DatabaseManager::purgeDeviceRecords(const std::string& id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!db_) return Status::failure(ErrorCode::Internal, "DB가 열려 있지 않음");
+    if (!execLocked("BEGIN IMMEDIATE;", "[DB] 기기 기록 삭제 트랜잭션 시작 실패: ")) {
+        return Status::failure(ErrorCode::Internal, "기기 기록 삭제 트랜잭션 시작 실패");
+    }
+    const Status result = purgeDeviceRecordsLocked(id);
+    if (result.ok() && execLocked("COMMIT;", "[DB] 기기 기록 삭제 커밋 실패: ")) return result;
+    sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
+    if (result.ok()) return Status::failure(ErrorCode::Internal, "기기 기록 삭제 커밋 실패");
+    return result;
+}
+
+Status DatabaseManager::purgeDeviceRecordsLocked(const std::string& id) {
+    // 활성 기기를 실수로 지우지 않도록 "숨김 행이 있는지"를 같은 트랜잭션 안에서 먼저 확인한다
+    auto check = prepareStatement(db_, "SELECT 1 FROM devices WHERE device_id = ? AND deleted_at IS NOT NULL;");
+    if (!check) return Status::failure(ErrorCode::Internal, "숨김 행 확인 준비 실패");
+    sqlite3_bind_text(check.get(), 1, id.c_str(), -1, SQLITE_TRANSIENT);
+    const int step = sqlite3_step(check.get());
+    if (step == SQLITE_DONE) return Status::failure(ErrorCode::DeviceNotFound, "숨김 행 없음");
+    if (step != SQLITE_ROW) return Status::failure(ErrorCode::Internal, "숨김 행 확인 실패");
+
+    // 통계·이력을 먼저, 기기 행은 마지막에(purgeLocked와 같은 순서)
+    const char* const sqls[] = {
+        "DELETE FROM device_energy_stats WHERE device_id = ?;",
+        "DELETE FROM state_history_logs WHERE device_id = ?;",
+        "DELETE FROM devices WHERE device_id = ? AND deleted_at IS NOT NULL;",
+    };
+    for (const char* sql : sqls) {
+        auto stmt = prepareStatement(db_, sql);
+        if (!stmt) return Status::failure(ErrorCode::Internal, "기기 기록 삭제 준비 실패");
+        sqlite3_bind_text(stmt.get(), 1, id.c_str(), -1, SQLITE_TRANSIENT);
+        if (sqlite3_step(stmt.get()) != SQLITE_DONE) {
+            std::cerr << "[DB 에러] 기기 기록 삭제 실패: " << sqlite3_errmsg(db_) << "\n";
+            return Status::failure(ErrorCode::Internal, "기기 기록 삭제 실패");
+        }
+    }
+    return Status::success();
+}
