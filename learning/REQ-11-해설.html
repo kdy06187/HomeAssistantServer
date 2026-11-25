@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>REQ-11 해설 - 시험 포트 경쟁과 로그 주입</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--fg:#1d2330;--sub:#5b6477;--ac:#2f6fed;--code:#0f1523;--codefg:#e6edf7;--add:#12391f;--del:#4a1620;--bd:#dde1e8}
+@media (prefers-color-scheme:dark){:root{--bg:#10131a;--card:#181d28;--fg:#e6e9ef;--sub:#9aa4b8;--ac:#6b9cff;--code:#0a0d14;--bd:#2a3142}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.65 -apple-system,"Noto Sans KR",sans-serif}
+main{max-width:920px;margin:0 auto;padding:20px 14px 60px}
+h1{font-size:2rem;margin:.4em 0 .1em}
+h2{font-size:1.3rem;margin:0 0 .6em;color:var(--ac)}
+h3{font-size:1.05rem;margin:1em 0 .3em}
+.lead{color:var(--sub);margin-bottom:20px}
+section{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:18px 20px;margin:16px 0}
+table{border-collapse:collapse;width:100%;font-size:.92rem;display:block;overflow-x:auto}
+th,td{border:1px solid var(--bd);padding:6px 10px;text-align:left;vertical-align:top}
+th{background:rgba(127,127,127,.12)}
+pre{background:var(--code);color:var(--codefg);padding:12px 14px;border-radius:8px;overflow-x:auto;font-size:.85rem;line-height:1.5;margin:8px 0}
+code{font-family:ui-monospace,Consolas,monospace}
+p code,li code,td code{background:rgba(127,127,127,.18);padding:1px 5px;border-radius:4px;font-size:.88em}
+.add{background:var(--add);display:block}.del{background:var(--del);display:block}
+.three{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+.three div{border:1px dashed var(--bd);border-radius:8px;padding:8px 10px;font-size:.92rem}
+.three b{display:block;color:var(--ac)}
+details{border:1px solid var(--bd);border-radius:8px;padding:6px 12px;margin:8px 0}
+summary{cursor:pointer;font-weight:600}
+svg{width:100%;height:auto;max-width:860px}
+svg text{fill:var(--fg);font-size:13px}
+svg .b{fill:var(--card);stroke:var(--ac);stroke-width:1.5}
+svg .w{fill:rgba(240,160,40,.15);stroke:#e0a030;stroke-width:1.5}
+svg .r{fill:rgba(220,60,60,.12);stroke:#d04040;stroke-width:1.5}
+svg .l{stroke:var(--sub);stroke-width:1.5;fill:none}
+svg .rl{stroke:#d04040;stroke-width:1.5;fill:none}
+</style>
+</head>
+<body>
+<main>
+<h1>REQ-11 해설 — 시험 포트 경쟁 없애기 · 로그 주입 회귀 시험 (2차 14a)</h1>
+<p class="lead">간헐 실패 2건의 의심 원인(빈 포트를 고른 뒤 다시 여는 틈)을 없애고, 처리 못 한 예외 로그가 한 줄로만 남는지 지키는 시험을 더했다. 운영 동작은 그대로다(main은 8000을 넘김).</p>
+
+<section>
+<h2>1. 무엇이 문제였나 — "골라 두고 닫았다가 다시 열기"</h2>
+<svg viewBox="0 0 860 220" role="img" aria-label="빈 포트를 고른 뒤 닫고 다시 바인딩하는 사이 다른 프로세스가 포트를 잡는 순서">
+<text x="10" y="22">시험 프로세스 A</text><text x="10" y="132">시험 프로세스 B (ctest -j 병렬)</text>
+<rect class="b" x="150" y="8" width="150" height="36" rx="6"/><text x="160" y="31">bind(0) → 포트 P</text>
+<rect class="b" x="320" y="8" width="110" height="36" rx="6"/><text x="332" y="31">close(P)</text>
+<rect class="r" x="560" y="8" width="230" height="36" rx="6"/><text x="570" y="31">HTTPServer(P).start() ✗ 실패</text>
+<rect class="w" x="440" y="118" width="170" height="36" rx="6"/><text x="452" y="141">bind → 하필 P를 받음</text>
+<path class="rl" d="M430 26 L520 120"/><path class="rl" d="M610 136 L660 46"/>
+<text x="150" y="200">틈(빨간 선) 사이에 OS가 P를 다른 프로세스에 줄 수 있다 = 확인 시점과 사용 시점이 다름(TOCTOU)</text>
+</svg>
+<p><b>고친 뒤:</b> 서버가 직접 <code>bind(0)</code>으로 열고(httplib <code>bind_to_any_port</code>), 받은 포트를 <code>boundPort()</code>로 알려 준다. 닫았다 다시 여는 단계가 없으니 틈이 없다. <code>TcpServer</code>가 이미 쓰던 규약과 같다.</p>
+</section>
+
+<section>
+<h2>2. 바뀐 코드</h2>
+<pre><code>// src/HTTPServer.cpp start()
+<span class="del">if (!state->server.bind_to_port(mBindAddress, mPort)) {</span>
+<span class="add">const int boundPort = mPort == 0 ? state->server.bind_to_any_port(mBindAddress)
+                                 : (state->server.bind_to_port(mBindAddress, mPort) ? mPort : -1);
+if (boundPort <= 0) {</span>
+...
+<span class="add">mBoundPort = boundPort;   // stop()에서 0으로</span></code></pre>
+<pre><code>// 시험 픽스처
+<span class="del">port = findFreePort();
+server = std::make_unique&lt;HTTPServer&gt;(..., port);</span>
+<span class="add">server = std::make_unique&lt;HTTPServer&gt;(..., 0);</span>
+ASSERT_TRUE(server-&gt;start());
+<span class="add">port = server-&gt;boundPort();</span></code></pre>
+<div class="three">
+<div><b>운영은 그대로</b>main은 8000을 넘긴다. 시험 <code>GivenPortIsUsedExactlyAsBefore</code>가 "지정 포트로 열리고 로그에도 그 포트"를 확인한다.</div>
+<div><b>포트 0은 이제 정상 값</b>예전 시험은 0을 범위 오류로 봤다 → 범위 시험에서 0을 뺐다(-1·65536은 여전히 실패).</div>
+<div><b>같은 포트 재사용 시험</b>처음 연 서버의 <code>boundPort()</code>를 다음 서버에 넘긴다(Limits 시험).</div>
+</div>
+</section>
+
+<section>
+<h2>3. J3 — 로그 주입 회귀 시험</h2>
+<p>예외 문구에 <code>\r\n[HTTPServer] fake line</code>을 넣고 E2를 보낸다. sanitize가 빠지면 로그에 <b>가짜 줄</b>이 하나 더 생긴다.</p>
+<table><tr><th>확인</th><th>기대</th></tr>
+<tr><td>응답</td><td>500 고정 본문(내부 문구 없음)</td></tr>
+<tr><td>로그</td><td><code>처리 중 예외: POST /api/control (boom??[HTTPServer] fake line?…</code> 한 줄</td></tr>
+<tr><td>가짜 줄</td><td><code>\n[HTTPServer] fake line</code> 없음</td></tr>
+<tr><td>길이</td><td>괄호 안 200바이트 이하</td></tr></table>
+</section>
+
+<section>
+<h2>4. 응용 실습</h2>
+<details><summary>Q1. findFreePort()를 그대로 두고 "start 실패면 5번 다시 시도"로 고치면 무엇이 남나?</summary><p>실패는 숨지만 틈은 그대로다. 다른 프로세스가 그 포트를 잠깐 잡았다 놓는 경우처럼 원인을 확인할 기회도 사라진다. 원인을 없애는 쪽(포트 0)이 낫다.</p></details>
+<details><summary>Q2. (빈칸) TcpServer 시험이 포트 0을 쓰는 곳을 찾아, 같은 규약의 두 함수 이름을 적어 보자.</summary><p><code>TcpServer::start(0, …)</code> / <code>TcpServer::boundPort()</code> — <code>include/TcpServer.hpp</code></p></details>
+<details><summary>Q3. (실습) sanitizeForLog를 잠시 빼고 J3 시험만 돌려 실패를 눈으로 확인한 뒤 되돌려 보자.</summary><pre><code>ctest --test-dir build-dev -R UnhandledExceptionMessageIsSanitizedInLog --output-on-failure</code></pre></details>
+</section>
+</main>
+</body>
+</html>
