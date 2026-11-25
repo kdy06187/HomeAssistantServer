@@ -22,7 +22,7 @@ namespace {
 
 const std::string kToken = "test-token-0123456789abcdef0123456789";
 
-// 포트를 점유하는 리슨 소켓(바인딩 실패 시험용)
+// 포트를 점유하는 리슨 소켓(바인딩 실패 시험용). port 0이면 OS가 고른 포트를 잡고 port()로 알려 준다
 class PortHolder {
 public:
     explicit PortHolder(int port, const char* address = "0.0.0.0") {
@@ -34,9 +34,12 @@ public:
         addr.sin_port = htons(port);
         inet_pton(AF_INET, address, &addr.sin_addr);
         held_ = ::bind(fd_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0 && ::listen(fd_, 1) == 0;
+        socklen_t length = sizeof(addr);
+        if (held_ && ::getsockname(fd_, reinterpret_cast<sockaddr*>(&addr), &length) == 0) port_ = ntohs(addr.sin_port);
     }
     ~PortHolder() { release(); }
     bool held() const { return held_; }
+    int port() const { return port_; }
     void release() {
         if (fd_ >= 0) ::close(fd_);
         fd_ = -1;
@@ -45,6 +48,7 @@ public:
 private:
     int fd_ = -1;
     bool held_ = false;
+    int port_ = 0;
 };
 
 class HttpServerLifecycleTest : public ::testing::Test {
@@ -52,12 +56,11 @@ protected:
     void SetUp() override {
         ASSERT_TRUE(database.init(":memory:"));
         manager.registerDriver(ProtocolType::TCP_DIY, &tcpFake);
-        port = findFreePort();
     }
 
-    // 새 연결로 GET /api/devices를 보내 200을 받는지
-    bool answersRequests() {
-        RawHttpClient connection(port, 3);
+    // 새 연결로 GET /api/devices를 보내 200을 받는지(포트 0 서버는 시작할 때마다 포트가 바뀌므로 지금 포트를 읽는다)
+    bool answersRequests(const HTTPServer& server) {
+        RawHttpClient connection(server.boundPort(), 3);
         if (!connection.connected()) return false;
         connection.sendAll(makeGetRequest("/api/devices", kToken));
         return connection.readResponse().rfind("HTTP/1.1 200", 0) == 0;
@@ -86,7 +89,7 @@ TEST_F(HttpServerLifecycleTest, SecondStartWhileRunningReturnsFalse) {
     EXPECT_FALSE(server.start());
     ASSERT_TRUE(server.waitUntilReady(3s));
     EXPECT_FALSE(server.start());
-    EXPECT_TRUE(answersRequests());
+    EXPECT_TRUE(answersRequests(server));
 }
 
 TEST_F(HttpServerLifecycleTest, StopTwiceIsSafe) {
@@ -110,7 +113,7 @@ TEST_F(HttpServerLifecycleTest, SameObjectCanStartStopStartAgainAndServes) {
     for (int round = 0; round < 3; ++round) {
         ASSERT_TRUE(server.start()) << round;
         ASSERT_TRUE(server.waitUntilReady(3s)) << round;
-        EXPECT_TRUE(answersRequests()) << round;
+        EXPECT_TRUE(answersRequests(server)) << round;
         server.stop();
     }
 }
@@ -125,7 +128,7 @@ TEST_F(HttpServerLifecycleTest, ConcurrentStartsLetExactlyOneWin) {
     for (auto& thread : threads) thread.join();
     EXPECT_EQ(winners.load(), 1);
     ASSERT_TRUE(server.waitUntilReady(3s));
-    EXPECT_TRUE(answersRequests());
+    EXPECT_TRUE(answersRequests(server));
 }
 
 TEST_F(HttpServerLifecycleTest, ConcurrentStartAndStopCallsEndInACleanState) {
@@ -184,7 +187,7 @@ TEST_F(HttpServerLifecycleTest, NullAuthenticatorIsRejectedAtConstruction) {
 }
 
 TEST_F(HttpServerLifecycleTest, PortOutOfRangeFailsToStart) {
-    for (int bad : {0, -1, 65536, 100000}) {
+    for (int bad : {-1, 65536, 100000}) {
         HTTPServer server(manager, commissioning, kToken, bad);
         testing::internal::CaptureStderr();
         EXPECT_FALSE(server.start()) << bad;
@@ -194,8 +197,9 @@ TEST_F(HttpServerLifecycleTest, PortOutOfRangeFailsToStart) {
 }
 
 TEST_F(HttpServerLifecycleTest, StartLogIsPrintedOnlyAfterBindingSucceeds) {
-    PortHolder holder(port);
+    PortHolder holder(0);
     ASSERT_TRUE(holder.held());
+    port = holder.port();
     HTTPServer server(manager, commissioning, kToken, port);
     testing::internal::CaptureStdout();
     testing::internal::CaptureStderr();
@@ -206,8 +210,9 @@ TEST_F(HttpServerLifecycleTest, StartLogIsPrintedOnlyAfterBindingSucceeds) {
 }
 
 TEST_F(HttpServerLifecycleTest, BindFailureLogsAddressPortAndErrnoThenRestartSucceedsAfterRelease) {
-    PortHolder holder(port);
+    PortHolder holder(0);
     ASSERT_TRUE(holder.held());
+    port = holder.port();
 
     HTTPServer server(manager, commissioning, kToken, port);
     testing::internal::CaptureStderr();
@@ -221,7 +226,7 @@ TEST_F(HttpServerLifecycleTest, BindFailureLogsAddressPortAndErrnoThenRestartSuc
     holder.release();
     ASSERT_TRUE(server.start());  // 바인딩 실패 뒤에도 같은 객체로 다시 시작할 수 있다
     EXPECT_TRUE(server.waitUntilReady(3s));
-    EXPECT_TRUE(answersRequests());
+    EXPECT_TRUE(answersRequests(server));
 }
 
 TEST_F(HttpServerLifecycleTest, BindsOnlyToTheGivenAddress) {
@@ -232,11 +237,51 @@ TEST_F(HttpServerLifecycleTest, BindsOnlyToTheGivenAddress) {
     const std::string log = testing::internal::GetCapturedStdout();
     EXPECT_NE(log.find("127.0.0.1"), std::string::npos) << log;
     EXPECT_NE(log.find("평문 HTTP"), std::string::npos) << log;
-    EXPECT_TRUE(answersRequests());
+    EXPECT_TRUE(answersRequests(server));
 
     // 같은 포트를 다른 주소(127.0.0.2)에 열 수 있다 = 서버가 0.0.0.0이 아니라 127.0.0.1에만 열려 있다
-    PortHolder other(port, "127.0.0.2");
+    PortHolder other(server.boundPort(), "127.0.0.2");
     EXPECT_TRUE(other.held());
+}
+
+TEST_F(HttpServerLifecycleTest, PortZeroBindsAnOsChosenPortAndBoundPortFollowsStartStop) {
+    HTTPServer server(manager, commissioning, kToken, 0);
+    EXPECT_EQ(server.boundPort(), 0);  // 시작 전
+    ASSERT_TRUE(server.start());
+    ASSERT_TRUE(server.waitUntilReady(3s));
+    EXPECT_GT(server.boundPort(), 0);
+    EXPECT_TRUE(answersRequests(server));
+    server.stop();
+    EXPECT_EQ(server.boundPort(), 0);  // stop 뒤
+}
+
+// main처럼 포트를 지정하면 그 포트로 열린다(포트 0 지원이 운영 동작을 바꾸지 않음)
+TEST_F(HttpServerLifecycleTest, GivenPortIsUsedExactlyAsBefore) {
+    int givenPort = 0;
+    {
+        PortHolder probe(0, "127.0.0.1");  // 빈 포트 하나를 알아낸 뒤 놓는다
+        ASSERT_TRUE(probe.held());
+        givenPort = probe.port();
+    }
+    HTTPServer server(manager, commissioning, kToken, givenPort, "127.0.0.1");
+    testing::internal::CaptureStdout();
+    ASSERT_TRUE(server.start());
+    ASSERT_TRUE(server.waitUntilReady(3s));
+    const std::string log = testing::internal::GetCapturedStdout();
+    EXPECT_EQ(server.boundPort(), givenPort);
+    EXPECT_NE(log.find("포트: " + std::to_string(givenPort)), std::string::npos) << log;
+    EXPECT_TRUE(answersRequests(server));
+    server.stop();
+}
+
+TEST_F(HttpServerLifecycleTest, BindFailureLeavesBoundPortZero) {
+    PortHolder holder(0);
+    ASSERT_TRUE(holder.held());
+    HTTPServer server(manager, commissioning, kToken, holder.port());
+    testing::internal::CaptureStderr();
+    EXPECT_FALSE(server.start());
+    testing::internal::GetCapturedStderr();
+    EXPECT_EQ(server.boundPort(), 0);
 }
 
 }  // namespace

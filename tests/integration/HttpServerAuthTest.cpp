@@ -26,7 +26,6 @@ protected:
     void SetUp() override {
         ASSERT_TRUE(database.init(":memory:"));
         manager.registerDriver(ProtocolType::TCP_DIY, &tcpFake);
-        port = findFreePort();
     }
 
     std::string statusLineFor(const std::string& request) {
@@ -49,6 +48,7 @@ protected:
 TEST_F(HttpServerAuthTest, EmptyServerTokenRejectsEvenAnEmptyBearer) {
     HTTPServer server(manager, commissioning, std::string(), port);
     ASSERT_TRUE(server.start());
+    port = server.boundPort();  // 포트 0(OS가 고름)으로 열었다
     ASSERT_TRUE(server.waitUntilReady(3s));
     EXPECT_EQ(statusLineFor(makeGetRequest("/api/devices", "")), "HTTP/1.1 401 Unauthorized");
     EXPECT_EQ(statusLineFor("GET /api/devices HTTP/1.1\r\nHost: x\r\n\r\n"), "HTTP/1.1 401 Unauthorized");
@@ -63,6 +63,7 @@ public:
 TEST_F(HttpServerAuthTest, InjectedAuthenticatorDecidesAccess) {
     HTTPServer server(manager, commissioning, std::make_shared<AllowNothing>(), port, "127.0.0.1", clock);
     ASSERT_TRUE(server.start());
+    port = server.boundPort();  // 포트 0(OS가 고름)으로 열었다
     ASSERT_TRUE(server.waitUntilReady(3s));
     EXPECT_EQ(statusLineFor(makeGetRequest("/api/devices", kToken)), "HTTP/1.1 401 Unauthorized");
     server.stop();
@@ -71,6 +72,7 @@ TEST_F(HttpServerAuthTest, InjectedAuthenticatorDecidesAccess) {
 TEST_F(HttpServerAuthTest, FailureLogHasClientMethodPathButNeverTheTokenAndSanitizesInput) {
     HTTPServer server(manager, commissioning, kToken, port);
     ASSERT_TRUE(server.start());
+    port = server.boundPort();  // 포트 0(OS가 고름)으로 열었다
     ASSERT_TRUE(server.waitUntilReady(3s));
 
     const std::string wrongToken = "wrong-secret-token-ABCDEF";
@@ -92,6 +94,7 @@ TEST_F(HttpServerAuthTest, FailureLogHasClientMethodPathButNeverTheTokenAndSanit
 TEST_F(HttpServerAuthTest, ForwardedForHeaderIsIgnoredInFailureLog) {
     HTTPServer server(manager, commissioning, kToken, port);
     ASSERT_TRUE(server.start());
+    port = server.boundPort();  // 포트 0(OS가 고름)으로 열었다
     ASSERT_TRUE(server.waitUntilReady(3s));
 
     testing::internal::CaptureStderr();
@@ -108,6 +111,7 @@ TEST_F(HttpServerAuthTest, ForwardedForHeaderIsIgnoredInFailureLog) {
 TEST_F(HttpServerAuthTest, WarnsExactlyOnceAfterMoreThanTenFailuresInAMinute) {
     HTTPServer server(manager, commissioning, std::make_shared<BearerTokenAuthenticator>(kToken), port, "127.0.0.1", clock);
     ASSERT_TRUE(server.start());
+    port = server.boundPort();  // 포트 0(OS가 고름)으로 열었다
     ASSERT_TRUE(server.waitUntilReady(3s));
 
     testing::internal::CaptureStderr();

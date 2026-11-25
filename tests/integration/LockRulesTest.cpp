@@ -22,7 +22,6 @@
 #include <vector>
 
 using json = nlohmann::json;
-using testsupport::findFreePort;
 
 namespace {
 
@@ -399,9 +398,9 @@ TEST_F(LockRulesTest, UnhandledExceptionInHandlerReturns500WithFixedBody) {
     addTcpDevice("A");
     tcpFake.throwOnSendCommand = true;
     const std::string token = "test-token-0123456789abcdef";
-    const int port = findFreePort();
-    HTTPServer server(manager, commissioning, token, port);
+    HTTPServer server(manager, commissioning, token, 0);
     ASSERT_TRUE(server.start());
+    const int port = server.boundPort();  // 포트 0: OS가 고른 포트
     ASSERT_TRUE(server.waitUntilReady(std::chrono::seconds(3)));
 
     httplib::Client client("127.0.0.1", port);

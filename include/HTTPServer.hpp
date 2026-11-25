@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <string>
 #include <thread>
 #include <chrono>
@@ -29,13 +30,16 @@ public:
 
     // 락: start는 생명주기 락을 쥔 채 실행 상태 락을 잡는다(생명주기 → 실행 상태).
     // 포트 바인딩까지 이 호출 안에서 끝내고, 성공하면 수락 스레드를 띄운다(TcpServer::start와 같은 규약:
-    // true는 이번 호출이 시작했다는 뜻). 이미 실행 중이거나 포트가 1~65535 밖이거나 바인딩에 실패하면 false.
+    // true는 이번 호출이 시작했다는 뜻). 이미 실행 중이거나 포트가 0~65535 밖이거나 바인딩에 실패하면 false.
+    // 포트 0은 OS가 빈 포트를 고른다(시험용, 실제 포트는 boundPort). main은 8000을 넘긴다.
     // stop 뒤나 바인딩 실패 뒤에 다시 부를 수 있다. 여러 스레드가 동시에 불러도 안전하다.
     bool start();
     // 실행 중이 아니면 아무것도 하지 않는다(여러 번 불러도 안전).
     void stop();
     // 수락 스레드가 listen에 들어갈 때까지 기다린다. start가 성공하지 않았거나 시간 안에 못 열리면 false.
     bool waitUntilReady(std::chrono::milliseconds timeout);
+    // start가 바인딩한 실제 포트. 시작 전·바인딩 실패·stop 뒤에는 0
+    int boundPort() const { return mBoundPort.load(); }
 
 private:
 DeviceManager& mDeviceManager;
@@ -43,6 +47,7 @@ DeviceManager& mDeviceManager;
     std::shared_ptr<const Authenticator> mAuthenticator;
     AuthFailureMonitor mAuthFailureMonitor;
     int mPort;
+    std::atomic<int> mBoundPort{0};
     std::string mBindAddress;
     // 한 번의 start가 만드는 서버 객체와 종료 표시. 스레드·waitUntilReady가 shared_ptr로 함께 쥔다
     struct RunState;

@@ -26,6 +26,7 @@ public:
     bool throwOnReadState = false;
     bool throwOnReadEnergy = false;
     bool throwOnSendCommand = false;
+    std::string thrownMessage = "fake sendCommand failure";  // throwOnSendCommand일 때 예외 문구(로그 sanitize 시험용)
     bool throwOnUnpair = false;
     // 호출 도중에 멈추게 하는 훅(교착 시험용). 기록 락 밖에서 호출되며 인자는 deviceId다.
     std::function<void()> onUnpair;
@@ -52,7 +53,7 @@ public:
 
     bool sendCommand(const std::string& deviceId, const std::string& command) override {
         if (onSendCommand) onSendCommand(deviceId);
-        if (throwOnSendCommand) throw std::runtime_error("fake sendCommand failure");
+        if (throwOnSendCommand) throw std::runtime_error(thrownMessage);
         std::lock_guard<std::mutex> lock(recordMutex);
         sentCommands.emplace_back(deviceId, command);
         return sendCommandResult;

@@ -20,7 +20,6 @@ protected:
     void SetUp() override {
         ASSERT_TRUE(database.init(":memory:"));
         manager.registerDriver(ProtocolType::TCP_DIY, &tcpFake);
-        port = findFreePort();
     }
 
     std::unique_ptr<HTTPServer> makeServer(int onPort) {
@@ -29,6 +28,8 @@ protected:
     std::unique_ptr<HTTPServer> startServer(int onPort) {
         auto server = makeServer(onPort);
         EXPECT_TRUE(server->start());
+        // 처음 여는 서버는 포트 0(OS가 고름)으로 열고, 같은 포트를 다시 쓰는 시험은 그 포트를 넘긴다
+        if (onPort == 0) port = server->boundPort();
         return server;
     }
 

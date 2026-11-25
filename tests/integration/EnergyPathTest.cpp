@@ -21,7 +21,6 @@
 #include <string>
 
 using json = nlohmann::json;
-using testsupport::findFreePort;
 namespace fs = std::filesystem;
 
 namespace {
@@ -76,9 +75,9 @@ protected:
     }
 
     void startServer() {
-        port = findFreePort();
-        server = std::make_unique<HTTPServer>(manager, commissioning, kToken, port);
+        server = std::make_unique<HTTPServer>(manager, commissioning, kToken, 0);
         ASSERT_TRUE(server->start());
+        port = server->boundPort();  // 포트 0: OS가 고른 포트
         ASSERT_TRUE(server->waitUntilReady(std::chrono::seconds(3)));
     }
     httplib::Result get(const std::string& path) {

@@ -25,9 +25,9 @@ protected:
         ASSERT_TRUE(database.init(":memory:"));
         manager.registerDriver(ProtocolType::TCP_DIY, &tcpFake);
         manager.addDevice("DEV_1", "시험 기기", ProtocolType::TCP_DIY, {});
-        port = findFreePort();
-        server = std::make_unique<HTTPServer>(manager, commissioning, kToken, port);
+        server = std::make_unique<HTTPServer>(manager, commissioning, kToken, 0);
         ASSERT_TRUE(server->start());
+        port = server->boundPort();  // 포트 0: OS가 고른 포트(빈 포트를 골라 닫고 다시 여는 틈이 없다)
         ASSERT_TRUE(server->waitUntilReady(3s));
     }
     void TearDown() override { server->stop(); }

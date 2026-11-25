@@ -54,9 +54,9 @@ protected:
         manager.registerDriver(ProtocolType::TCP_DIY, &tcpFake);
         manager.registerDriver(ProtocolType::MATTER, &matterFake);
         commissioning.start();
-        port = findFreePort();
-        server = std::make_unique<HTTPServer>(manager, commissioning, kToken, port);
+        server = std::make_unique<HTTPServer>(manager, commissioning, kToken, 0);
         ASSERT_TRUE(server->start());
+        port = server->boundPort();  // 포트 0: OS가 고른 포트(빈 포트를 골라 닫고 다시 여는 틈이 없다)
         ASSERT_TRUE(server->waitUntilReady(std::chrono::seconds(3)));
     }
     void TearDown() override { server->stop(); }
@@ -260,9 +260,9 @@ TEST_F(HttpServerTest, StopTwiceAndStopBeforeStartAreSafe) {
     DelayedCommandScheduler otherScheduler{clock};
     DeviceManager other(database, deviceDrivers, otherScheduler, clock);
     CommissioningService otherCommissioning{other, {}, clock};
-    HTTPServer neverStarted(other, otherCommissioning, kToken, findFreePort());
+    HTTPServer neverStarted(other, otherCommissioning, kToken, 0);
     neverStarted.stop();
-    HTTPServer started(other, otherCommissioning, kToken, findFreePort());
+    HTTPServer started(other, otherCommissioning, kToken, 0);
     ASSERT_TRUE(started.start());
     started.stop();  // listen 진입 전/후 어느 쪽이든 끝나야 한다
     started.stop();
@@ -270,7 +270,7 @@ TEST_F(HttpServerTest, StopTwiceAndStopBeforeStartAreSafe) {
 
 TEST_F(HttpServerTest, StopImmediatelyAfterStartReturnsQuickly) {
     for (int i = 0; i < 20; ++i) {
-        HTTPServer quick(manager, commissioning, kToken, findFreePort());
+        HTTPServer quick(manager, commissioning, kToken, 0);
         ASSERT_TRUE(quick.start());
         const auto begin = std::chrono::steady_clock::now();
         quick.stop();
@@ -420,9 +420,9 @@ TEST_F(HttpServerTest, E2MissingProtocolDriverReturns500) {
     DeviceManager bareManager(database, deviceDrivers, bareManagerScheduler, clock);
     CommissioningService bareManagerCommissioning{bareManager, {}, clock};
     bareManager.addDevice("BARE_1", "bare", ProtocolType::TCP_DIY, {});
-    const int barePort = findFreePort();
-    HTTPServer bareServer(bareManager, bareManagerCommissioning, kToken, barePort);
+    HTTPServer bareServer(bareManager, bareManagerCommissioning, kToken, 0);
     ASSERT_TRUE(bareServer.start());
+    const int barePort = bareServer.boundPort();  // 포트 0: OS가 고른 포트
     ASSERT_TRUE(bareServer.waitUntilReady(std::chrono::seconds(3)));
 
     httplib::Client client("127.0.0.1", barePort);
@@ -460,9 +460,9 @@ TEST(HttpServerDelayedCommandTest, E2DelayedCommandReturns202WithPendingCommand)
     });
     manager.addDevice("FAKE_1", "pc", ProtocolType::TCP_DIY, {DriverType::PC_DRIVER});
     manager.updateDeviceState("FAKE_1", "ON");
-    const int serverPort = findFreePort();
-    HTTPServer server(manager, commissioning, kToken, serverPort);
+    HTTPServer server(manager, commissioning, kToken, 0);
     ASSERT_TRUE(server.start());
+    const int serverPort = server.boundPort();  // 포트 0: OS가 고른 포트
     ASSERT_TRUE(server.waitUntilReady(std::chrono::seconds(3)));
 
     httplib::Client client("127.0.0.1", serverPort);
@@ -491,9 +491,9 @@ TEST(HttpServerDelayedCommandTest, E2SameCommandWhilePendingReturns202WithRemain
     });
     manager.addDevice("FAKE_1", "pc", ProtocolType::TCP_DIY, {DriverType::PC_DRIVER});
     manager.updateDeviceState("FAKE_1", "ON");
-    const int serverPort = findFreePort();
-    HTTPServer server(manager, commissioning, kToken, serverPort);
+    HTTPServer server(manager, commissioning, kToken, 0);
     ASSERT_TRUE(server.start());
+    const int serverPort = server.boundPort();  // 포트 0: OS가 고른 포트
     ASSERT_TRUE(server.waitUntilReady(std::chrono::seconds(3)));
 
     httplib::Client client("127.0.0.1", serverPort);
@@ -530,9 +530,9 @@ TEST(HttpServerDelayedCommandTest, E2DuringShutdownReturns502NotCancelled200) {
     manager.updateDeviceState("FAKE_1", "ON");
     manager.beginShutdown();
     scheduler.stopAndCancelAll();
-    const int serverPort = findFreePort();
-    HTTPServer server(manager, commissioning, kToken, serverPort);
+    HTTPServer server(manager, commissioning, kToken, 0);
     ASSERT_TRUE(server.start());
+    const int serverPort = server.boundPort();  // 포트 0: OS가 고른 포트
     ASSERT_TRUE(server.waitUntilReady(std::chrono::seconds(3)));
 
     httplib::Client client("127.0.0.1", serverPort);
@@ -742,6 +742,35 @@ protected:
     }
     LogCapture capture;
 };
+
+// 처리 못 한 예외의 문구에 줄바꿈·제어문자가 있어도 로그 한 줄로 남고(가짜 로그 줄 주입 불가) 200바이트에서 잘린다
+TEST_F(HttpServerLogTest, UnhandledExceptionMessageIsSanitizedInLog) {
+    // 가짜 설정은 이 시험의 서버 스레드가 뜨기 전에 끝낸다(설정 값은 락으로 보호하지 않는다)
+    manager.addDevice("J3_DEV", "j3", ProtocolType::TCP_DIY, {});
+    tcpFake.throwOnSendCommand = true;
+    tcpFake.thrownMessage = std::string("boom\r\n[HTTPServer] fake line\x01") + std::string(300, 'x');
+    HTTPServer throwingServer(manager, commissioning, kToken, 0);
+    ASSERT_TRUE(throwingServer.start());
+    ASSERT_TRUE(throwingServer.waitUntilReady(std::chrono::seconds(3)));
+
+    httplib::Client client("127.0.0.1", throwingServer.boundPort());
+    auto response = client.Post("/api/control", authHeaders(), R"({"deviceId":"J3_DEV","command":"ON"})", "application/json");
+    throwingServer.stop();
+
+    ASSERT_TRUE(response);
+    EXPECT_EQ(response->status, 500);
+    EXPECT_EQ(json::parse(response->body), json::parse(kInternalErrorBody));
+    const std::string log = capture.text();
+    const std::string expectedStart = "[HTTPServer] 처리 중 예외: POST /api/control (boom??[HTTPServer] fake line?";
+    const auto at = log.find(expectedStart);
+    ASSERT_NE(at, std::string::npos) << log;
+    EXPECT_EQ(log.find("\n[HTTPServer] fake line"), std::string::npos) << "예외 문구가 새 로그 줄을 만들면 안 됨";
+    // 괄호 안 문구는 sanitizeForLog 기본 상한(200바이트)으로 잘린다
+    const auto open = log.find('(', at);
+    const auto close = log.find(")\n", open);
+    ASSERT_NE(close, std::string::npos) << log;
+    EXPECT_LE(close - open - 1, 200u);
+}
 
 TEST_F(HttpServerLogTest, E3ResponsesNeverLogRequestSecrets) {
     const std::string body = R"({"protocolType":"MATTER","deviceName":"plug","payload":"34970112332","ssid":"MyHomeSSID","password":"pw-SECRET-123"})";

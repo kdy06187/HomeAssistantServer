@@ -10,7 +10,8 @@
 // HTTP 서버 통합 테스트용 원시 소켓 도구. 요청 문자열을 그대로 보내고 응답을 직접 읽는다.
 namespace testsupport {
 
-// 운영 포트(8000·8080)와 겹치지 않도록 항상 OS가 고른 빈 포트를 쓴다
+// 운영 포트(8000·8080)와 겹치지 않도록 OS가 고른 빈 포트 번호를 돌려준다.
+// 소켓을 닫고 번호만 넘기므로 그 사이 다른 프로세스가 잡을 수 있다 → HTTP 서버는 포트 0으로 열고 boundPort()를 읽는다
 inline int findFreePort() {
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     sockaddr_in addr{};

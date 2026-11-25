@@ -212,8 +212,8 @@ std::shared_ptr<HTTPServer::RunState> HTTPServer::currentRunState() const {
 }
 
 bool HTTPServer::start(){
-    if (mPort < 1 || mPort > 65535) {
-        std::cerr << "[HTTPServer] ❌ 포트 범위 오류 (" << mPort << ", 1~65535)" << std::endl;
+    if (mPort < 0 || mPort > 65535) {
+        std::cerr << "[HTTPServer] ❌ 포트 범위 오류 (" << mPort << ", 0~65535)" << std::endl;
         return false;
     }
     std::lock_guard<std::mutex> lock(mLifecycleMutex);
@@ -223,12 +223,15 @@ bool HTTPServer::start(){
     }
     auto state = buildRunState();
     // 바인딩은 호출한 스레드에서 끝내 실패를 바로 돌려준다(httplib는 bind 때 listen까지 마친다)
-    if (!state->server.bind_to_port(mBindAddress, mPort)) {
+    // 포트 0이면 OS가 고른 포트를 받는다. 빈 포트를 미리 골라 닫은 뒤 다시 바인딩하면 그 틈에 다른 프로세스가 잡을 수 있다
+    const int boundPort = mPort == 0 ? state->server.bind_to_any_port(mBindAddress)
+                                     : (state->server.bind_to_port(mBindAddress, mPort) ? mPort : -1);
+    if (boundPort <= 0) {
         logBindFailure(mBindAddress, mPort);
         return false;
     }
     // waitUntilReady가 true가 되기 전에 출력해 로그가 항상 준비 완료보다 앞선다
-    std::cout << "[HTTPServer] HTTP 서버 시작 (주소: " << mBindAddress << ", 포트: " << mPort
+    std::cout << "[HTTPServer] HTTP 서버 시작 (주소: " << mBindAddress << ", 포트: " << boundPort
               << ", 평문 HTTP)" << std::endl;
     try {
         mServerThread = std::thread(&HTTPServer::run, this, state);
@@ -241,6 +244,7 @@ bool HTTPServer::start(){
         std::lock_guard<std::mutex> stateLock(mRunStateMutex);
         mRunState = state;
     }
+    mBoundPort = boundPort;
     return true;
 }
 
@@ -252,6 +256,7 @@ void HTTPServer::stop(){
     // mRunState는 생명주기 락을 쥔 쪽만 바꾸므로 여기서는 락 없이 읽어도 안전하다.
     mRunState->server.stop();
     mServerThread.join();
+    mBoundPort = 0;
     std::cout << "[HTTPServer] HTTP 서버 종료" << std::endl;
 }
 
