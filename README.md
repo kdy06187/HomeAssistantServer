@@ -55,5 +55,5 @@ cd build && ./HomeAssistantCore
 | [06_배포.md](docs/06_배포.md) | 배포 순서·롤백·상태 확인·배포 기록 |
 | [07_실기시험-1차.md](docs/07_실기시험-1차.md) | 실제 기기 시험 절차와 결과 |
 | [08_검증-1차.md](docs/08_검증-1차.md) | 1차 검증(테스트·TSan·보안 점검) |
-| [api-contract.md](docs/api-contract.md) | REST 계약 v1.0(현재 운영) |
-| [api-contract-v2.0-초안.md](docs/api-contract-v2.0-초안.md) | REST 계약 v2.0 초안(2차) |
+| [api-contract.md](docs/api-contract.md) | REST 계약 v2.0(2차, 전환일부터 운영) |
+| [archive/api-contract-v1.0.md](docs/archive/api-contract-v1.0.md) | REST 계약 v1.0 보관본(1차 운영 `v1.0-deploy-1`) |

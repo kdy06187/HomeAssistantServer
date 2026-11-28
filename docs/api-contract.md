@@ -1,217 +1,281 @@
-# HomeAssistant REST API 계약서
+# HomeAssistant REST API 계약서 v2.0
 
 | 항목 | 값 |
 |---|---|
-| 버전 / 상태 | **v1.0** / **승인됨** (2026-11-16, 사용자) |
-| 기준 코드 | `src/HTTPServer.cpp`, `src/ApiAuth.cpp`, `src/main.cpp` (main `d7aa2c6` 시점 작업 트리) |
-| 원본 위치 | 서버 저장소 `docs/api-contract.md`. 앱은 버전이 붙은 사본을 둔다 |
-| 변경 규칙 | 서버를 먼저, 앱은 나중에 바꾼다. 바꿀 때마다 버전을 올리고 맨 아래 변경 이력에 적는다 |
-
-> **원칙**: 지금 서버가 실제로 하는 동작을 그대로 적는다(As-Is). REST를 바꾸면 v2.0으로 올린다.
-> 고칠 점은 §6에 모았다. 앱은 §6의 동작까지 감안해 구현한다.
-
----
+| 버전 / 상태 | **v2.0 / 승인됨** (2026-11-28, 사용자). 초안 2026-11-17 작성 → 2026-11-18~24 수정 → 14번 확정(U-1~U-8) |
+| 기준 코드 | 서버 main `4e13d7d` (전환일 태그 `v2.0-deploy-1`). 설계 `docs/02_설계.md`, ADR-003·006·007·009·011 |
+| 이전 버전 | `docs/archive/api-contract-v1.0.md` v1.0 (승인 2026-11-16, As-Is, 1차 운영 `v1.0-deploy-1`) |
+| 원본·규칙 | 원본은 서버 저장소 `docs/api-contract.md`. 앱은 사본 `docs/api-contract.md`를 두고 첫 줄에 "원본 v2.0 기준"을 적는다. 서버 먼저, 앱 나중. 바꿀 때마다 버전을 올리고 변경 이력에 적는다 |
 
 ## 1. 공통 규칙
 
 | 항목 | 내용 | 근거 |
 |---|---|---|
-| Base URL | `http://<서버 IP>:8000` | `main.cpp:57` |
-| 전송 | HTTP 평문(TLS 없음). 집 LAN 안에서만 쓴다 | `HTTPServer.cpp:120` `listen("0.0.0.0", ...)` |
-| 데이터 형식 | 요청·응답 모두 JSON, UTF-8. 응답 헤더 `Content-Type: application/json` | 각 핸들러의 `set_content` |
-| 인증 | 모든 경로에 `Authorization: Bearer <토큰>` 헤더 필요 | `HTTPServer.cpp:47-57` |
-| 포트 8080 | DIY 기기 전용 TCP 포트. **앱은 쓰지 않는다** | `main.cpp:37` |
+| Base URL | `http://<서버 LAN IP>:8000` (v1.0과 같음). 집 Wi-Fi 안에서만 | ADR-011 |
+| 전송 | HTTP 평문(LAN). HTTPS·외부 접속은 **보류**(나중에 붙여도 경로·본문은 같고 주소만 바뀜) | REQ-14·I-06 보류 |
+| 형식 | 요청·응답 JSON, UTF-8, `Content-Type: application/json` | |
+| 인증 | 모든 경로(없는 경로 포함) `Authorization: Bearer <토큰>` | ADR-009 |
+| 본문 크기 | 최대 16KiB, 넘으면 413 | REQ-15 |
+| 키 표기 | lowerCamelCase. `_mW`(밀리와트)·`_mWh`(밀리와트시)는 유지 | ADR-003 |
+| 시각 | 응답은 ISO 8601 UTC(`2026-11-16T00:30:00Z`). `from`/`to`는 +09:00 날짜 `YYYY-MM-DD` | ADR-007 |
+| 성공 판정 | **HTTP 상태코드만**. 성공 본문에 `result`/`status`/`message` 없음 | I-01, I-03 |
+| `{deviceId}` 경로 | `[A-Za-z0-9_-]{1,64}`만. 아니면 404 `NOT_FOUND` | S-15 |
+| 포트 8080 | DIY 기기·PC 에이전트용(앱은 안 씀) | |
 
-### 1.1 인증
+### 1.1 오류 본문 (공통, 한 가지 모양)
 
-- 토큰은 서버 PC의 토큰 파일에 있다(권한 600, 토큰 32자 이상). 앱에는 설정 화면 등으로 넣는다.
-- **토큰 값은 코드·문서·저장소에 쓰지 않는다.**
-- 헤더가 없거나 토큰이 틀리면 아래처럼 응답한다. 인증 검사는 경로를 찾기 전에 하므로, 없는 경로여도 토큰이 틀리면 401이다.
+`{ "error": { "code": "DEVICE_NOT_FOUND", "message": "등록되지 않은 기기입니다." } }`
 
-```
-HTTP/1.1 401 Unauthorized
-WWW-Authenticate: Bearer
-{"error": "인증이 필요합니다."}
-```
+- 앱은 `error.code`로 분기. `message`는 **코드별 고정 문구**(아래 표)이며 표시용. 서버 내부 상세(SQL·경로 등)는 담지 않는다(S-11).
+- 모르는 `code`는 HTTP 상태 기준 일반 오류로 처리(코드 추가는 MINOR).
+
+| HTTP | `code` | `message` | 언제 |
+|---|---|---|---|
+| 400 | `INVALID_REQUEST` | 요청 형식이 올바르지 않습니다. | JSON 오류, 필수 필드 누락, 허용 안 된 값, E3 입력 제한·E7 파라미터 위반 |
+| 400 | `UNSUPPORTED_OPERATION` | 이 기기에서 지원하지 않는 요청입니다. | TCP_DIY 기기에 E6·E7 |
+| 401 | `UNAUTHORIZED` | 인증에 실패했습니다. | 토큰 없음·틀림. `WWW-Authenticate: Bearer`. POST도 본문 정상 전달(N-03(신규) 수정) |
+| 404 | `DEVICE_NOT_FOUND` | 등록되지 않은 기기입니다. | 없는·삭제(숨김)된 기기 |
+| 404 | `JOB_NOT_FOUND` | 없는 등록 작업입니다. | 없는 작업(서버 재시작 후 포함), 형식이 틀린 `jobId` |
+| 404 | `NOT_FOUND` | 없는 경로입니다. | 없는 경로, 형식이 틀린 `{deviceId}` |
+| 409 | `COMMAND_BLOCKED` | 기기 드라이버가 명령을 막았습니다. | E2 |
+| 409 | `COMMISSION_BUSY` | 다른 기기 등록이 진행 중입니다. | E3 (동시 1개) |
+| 413 | `PAYLOAD_TOO_LARGE` | 요청 본문이 너무 큽니다. | 16KiB 초과. 서버가 본문을 다 받기 전에 연결이 끊길 수 있으므로 앱은 본문 없이도 처리 |
+| 500 | `INTERNAL_ERROR` | 서버 내부 오류입니다. | |
+| 502 | `DEVICE_UNREACHABLE` | 기기가 응답하지 않습니다. | 기기 또는 Matter 제어 도구 실패 |
 
 ### 1.2 공통 값
 
-| 이름 | 값 | 설명 |
-|---|---|---|
-| `protocolType` / `type` | `"MATTER"`, `"TCP_DIY"` | 기기 프로토콜. 목록 응답에는 `"UNKNOWN"`이 올 수도 있다 |
-| 기기 상태 `state` | `"ON"`, `"OFF"`, `"OFFLINE"`, `"UNKNOWN"` | 이 외의 문자열이 와도 앱은 죽지 말고 "알 수 없음"으로 표시한다 |
-| 제어 명령 `command` | `"ON"`, `"OFF"` | 그 외는 거부 (`HTTPServer.cpp:13-15`) |
-| `driverTypes` 원소 | `1`=PC_DRIVER, `2`=TV_DRIVER, `3`=TIMER_DRIVER | `include/DriverType.hpp`. `0`(NONE)은 보내지 않는다 |
-| `deviceId` | 문자열. Matter는 시리얼 번호, TCP_DIY는 `ARD_<기기 IP>`(예: `ARD_192.168.0.50`). IP가 바뀌면 ID도 바뀐다 | URL 경로에 `/` 불가 |
-
----
+| 이름 | 값 |
+|---|---|
+| `protocolType` | `"MATTER"`, `"TCP_DIY"` (목록에 `"UNKNOWN"` 가능) |
+| `state` | `"ON"`, `"OFF"`, `"OFFLINE"`, `"UNKNOWN"`. 그 외는 "알 수 없음"으로 표시 |
+| `command` | `"ON"`, `"OFF"` |
+| `driverTypes` 원소 | `1`=PC_DRIVER, `2`=TV_DRIVER, `3`=TIMER_DRIVER (`0`은 안 보냄) |
+| `deviceId` | **불투명 문자열**(해석 금지). 현재 Matter = 시리얼, TCP_DIY = `TCP_` + Wi-Fi MAC 16진 12자(예 `TCP_A1B2C3D4E5F6`), IP가 바뀌어도 같음(ADR-006) |
+| `ip` | TCP_DIY 마지막 접속 IP, Matter는 `null` (표시용) |
 
 ## 2. 엔드포인트 요약
 
-| # | 메서드 | 경로 | 하는 일 |
-|---|---|---|---|
-| E1 | GET | `/api/devices` | 기기 목록 조회 |
-| E2 | POST | `/api/control` | 기기 켜기/끄기 |
-| E3 | POST | `/api/commission` | 새 기기 등록(커미셔닝) |
-| E4 | POST | `/api/devices/delete` | 기기 삭제 |
-| E5 | GET | `/api/devices/{deviceId}/state` | 기기 상태 1건 조회 |
-| E6 | GET | `/api/devices/{deviceId}/energy` | 현재 전력과 누적 전력량 조회 |
-| E7 | GET | `/api/devices/{deviceId}/energy/history` | 누적 전력량 기록 조회 |
+| # | 메서드 | 경로 | 하는 일 | v1.0 대비 |
+|---|---|---|---|---|
+| E1 | GET | `/api/devices` | 기기 목록 | 키 변경 |
+| E2 | POST | `/api/control` | 켜기/끄기 | 200/202/오류 |
+| E3 | POST | `/api/commission` | 등록 작업 시작 | **비동기**(202 + 작업 ID), 입력 제한 |
+| E8 | GET | `/api/commission/{jobId}` | 등록 작업 상태 | **신규** |
+| E4 | POST | `/api/devices/delete` | 삭제(숨김) | 의미·응답 변경 |
+| E5 | GET | `/api/devices/{deviceId}/state` | 상태 1건 | 없는 기기 404 |
+| E6 | GET | `/api/devices/{deviceId}/energy` | 현재 전력·누적 | 키·상태코드 변경 |
+| E7 | GET | `/api/devices/{deviceId}/energy/history` | 기록·집계 | 파라미터·키·시각 형식 |
 
----
+경로는 v1.0과 같다(E8만 추가). `DELETE /api/devices/{id}` 안은 앱 변경만 늘어 채택 안 함.
 
 ## 3. 엔드포인트 상세
 
 ### E1. GET `/api/devices`
 
-**응답 200**
-```json
-{
-  "status": "success",
-  "total_count": 2,
-  "devices": [
-    { "id": "ARD_192.168.0.50", "name": "거실 전등", "type": "TCP_DIY", "state": "ON" },
-    { "id": "SN12345",   "name": "스마트 플러그", "type": "MATTER", "state": "OFF" }
-  ]
-}
-```
-- `state`는 서버에 저장된 마지막 상태다(기기에 새로 물은 값이 아님). 최신 값은 E5.
-- 서버 재시작 직후에는 DB에 ON/OFF만 있어 `OFFLINE`이 `ON` 또는 `OFF`로 보일 수 있다. 헬스 체크는 60초마다.
+**200** `{"totalCount": 2, "devices": [{"deviceId": "TCP_A1B2C3D4E5F6", "name": "거실 전등", "protocolType": "TCP_DIY", "state": "ON", "ip": "192.168.0.50"}, {"deviceId": "SN12345", "name": "스마트 플러그", "protocolType": "MATTER", "state": "OFF", "ip": null}]}`
+- 숨김 기기는 안 나온다. `state`는 저장된 마지막 상태(최신은 E5). 재시작 직후 `OFFLINE`이 `ON`/`OFF`로 보일 수 있다(헬스체크 60초).
 
 ### E2. POST `/api/control`
 
-**요청**: `{ "deviceId": "ARD_192.168.0.50", "command": "ON" }`
+**요청** `{"deviceId": "TCP_A1B2C3D4E5F6", "command": "OFF"}`
 
 | 경우 | HTTP | 본문 |
 |---|---|---|
-| 명령 성공 | 200 | `{"status": "ON", "message": "명령 성공!"}` |
-| 명령 실패(기기 응답 없음, 미등록 ID 등) | **200** | `{"status": "<현재 상태 또는 UNKNOWN>", "message": "명령 실패!"}` |
-| 허용되지 않은 명령 | 400 | `{"result": "error", "message": "허용되지 않은 명령입니다."}` |
-| JSON 형식 오류, 필드 누락 | 400 | `{"result": "error", "message": "잘못된 JSON 형식입니다."}` |
+| 즉시 성공 | 200 | `{"deviceId", "state": "OFF"}` |
+| 지연 수락(예: PC 드라이버 OFF) | **202** | `{"deviceId", "state": "ON", "pendingCommand": "OFF", "delaySeconds": 45}` |
+| 같은 명령 대기 중 | 202 | 같은 모양, `delaySeconds`는 남은 초. 종료 메시지 재전송 없음 |
+| 드라이버가 막음 | 409 | `COMMAND_BLOCKED` |
+| 기기 응답 없음·실패 | 502 | `DEVICE_UNREACHABLE` (서버는 `OFFLINE` 기록) |
+| 없는·숨김 기기 | 404 | `DEVICE_NOT_FOUND` |
+| 허용 안 된 명령, JSON 오류 | 400 | `INVALID_REQUEST` |
 
-- 여기서 `status`는 **기기 상태**다(E1의 `status`와 뜻이 다름).
-- 실패해도 200이므로 성공 여부는 `message`로 구분한다(§6 I-01).
-- PC 드라이버가 붙은 기기는 명령이 막히거나 늦게 실행될 수 있다. 예: `OFF`는 PC에 종료 메시지를 보내고 전원 차단은 45초 뒤. 응답은 상태가 바뀌기 전에 오므로 앱은 잠시 뒤 E5로 다시 확인한다.
+- 202의 `state`는 바뀌기 전 상태. 앱은 `delaySeconds` 뒤 E5로 확인(지연 결과는 응답으로 안 옴).
+- 지연 OFF 대기 중 `ON`을 보내면 대기 OFF 취소. 서버 종료 시 대기 명령은 실행 안 하고 취소(Q-06).
 
-### E3. POST `/api/commission`
+### E3. POST `/api/commission` (비동기)
 
-**요청**
-```json
-{
-  "protocolType": "MATTER",
-  "deviceName": "스마트 플러그",
-  "payload": "34970112332",
-  "ssid": "MyWiFi",
-  "password": "********",
-  "driverTypes": [1]
-}
-```
+**요청**(필드는 v1.0과 같음) `{"protocolType": "MATTER", "deviceName": "스마트 플러그", "payload": "34970112332", "ssid": "MyWiFi", "password": "********", "driverTypes": [1]}`
 
-| 필드 | 필수 | 설명 |
+| 필드 | 필수 | 설명 · **입력 제한**(S-09, 위반 시 400 `INVALID_REQUEST`) |
 |---|---|---|
-| `protocolType` | 예 | `"MATTER"` 또는 `"TCP_DIY"` |
-| `deviceName` | 예 | 앱에 표시할 이름 |
-| `payload` | 예 | MATTER: 페어링 코드(수동 코드나 QR 내용). TCP_DIY: 기기가 접속할 서버 IP(빈 문자열이면 서버 기본 IP) |
-| `ssid`, `password` | 아니오 | 기기에 넣을 Wi-Fi 정보. 빠지면 `""` |
-| `driverTypes` | 아니오 | 정수 배열(§1.2). 빠지면 드라이버를 붙이지 않음 |
+| `protocolType` | 예 | `"MATTER"` / `"TCP_DIY"` |
+| `deviceName` | 예 | 표시 이름. 1~64자 |
+| `payload` | 예 | MATTER: 수동 코드 **숫자만 11 또는 21자리**(앱이 `-`·공백 제거) 또는 QR 내용 `MT:` + `0-9 A-Z . -`. TCP_DIY: 기기가 접속할 서버 LAN IP(IPv4 점 표기) 또는 `""`(**앱이 접속한 서버 주소**) |
+| `ssid` | 아니오 | 0~32바이트(UTF-8), 빠지면 `""` |
+| `password` | 아니오 | 0~63바이트, 빠지면 `""` |
+| `driverTypes` | 아니오 | §1.2의 값만 |
+
+- 공통: 모든 문자열 필드에 제어문자(개행 `\r` `\n`, Tab, `\0` 등) 금지. SSID·비밀번호의 공백·따옴표는 **허용**(제어문자만 금지).
 
 | 경우 | HTTP | 본문 |
 |---|---|---|
-| 성공 | 200 | `{"result": "success", "message": "기기 등록 성공!"}` |
-| 등록 실패 | 400 | `{"result": "error", "message": "기기 등록 실패!"}` |
-| 알 수 없는 protocolType | 400 | `{"result": "error", "message": "알 수 없는 프로토콜 타입입니다."}` |
-| JSON 오류, 필수 필드 누락 | 400 | `{"result": "error", "message": "잘못된 JSON 형식입니다."}` |
+| 접수 | **202** | `{"jobId": "c-tk3q5s-1", "state": "PENDING"}` |
+| 다른 등록이 대기·실행 중 | 409 | `COMMISSION_BUSY` |
+| 서버 종료 중 | 502 | `DEVICE_UNREACHABLE` (E2와 같음) |
+| 필드 오류·입력 제한 위반 | 400 | `INVALID_REQUEST` (TCP_DIY `payload`가 `""`인데 앱이 접속한 서버 주소가 사설·링크 로컬 IPv4가 아닐 때 포함) |
 
-- **오래 걸리는 동기 요청이다.** TCP_DIY는 BLE 스캔 5초에 연결 대기가 더해지고, Matter는 페어링이 끝날 때까지 응답이 없다. 앱 읽기 타임아웃은 **120초 이상**. (서버 쪽 상한 없음, §6 I-04)
-- 성공 응답에 새 기기의 `deviceId`가 없다. 등록 후 E1로 목록을 갱신한다.
-- 요청에 Wi-Fi 비밀번호가 있으므로 앱은 이 요청 본문을 로그에 남기지 않는다.
+- 응답은 즉시(v1.0의 120초 대기 불필요). 결과는 E8. `jobId`는 불투명 문자열.
+- 앱·서버 모두 요청 본문을 로그에 남기지 않는다. 서버는 작업 상태에 요청을 보관하지 않는다.
 
-### E4. POST `/api/devices/delete`
+### E8. GET `/api/commission/{jobId}` (신규)
 
-**요청**: `{ "deviceId": "SN12345" }`
+**200** `{"jobId": "c-tk3q5s-1", "state": "SUCCEEDED", "deviceId": "SN12345", "restored": false, "error": null}`
 
-| 경우 | HTTP | 본문 |
+| 필드 | 설명 |
+|---|---|
+| `state` | `PENDING` → `RUNNING` → `SUCCEEDED` / `FAILED` |
+| `deviceId` | 성공 시 기기 ID, 그 외 `null` |
+| `restored` | 90일 안에 삭제한 같은 기기를 다시 등록해 **기록을 이어받았으면** `true`. 앱은 사용자에게 알린다 |
+| `error` | 실패 시 `{"code", "message"}`(고정 문구), 그 외 `null` |
+
+| `error.code` | `message` | 언제 |
 |---|---|---|
-| 성공 | 200 | `{"result": "success", "message": "기기 삭제 성공!"}` |
-| 없는 기기 또는 해제 실패 | 400 | `{"result": "error", "message": "기기 삭제 실패 또는 기기 없음"}` |
-| JSON 오류 | 400 | `{"result": "error", "message": "잘못된 JSON 형식입니다."}` |
+| `COMMISSION_FAILED` | 기기 등록에 실패했습니다. | BLE 기기 못 찾음·페어링 실패·서버 저장 실패 등 |
+| `COMMISSION_TIMEOUT` | 기기 등록 시간이 초과되었습니다. | 작업 제한 시간 |
+| `CANCELLED` | 서버 종료로 취소되었습니다. | 서버 종료 |
+| `ALREADY_REGISTERED` | 이미 등록된 기기입니다. | 이미 활성으로 등록된 기기(덮어쓰지 않음, S-05). 등록된 TCP 기기를 초기화해 다시 등록한 경우, 등록된 Matter 기기를 다시 페어링한 경우 포함(삭제 뒤 재등록하면 기록을 이어받음) |
+
+- 없는 작업 → 404 `JOB_NOT_FOUND`(E1로 등록 여부 확인). 형식이 틀린 `jobId`(`[a-z0-9-]{1,32}` 밖)도 404 `JOB_NOT_FOUND`(`NOT_FOUND`가 아님). 앱은 `jobId`를 해석하지 않으므로 영향 없음.
+- 폴링 2초 간격. 서버 제한 시간: TCP_DIY 약 30초(BLE 스캔 5 + 연결 0.8 + 쓰기 + 접속 대기 20 + 여유, 실기 K-12 접수→완료 약 10초), MATTER 190초(페어링 180 + 시리얼 10, 실기 K-1 최대 37.2초로 180초 유지). 앱은 210초가 지나면 E1로 확인.
+- 작업 상태는 서버 메모리에만, 끝난 작업은 1시간 조회 가능.
+
+### E4. POST `/api/devices/delete` (숨김)
+
+**요청** `{"deviceId": "SN12345"}`
+**200** `{"deviceId": "SN12345", "deletedAt": "2026-11-17T03:00:00Z", "restorableUntil": "2027-02-15T03:00:00Z", "unpaired": true}`
+
+| 필드 | 설명 |
+|---|---|
+| `deletedAt` | 숨긴 시각(UTC) |
+| `restorableUntil` | 이 전에 같은 기기를 E3로 다시 등록하면 기록(누적·이력)을 이어받음. 이후 기록까지 완전 삭제 |
+| `unpaired` | 연결 해제 성공 여부(Matter: 페어링 해제, TCP_DIY: 초기화 메시지). `false`여도 숨김은 완료. **앱은 `false`면 "기기 쪽 해제 실패, 기기 초기화 필요" 경고를 보인다**(S-16) |
+
+| 오류 | HTTP |
+|---|---|
+| 없는·이미 숨긴 기기 | 404 `DEVICE_NOT_FOUND` |
+| JSON 오류 | 400 `INVALID_REQUEST` |
+| 내부 오류(삭제 안 됨) | 500 `INTERNAL_ERROR` |
+
+- 숨김 기기는 E1에 없고 E2·E5·E6·E7은 404. 되살리기 API 없음(복구는 E3 재등록만). Matter는 재페어링 필요(같은 시리얼이면 `restored: true`).
 
 ### E5. GET `/api/devices/{deviceId}/state`
 
-| 쿼리 | 필수 | 값 | 설명 |
-|---|---|---|---|
-| `isManualRefresh` | 아니오 | `true` / 그 외 | `true`면 사용자가 직접 새로고침한 것으로 보고 기기에 바로 물어본다. 그 외·누락은 `false` |
-
-**응답 200**: `{ "deviceId": "SN12345", "state": "ON" }`
-- 없는 기기 ID여도 **200**에 `"state": "UNKNOWN"`(§6 I-02).
+쿼리 `isManualRefresh`(선택, `true`/그 외, v1.0과 같음). **200** `{"deviceId": "SN12345", "state": "ON"}`
+- 없는·숨김 기기 **404** `DEVICE_NOT_FOUND`(v1.0은 200 + `UNKNOWN`). 기기가 응답하지 않으면 200 + `"OFFLINE"`.
 
 ### E6. GET `/api/devices/{deviceId}/energy`
 
-**응답 200**
-```json
-{ "device_status": "ON", "activePower_mW": 15230, "totalEnergy_mWh": 1048576 }
-```
-| 필드 | 형식 | 단위 |
-|---|---|---|
-| `device_status` | 문자열 | §1.2 상태 값 |
-| `activePower_mW` | 정수 | 밀리와트 (W는 1000으로 나눔) |
-| `totalEnergy_mWh` | 정수(64비트로 받을 것) | 밀리와트시. DB 값으로 보정한 누적값 |
+**200** `{"deviceId": "SN12345", "state": "ON", "activePower_mW": 15230, "totalEnergy_mWh": 1048576}`
+- `state`(v1.0 `device_status`), `activePower_mW` 정수 밀리와트, `totalEnergy_mWh` 64비트 정수 밀리와트시(서버 보정 누적).
 
-| 오류 | HTTP | 본문 |
-|---|---|---|
-| 없는 기기 | 400 | `{"error": "등록되지 않은 기기입니다."}` |
-| 서버 내부 오류 | 400 | `{"error": "서버 내부 데이터 처리 오류입니다."}` |
+| 오류 | HTTP |
+|---|---|
+| 없는·숨김 기기 | 404 `DEVICE_NOT_FOUND` |
+| TCP_DIY 기기 | 400 `UNSUPPORTED_OPERATION` |
+| 측정값 못 읽음 | 502 `DEVICE_UNREACHABLE` (서버 통계 불변, REQ-03) |
 
 ### E7. GET `/api/devices/{deviceId}/energy/history`
 
-**응답 200**
+| 쿼리(모두 선택) | 값 | 기본 | 설명 |
+|---|---|---|---|
+| `from` / `to` | `YYYY-MM-DD`(+09:00) | 없음 | 시작일·끝일(포함) |
+| `period` | `day` / `week` / `month` | 없음 | 있으면 **집계 모드**, 주는 월요일 시작 |
+| `limit` | 정수 1 이상 | 50 | 원본 모드 최대 건수. 1000 초과는 1000으로. 집계 모드에서는 무시 |
+
+**400 `INVALID_REQUEST` 조건**(S-10, 서버는 예외 없이 400으로 응답): 날짜가 `YYYY-MM-DD` 형식이 아니거나 없는 날짜(`2026-02-30`, `2026-13-01`) / `period`가 세 값 외 / `limit`이 정수가 아님·1 미만·64비트 범위 초과 / `period`가 있는데 `from`·`to` 중 하나라도 없음 / `from > to` / 범위가 366일 초과(366일까지 허용) / `from`·`to`의 연도가 2000~2100 밖(앱 날짜 선택기도 이 범위로). 기록은 90일만 보관되므로 그 이전 구간은 비어 있다.
+
+**원본 모드**(`period` 없음): 범위 안(없으면 전체)의 **가장 최근 `limit`건을 오래된 것부터**.
+`GET .../energy/history?limit=3` → `{"deviceId": "SN12345", "state": "ON", "logs": [{"timestamp": "2026-11-16T00:20:00Z", "totalEnergy_mWh": 1040000}, {"timestamp": "2026-11-16T00:21:00Z", "totalEnergy_mWh": 1040150}, {"timestamp": "2026-11-16T00:22:00Z", "totalEnergy_mWh": 1040300}], "truncated": true}`
+- `truncated`: 범위 안 기록이 `limit`보다 많아 오래된 쪽이 잘렸으면 `true`. `totalEnergy_mWh`는 그 시점 누적값.
+
+**집계 모드**(`period` 있음): 범위 안 모든 구간(기록 없는 구간은 `sampleCount: 0`).
+`GET .../energy/history?from=2026-11-01&to=2026-11-17&period=week` →
 ```json
-{
-  "device_status": "ON",
-  "logs": [
-    { "timestamp": "2026-11-16 09:20:00", "totalEnergy_mWh": 1040000 },
-    { "timestamp": "2026-11-16 09:30:00", "totalEnergy_mWh": 1048576 }
-  ]
-}
+{ "deviceId": "SN12345", "state": "ON", "period": "week", "utcOffset": "+09:00",
+  "buckets": [
+    { "start": "2026-11-01", "end": "2026-11-01", "energyUsed_mWh": 1200, "sampleCount": 1440 },
+    { "start": "2026-11-02", "end": "2026-11-08", "energyUsed_mWh": 9100, "sampleCount": 10080 },
+    { "start": "2026-11-09", "end": "2026-11-15", "energyUsed_mWh": 8800, "sampleCount": 10080 },
+    { "start": "2026-11-16", "end": "2026-11-17", "energyUsed_mWh": 2500, "sampleCount": 2100 } ] }
 ```
-- 최신 **최대 50건**(`DeviceManager.hpp:52` 기본값)이 **오래된 것부터 정렬(오름차순)**로 온다. 기간·개수는 지정할 수 없다.
-- `timestamp`는 SQLite `CURRENT_TIMESTAMP` 형식 `"YYYY-MM-DD HH:MM:SS"`, **UTC**. 앱에서 현지 시간으로 바꿔 표시한다.
-- `totalEnergy_mWh`는 그 시점의 **누적값**. 구간 사용량은 이웃한 두 값의 차이로 계산한다.
-- 기록이 없으면 `logs`는 빈 배열.
-- **오류**: 없는 기기거나 서버 내부 오류면 **200**에 `{"error": "..."}`(§6 I-02).
+- `start`·`end`: 구간 첫날·끝날(+09:00, 포함). 첫·끝 구간은 `from`·`to`로 잘림(2026-11-01은 일요일이라 첫 주가 하루).
+- `energyUsed_mWh` = 이웃 기록 차이 중 양수의 합(뒤 기록이 속한 구간에), 음수는 0, 구간 시작 직전 기록과의 차이 포함. `day`=하루, `month`=달력 월.
 
----
+| 오류 | HTTP |
+|---|---|
+| 없는·숨김 기기 | **404** `DEVICE_NOT_FOUND` (v1.0은 200 + `error`) |
+| TCP_DIY 기기 | 400 `UNSUPPORTED_OPERATION` |
+| 파라미터 오류(위 조건) | 400 `INVALID_REQUEST` |
 
-## 4. 앱 구현 가이드 (v1.0 기준)
+## 4. 앱 구현 가이드
 
-1. 성공 판정은 **HTTP 코드와 본문을 함께** 본다. 2xx이면서 본문에 `error` 키가 없고 `result`도 `"error"`가 아니면 성공. E2는 추가로 `message == "명령 성공!"`이어야 성공.
-2. 401이면 토큰 재입력 화면으로 보낸다.
-3. 오류 메시지는 `message` 또는 `error` 중 있는 키에서 읽는다.
-4. 처음 보는 응답 필드는 무시한다(새 필드가 추가되어도 깨지지 않게).
+1. 성공 판정은 HTTP 상태코드(2xx). E2의 202는 "접수, 나중에 실행".
+2. 오류는 `error.code`로 분기. 401이면 토큰 입력 화면.
+3. `deviceId`·`jobId`는 해석하지 않는다. 처음 보는 필드는 무시.
+4. E3은 보내기 전에 §3 E3 입력 제한을 앱에서도 검사(수동 코드의 `-`·공백 제거). 202 뒤 E8 폴링, 화면을 떠나도 작업은 계속.
+5. 시각은 UTC로 오므로 표시 때 현지 시간으로. E7 집계 날짜는 이미 +09:00.
 
-## 5. 범위 밖 (v1.0에 없음)
+## 5. 범위 밖 (v2.0에 없음)
 
-- 서버가 앱에 먼저 알려 주는 기능(푸시, WebSocket, SSE). 상태는 앱이 E1·E5를 다시 불러 확인한다.
-- 기기 이름 변경, 드라이버 변경 API
-- HTTPS, 여러 사용자 계정
+서버 푸시(WebSocket·SSE) / 기기 이름·드라이버 변경, 숨김 기기 목록·되살리기·영구 삭제 / 여러 계정·토큰, 시도 횟수 제한 / **HTTPS·집 밖 접속(보류, 나중에 주소만 바뀌도록 설계)** / 90일보다 오래된 기록.
 
-## 6. 알려진 비일관성 (v2.0 설계 때 정리할 후보, 지금 동작은 그대로)
+## 6. MAJOR 변경 목록 (v1.0 → v2.0)
 
-| ID | 내용 | 영향 |
-|---|---|---|
-| I-01 | E2는 명령이 실패해도 200을 준다 | 앱이 HTTP 코드만 보면 실패를 놓친다 |
-| I-02 | 없는 기기를 E5는 200 + `UNKNOWN`, E6은 400, E7은 200 + `error`로 응답한다. 404를 쓰는 곳이 없다 | 오류 처리를 경로마다 따로 짜야 한다 |
-| I-03 | 오류 본문 모양이 `{"result","message"}`와 `{"error"}` 두 가지다. `status` 키도 E1에서는 처리 결과, E2에서는 기기 상태를 뜻한다. 키 표기도 camelCase와 snake_case가 섞여 있다 | 파싱 코드가 복잡해진다 |
-| I-04 | E3이 동기 방식이고 서버 쪽 시간 제한이 없다 | 앱이 오래 기다려야 하고, 타임아웃이 나면 등록 결과를 알 수 없다 |
-| I-05 | E2·E4의 오류 상태 코드를 본문에 `"error"` 문자열이 있는지로 정한다 | 서버 내부 문제. 앱에는 영향 없음 |
-| I-06 | 평문 HTTP라 토큰이 LAN에서 그대로 보인다 | 외부 접속 전에 TLS가 필요하다(진행현황의 외부 접속 계획과 연결) |
+| # | 대상 | v1.0 | v2.0 | 앱 영향 | 근거 |
+|---|---|---|---|---|---|
+| 1 | ~~접속 주소~~ | `http://<IP>:8000` | **변경 없음(보류, 11-18)** | 없음 | ADR-011 |
+| 2 | 오류 본문 | `{"result":"error","message"}` / `{"error":"..."}` | `{"error":{"code","message"}}`, 고정 문구 | 오류 파서 교체 | REQ-11, I-03, S-11 |
+| 3 | 상태코드 | 실패도 200, 없는 기기 200/400 혼재 | 400/401/404/409/413/500/502 | HTTP 코드로 판정 | REQ-11, I-01·02·05 |
+| 4 | 성공 본문 결과 키 | E1 `status`, E2 `message`, E3·E4 `result`·`message` | 없음 | 해당 키 의존 제거 | I-03 |
+| 5 | 키 이름 | `id`, `type`, `total_count`, `device_status` | `deviceId`, `protocolType`, `totalCount`, `state` | 모델 필드명 | I-03 |
+| 6 | E2 결과 | 200 + `message` | 200 / 202(`pendingCommand`, `delaySeconds`) / 409 / 502 | 분기, 202면 뒤에 E5 | REQ-07·08, N-01(신규) |
+| 7 | E3 | 동기(120초+) | 202 + `jobId`, E8 폴링 | 등록 화면 흐름 | REQ-10, I-04 |
+| 8 | E8 | 없음 | `GET /api/commission/{jobId}` | 신규 호출 | REQ-10 |
+| 9 | E4 | 행 삭제, 실패 시 400 | 숨김, `deletedAt`·`restorableUntil`·`unpaired`, 없으면 404 | 완료 문구, `unpaired:false` 경고 | REQ-13, Q-03c |
+| 10 | 기기 ID | TCP_DIY `ARD_<IP>` | `TCP_<MAC12>` + `ip` 필드 | 해석 안 하면 없음. **자동 이전 없음** — 2차 배포 때 TCP_DIY 기기는 삭제 후 재등록 | ADR-006 |
+| 11 | E5 | 없는 기기 200 + `UNKNOWN` | 404 | 404 처리 | I-02 |
+| 12 | E6 | 400 `{"error"}`, `device_status` | 404/400/502, `deviceId`·`state` | 오류·필드 | REQ-04, I-02 |
+| 13 | E7 시각 | `"YYYY-MM-DD HH:MM:SS"` | `"YYYY-MM-DDTHH:MM:SSZ"` | 파서 | I-03 |
+| 14 | E7 응답 | `device_status`, `logs` | `deviceId`, `state`, `logs`, `truncated` / `buckets` | 필드, 앱 구간 계산은 `period`로 대체 가능 | REQ-12, APP-REQ |
+| 15 | 본문 크기 | 제한 없음 | 16KiB, 413 | 정상 사용 시 없음 | REQ-15 |
+| 16 | E3 입력 제한 | 검사 없음 | 길이·제어문자·`payload` 형식, 위반 시 400 | 수동 코드 `-` 제거, 앱 쪽 검사 | S-09, REQ-16 |
 
----
+MAJOR 아님: E7 `from/to/period/limit` 추가(MINOR, APP-REQ) / E7 순서 설명 정정 — 실제·v2.0 모두 최근 N건을 오래된 순(N-02(신규)) / POST 401 본문 전달(N-03(신규) 버그 수정) / 형식이 틀린 `{deviceId}` 404 `NOT_FOUND`(2차 배포(재등록) 뒤 ID 형식은 모두 통과 — `TCP_<MAC12>`·Matter 시리얼, 서버 12b-7 시험, S-15).
+
+## 7. 앱 반영 순서 (서버 먼저, 앱 나중)
+
+**v1·v2 동시 제공 기간은 두지 않는다**(1인·앱 1개라 핸들러 두 벌 비용이 더 큼). 호환되는 준비를 먼저 하고 전환은 한 번에.
+
+| 단계 | 누가 | 내용 | 상태 |
+|---|---|---|---|
+| 0 | 사용자 | 초안 승인 → v2.0 확정(2026-11-28), 앱에 사본 `docs/api-contract.md`(첫 줄 "원본 v2.0 기준") | ✅ 확정 / 사본은 앱 몫 |
+| 1 | 서버 | 1차 릴리스(내부 재설계, REST v1.0 그대로, `v1.0-deploy-1`) | ✅ |
+| 2 | 앱 | v1.0에서도 문제없는 준비(`deviceId` 해석 안 함, 모르는 필드 무시, E3 입력 사전 검사) | ✅ |
+| 3 | — | ~~Tailscale·HTTPS 전환~~ 보류(11-18). 주소는 `http://<서버 IP>:8000` 그대로 | — |
+| 4 | 서버·앱 | 서버 2차(v2.0) 구현·실기(10~14a, 13번 실기 2026-11-28), 앱 v2.0 브랜치 개발 | ✅ 서버 / 앱 확인 남음 |
+| 5~7 | 사용자·총괄 | **전환일**: 백업 → 서버 v2.0 배포 → 바로 앱 v2.0 설치 → 실기(TCP 기기 재등록 `TCP_<MAC>`, 목록·제어·등록·삭제·기록) → 변경 이력 앱 칸 갱신 | ⬜ 절차·롤백은 서버 `docs/06_배포.md` 2차 절 |
+
+**되돌리기**: 서버를 `v1.0-deploy-1`로, 전환 전 백업 DB 복원, 이전 앱 설치(마이그레이션은 한 방향이라 반드시 백업에서 복원).
 
 ## 변경 이력
 
-| 버전 | 날짜 | 변경 | 서버 반영 | 앱 반영 |
-|---|---|---|---|---|
-| v1.0 | 2026-11-16 | 최초 작성. 현재 코드 동작(As-Is)을 문서화 | 해당 없음(코드 그대로) | ⬜ 사본 배치 필요 |
-| v1.0 | 2026-11-18 | 형식 정리(내용 변경 없음) | 해당 없음 | 해당 없음 |
-| v1.0 | 2026-11-18 | E7 순서 설명 정정(N-02, 동작 변경 없음) | 해당 없음 | 해당 없음 |
+| 버전 | 날짜 | 변경 | 관련 ID | 서버 | 앱 |
+|---|---|---|---|---|---|
+| v1.0 | 2026-11-16 | 최초 작성(As-Is) | — | 해당 없음 | ⬜ 사본 |
+| v1.0 | 2026-11-18 | 형식 정리(내용 변경 없음) | — | 해당 없음 | 해당 없음 |
+| v1.0 | 2026-11-18 | E7 순서 설명 정정(동작 변경 없음) | N-02 | 해당 없음 | 해당 없음 |
+| v2.0 (초안) | 2026-11-17 | ~~HTTPS·Tailscale 주소~~ → 11-18 보류 | REQ-14, I-06 | — | — |
+| | | 오류 본문 단일화·상태코드 규약·결과 키 제거·키 표기 | REQ-11, I-01~03·05 | ✅ 10e~10g | ⬜ |
+| | | E2 성공/지연 수락/실패, 지연 중복 방지·취소 | REQ-07·08, N-01(신규) | ✅ 11 | ⬜ |
+| | | E3 비동기 + E8 | REQ-10, I-04 | ✅ 13b | ⬜ |
+| | | E4 숨김 삭제(90일 복구), 기기 ID `TCP_<MAC>` + `ip` | REQ-13, Q-03c | ✅ 12a / 12b | ⬜ |
+| | | E6 존재·프로토콜 확인, 실패 502 | REQ-03·04 | ✅ 10e | ⬜ |
+| | | E7 파라미터·집계·ISO 8601·순서 설명 정정 | REQ-12, APP-REQ, N-02(신규) | ✅ 10e / 12a | ⬜ |
+| | | 인증을 본문 읽은 뒤로, 본문 16KiB | REQ-15, N-03(신규) | ✅ 10f | ⬜ |
+| | 2026-11-18 | 접속 LAN 유지(HTTPS 보류), E3 입력 제한(#16), E7 400 조건 명시, 고정 오류 문구, `ALREADY_REGISTERED`, `{deviceId}` 형식, `unpaired:false` 경고 | ADR-011, S-05·09·10·11·15·16 | ✅ 10e~10g / 12a / 13b | ⬜ |
+| | 2026-11-22 | E7 `from`·`to` 연도 2000~2100, 밖이면 400 `INVALID_REQUEST`(서버 12a-7 구현) | REQ-12 | ✅ 12a-7 | ⬜ |
+| | 2026-11-23 | §1 8080 "DIY 기기·PC 에이전트용", §6 10행 "자동 이전 없음 — 재등록", §6 `{deviceId}` 형식 문구(K5·K6·K10). E1 `ip`·`TCP_<MAC12>`는 초안 그대로 서버 구현 | REQ-05, REQ-13 | ✅ 12b | ⬜ |
+| | 2026-11-24 | E3 SSID·비밀번호 공백·따옴표 허용, TCP_DIY `""` = 앱이 접속한 서버 주소 / E8 jobId 예시, 제한 시간 TCP 약 30초·MATTER 190초·앱 210초, `ALREADY_REGISTERED`(초기화·재페어링)·`COMMISSION_FAILED`(서버 저장 실패) 설명(K1·K2·K3·K7·K15~K17) | REQ-10, REQ-13 | ✅ 13b | ⬜ |
+| | 2026-11-24 | E3 종료 중 502 `DEVICE_UNREACHABLE`, TCP_DIY 빈 `payload`인데 접속 주소가 LAN IPv4가 아니면 400(K18·K19, 결정 59) | REQ-10 | ✅ 13b | ⬜ |
+| v2.0 | 2026-11-28 | 초안 확정(14번 U-1~U-8): 머리 표·§7 정리, 413 문구, E3 409 "대기·실행 중", E8 형식 틀린 `jobId` 404, 제한 시간 실측(K-1 최대 37.2초 → 180초 유지, K-12 약 10초) | REQ-10·11·12·13, 결정 70~ | ✅ `4e13d7d` | ⬜ |
